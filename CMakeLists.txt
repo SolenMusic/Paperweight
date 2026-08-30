@@ -1,13 +1,14 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(Paperweight VERSION 0.0.1 LANGUAGES CXX)
-
-option(PAPERWEIGHT_BUILD_TESTS "Build the Paperweight test suite" ON)
-
-if(APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" AND
+   NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING
         "Minimum macOS version supported by Paperweight")
 endif()
+
+project(Paperweight VERSION 0.0.1 LANGUAGES CXX)
+
+option(PAPERWEIGHT_BUILD_TESTS "Build the Paperweight test suite" ON)
 
 function(paperweight_enable_project_warnings target)
     if(MSVC)
