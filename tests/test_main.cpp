@@ -64,9 +64,9 @@ std::uint64_t checksum(std::span<const paperweight::Rgba8> pixels)
 
 void testVersion()
 {
-    constexpr paperweight::Version expected{0, 0, 1};
+    constexpr paperweight::Version expected{0, 0, 2};
     static_assert(paperweight::currentVersion == expected);
-    expect(paperweight::versionString() == "0.0.1", "version string is 0.0.1");
+    expect(paperweight::versionString() == "0.0.2", "version string is 0.0.2");
 }
 
 void testImage()
@@ -145,6 +145,11 @@ void testMaterialAndFbm()
     expect(lowColourMetadata.key == "colour.low" &&
                lowColourMetadata.defaultValue == material.lowColour,
            "colour metadata describes the material defaults");
+    const auto& normalMetadata =
+        paperweight::metadataFor(paperweight::MaterialParameter::normalStrength);
+    expect(normalMetadata.key == "normal.strength" &&
+               normalMetadata.defaultValue == material.normalStrength,
+           "output metadata describes the normal default");
 
     auto invalid = material;
     invalid.octaves = 0;
@@ -152,6 +157,14 @@ void testMaterialAndFbm()
     invalid = material;
     invalid.gain = std::numeric_limits<double>::quiet_NaN();
     expect(paperweight::validateMaterial(invalid).has_value(), "non-finite gain is diagnosed");
+    invalid = material;
+    invalid.normalStrength = 17.0;
+    expect(paperweight::validateMaterial(invalid).has_value(),
+           "out-of-range normal strength is diagnosed");
+    invalid = material;
+    invalid.roughnessLow = -0.01;
+    expect(paperweight::validateMaterial(invalid).has_value(),
+           "out-of-range roughness is diagnosed");
 
     const double sample = paperweight::periodicFbm2D(-0.375, 0.625, material);
     expectNear(sample, paperweight::periodicFbm2D(0.625, 0.625, material), 1.0e-12,
@@ -232,6 +245,116 @@ void testGenerator()
                "generated channels interpolate within the selected colour endpoints");
     }
 
+    auto heightRequest = request;
+    heightRequest.output = paperweight::MaterialOutput::height;
+    const auto heightResult = paperweight::generate(heightRequest);
+    const auto* heightImage = std::get_if<paperweight::Image>(&heightResult);
+    expect(heightImage != nullptr && checksum(heightImage->pixels()) == checksum(first.pixels()),
+           "default colour and height encode the same FBM samples");
+    if (heightImage != nullptr) {
+        expect(std::all_of(
+                   heightImage->pixels().begin(),
+                   heightImage->pixels().end(),
+                   [](const auto& pixel) {
+                       return pixel.red == pixel.green && pixel.green == pixel.blue &&
+                           pixel.alpha == 255;
+                   }),
+               "height is encoded as opaque linear greyscale");
+    }
+
+    auto normalRequest = request;
+    normalRequest.output = paperweight::MaterialOutput::normal;
+    normalRequest.material.normalStrength = 0.0;
+    const auto flatNormalResult = paperweight::generate(normalRequest);
+    const auto* flatNormalImage = std::get_if<paperweight::Image>(&flatNormalResult);
+    expect(flatNormalImage != nullptr &&
+               std::all_of(
+                   flatNormalImage->pixels().begin(),
+                   flatNormalImage->pixels().end(),
+                   [](const auto& pixel) {
+                       return pixel == paperweight::Rgba8{128, 128, 255, 255};
+                   }),
+           "zero-strength height produces the neutral tangent-space normal");
+
+    normalRequest.material.normalStrength = 1.0;
+    const auto normalA = paperweight::generate(normalRequest);
+    const auto normalB = paperweight::generate(normalRequest);
+    const auto* normalImageA = std::get_if<paperweight::Image>(&normalA);
+    const auto* normalImageB = std::get_if<paperweight::Image>(&normalB);
+    expect(normalImageA != nullptr && normalImageB != nullptr &&
+               checksum(normalImageA->pixels()) == checksum(normalImageB->pixels()),
+           "normal generation is byte-deterministic");
+    if (normalImageA != nullptr) {
+        expect(std::all_of(
+                   normalImageA->pixels().begin(),
+                   normalImageA->pixels().end(),
+                   [](const auto& pixel) { return pixel.blue >= 128 && pixel.alpha == 255; }),
+               "encoded tangent-space normals face away from the surface");
+
+        const double width = static_cast<double>(normalRequest.width);
+        const double height = static_cast<double>(normalRequest.height);
+        const double centreU = 0.5 / width;
+        const double centreV = 0.5 / height;
+        const double derivativeU =
+            (paperweight::periodicFbm2D(1.5 / width, centreV, normalRequest.material) -
+             paperweight::periodicFbm2D((width - 0.5) / width, centreV, normalRequest.material)) *
+            width * 0.5;
+        const double derivativeV =
+            (paperweight::periodicFbm2D(centreU, 1.5 / height, normalRequest.material) -
+             paperweight::periodicFbm2D(centreU, (height - 0.5) / height, normalRequest.material)) *
+            height * 0.5;
+        double x = -derivativeU * normalRequest.material.normalStrength;
+        double y = -derivativeV * normalRequest.material.normalStrength;
+        double z = 1.0;
+        const double inverseLength = 1.0 / std::sqrt(x * x + y * y + z * z);
+        x *= inverseLength;
+        y *= inverseLength;
+        z *= inverseLength;
+        const auto encodeSigned = [](double value) {
+            return static_cast<std::uint8_t>(std::round((value * 0.5 + 0.5) * 255.0));
+        };
+        expect(
+            normalImageA->row(0)[0] == paperweight::Rgba8{
+                                             encodeSigned(x),
+                                             encodeSigned(y),
+                                             encodeSigned(z),
+                                             255},
+            "normal-map boundary texels use wrapped height neighbours");
+    }
+
+    auto roughnessRequest = request;
+    roughnessRequest.output = paperweight::MaterialOutput::roughness;
+    const auto roughnessA = paperweight::generate(roughnessRequest);
+    const auto roughnessB = paperweight::generate(roughnessRequest);
+    const auto* roughnessImageA = std::get_if<paperweight::Image>(&roughnessA);
+    const auto* roughnessImageB = std::get_if<paperweight::Image>(&roughnessB);
+    expect(roughnessImageA != nullptr && roughnessImageB != nullptr &&
+               checksum(roughnessImageA->pixels()) == checksum(roughnessImageB->pixels()),
+           "roughness generation is byte-deterministic");
+    if (roughnessImageA != nullptr) {
+        expect(std::all_of(
+                   roughnessImageA->pixels().begin(),
+                   roughnessImageA->pixels().end(),
+                   [](const auto& pixel) {
+                       return pixel.red >= 64 && pixel.red <= 217 &&
+                           pixel.red == pixel.green && pixel.green == pixel.blue &&
+                           pixel.alpha == 255;
+                   }),
+               "roughness remains in its configured opaque greyscale range");
+        const double source = paperweight::periodicFbm2D(
+            0.5 / roughnessRequest.width,
+            0.5 / roughnessRequest.height,
+            roughnessRequest.material);
+        const auto expectedRoughness = static_cast<std::uint8_t>(std::round(
+            (roughnessRequest.material.roughnessLow +
+             (roughnessRequest.material.roughnessHigh -
+              roughnessRequest.material.roughnessLow) *
+                 source) *
+            255.0));
+        expect(roughnessImageA->row(0)[0].red == expectedRoughness,
+               "roughness maps the shared height sample between its endpoints");
+    }
+
     for (const auto [width, height] : std::array{
              std::pair<std::uint32_t, std::uint32_t>{1, 1},
              std::pair<std::uint32_t, std::uint32_t>{17, 29},
@@ -252,6 +375,13 @@ void testGenerator()
     const auto invalidResult = paperweight::generate(invalidRequest);
     expect(std::holds_alternative<paperweight::GenerationError>(invalidResult),
            "invalid dimensions return a structured error");
+    invalidRequest = request;
+    invalidRequest.output = static_cast<paperweight::MaterialOutput>(999);
+    const auto invalidOutput = paperweight::generate(invalidRequest);
+    expect(std::holds_alternative<paperweight::GenerationError>(invalidOutput) &&
+               std::get<paperweight::GenerationError>(invalidOutput).code ==
+                   paperweight::GenerationErrorCode::invalidOutput,
+           "unknown material outputs return a structured error");
 }
 
 void testPmat()
@@ -266,7 +396,10 @@ void testPmat()
         "noise.frequency = 4\n"
         "noise.octaves = 5\n"
         "noise.lacunarity = 2\n"
-        "noise.gain = 0.5\n";
+        "noise.gain = 0.5\n"
+        "normal.strength = 1\n"
+        "roughness.low = 0.25\n"
+        "roughness.high = 0.85\n";
 
     const auto parsed = paperweight::parsePmat(canonical);
     expect(std::holds_alternative<paperweight::Material>(parsed), "canonical .pmat parses");
@@ -326,7 +459,17 @@ void testPmat()
         paperweight::Material{0, 1, 1, 1, 0.1},
         paperweight::Material{927364821, 13, 4, 2, 0.37},
         paperweight::Material{std::numeric_limits<std::uint64_t>::max(), 1, 7, 4, 0.9},
-        paperweight::Material{42, 8, 3, 2, 0.625, {1, 2, 3, 4}, {250, 240, 230, 220}},
+        paperweight::Material{
+            42,
+            8,
+            3,
+            2,
+            0.625,
+            {1, 2, 3, 4},
+            {250, 240, 230, 220},
+            4.5,
+            0.15,
+            0.95},
     };
     for (const auto& candidate : roundTripMaterials) {
         const auto text = paperweight::serialisePmat(candidate);
@@ -371,6 +514,9 @@ void testPmat()
         expect(material->lowColour == paperweight::Rgba8{0, 0, 0, 255} &&
                    material->highColour == paperweight::Rgba8{255, 255, 255, 255},
                "preview-era files without colour fields retain black-to-white defaults");
+        expect(material->normalStrength == 1.0 && material->roughnessLow == 0.25 &&
+                   material->roughnessHigh == 0.85,
+               "v0.0.1 files retain the v0.0.2 output defaults");
     }
 
     const auto expectDiagnostic = [](std::string_view text, std::size_t line, std::string_view phrase) {

@@ -23,6 +23,21 @@ std::optional<std::string> validateMaterial(const Material& material)
         material.gain > MaterialLimits::maximumGain) {
         return "gain must be finite and between 0.1 and 0.9";
     }
+    if (!std::isfinite(material.normalStrength) ||
+        material.normalStrength < MaterialLimits::minimumNormalStrength ||
+        material.normalStrength > MaterialLimits::maximumNormalStrength) {
+        return "normal strength must be finite and between 0 and 16";
+    }
+    if (!std::isfinite(material.roughnessLow) ||
+        material.roughnessLow < MaterialLimits::minimumRoughness ||
+        material.roughnessLow > MaterialLimits::maximumRoughness) {
+        return "low roughness must be finite and between 0 and 1";
+    }
+    if (!std::isfinite(material.roughnessHigh) ||
+        material.roughnessHigh < MaterialLimits::minimumRoughness ||
+        material.roughnessHigh > MaterialLimits::maximumRoughness) {
+        return "high roughness must be finite and between 0 and 1";
+    }
 
     std::uint64_t period = material.frequency;
     for (std::uint32_t octave = 1; octave < material.octaves; ++octave) {

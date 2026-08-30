@@ -117,6 +117,13 @@
 @property(nonatomic, strong) NSTextField* gainValue;
 @property(nonatomic, strong) NSColorWell* lowColourWell;
 @property(nonatomic, strong) NSColorWell* highColourWell;
+@property(nonatomic, strong) NSSlider* normalStrengthSlider;
+@property(nonatomic, strong) NSTextField* normalStrengthValue;
+@property(nonatomic, strong) NSSlider* roughnessLowSlider;
+@property(nonatomic, strong) NSTextField* roughnessLowValue;
+@property(nonatomic, strong) NSSlider* roughnessHighSlider;
+@property(nonatomic, strong) NSTextField* roughnessHighValue;
+@property(nonatomic, strong) NSSegmentedControl* outputControl;
 @property(nonatomic, strong) NSSegmentedControl* tilingControl;
 @property(nonatomic, strong) NSTextField* statusLabel;
 @property(nonatomic, strong) NSURL* currentFileURL;
@@ -222,10 +229,26 @@ NSStackView* makeColourRow(
     return row;
 }
 
+NSString* outputName(paperweight::MaterialOutput output)
+{
+    switch (output) {
+    case paperweight::MaterialOutput::colour:
+        return @"Colour";
+    case paperweight::MaterialOutput::height:
+        return @"Height";
+    case paperweight::MaterialOutput::normal:
+        return @"Normal";
+    case paperweight::MaterialOutput::roughness:
+        return @"Roughness";
+    }
+    return @"Unknown";
+}
+
 } // namespace
 
 @implementation AppDelegate {
     paperweight::Material material_;
+    paperweight::MaterialOutput selectedOutput_;
     std::optional<paperweight::Image> generatedImage_;
     bool dirty_;
 }
@@ -233,6 +256,7 @@ NSStackView* makeColourRow(
 - (void)applicationDidFinishLaunching:(NSNotification*)notification
 {
     static_cast<void>(notification);
+    selectedOutput_ = paperweight::MaterialOutput::colour;
     [self buildMenus];
     [self buildWindow];
     [self updateControlLabels];
@@ -308,12 +332,12 @@ NSStackView* makeColourRow(
 {
     const NSWindowStyleMask style = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
         NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;
-    self.window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 1060, 700)
+    self.window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 1120, 800)
                                               styleMask:style
                                                 backing:NSBackingStoreBuffered
                                                   defer:NO];
     self.window.title = @"Untitled.pmat — Paperweight";
-    self.window.minSize = NSMakeSize(820, 560);
+    self.window.minSize = NSMakeSize(900, 720);
     self.window.delegate = self;
     NSColorPanel.sharedColorPanel.showsAlpha = YES;
 
@@ -415,6 +439,52 @@ NSStackView* makeColourRow(
         self);
     self.highColourWell = static_cast<NSColorWell*>(highColourRow.views[1]);
 
+    const auto& normalStrengthMetadata =
+        paperweight::metadataFor(paperweight::MaterialParameter::normalStrength);
+    const auto& roughnessLowMetadata =
+        paperweight::metadataFor(paperweight::MaterialParameter::roughnessLow);
+    const auto& roughnessHighMetadata =
+        paperweight::metadataFor(paperweight::MaterialParameter::roughnessHigh);
+    NSStackView* normalStrengthRow = makeSliderRow(
+        @"Normal",
+        normalStrengthMetadata.minimumValue,
+        normalStrengthMetadata.maximumValue,
+        material_.normalStrength,
+        normalStrengthMetadata.integral,
+        self);
+    self.normalStrengthSlider = static_cast<NSSlider*>(normalStrengthRow.views[1]);
+    self.normalStrengthValue = static_cast<NSTextField*>(normalStrengthRow.views[2]);
+    NSStackView* roughnessLowRow = makeSliderRow(
+        @"Rough low",
+        roughnessLowMetadata.minimumValue,
+        roughnessLowMetadata.maximumValue,
+        material_.roughnessLow,
+        roughnessLowMetadata.integral,
+        self);
+    self.roughnessLowSlider = static_cast<NSSlider*>(roughnessLowRow.views[1]);
+    self.roughnessLowValue = static_cast<NSTextField*>(roughnessLowRow.views[2]);
+    NSStackView* roughnessHighRow = makeSliderRow(
+        @"Rough high",
+        roughnessHighMetadata.minimumValue,
+        roughnessHighMetadata.maximumValue,
+        material_.roughnessHigh,
+        roughnessHighMetadata.integral,
+        self);
+    self.roughnessHighSlider = static_cast<NSSlider*>(roughnessHighRow.views[1]);
+    self.roughnessHighValue = static_cast<NSTextField*>(roughnessHighRow.views[2]);
+
+    auto* outputLabel = makeLabel(@"Material output");
+    self.outputControl = [[NSSegmentedControl alloc] initWithFrame:NSZeroRect];
+    self.outputControl.segmentCount = 4;
+    [self.outputControl setLabel:@"Colour" forSegment:0];
+    [self.outputControl setLabel:@"Height" forSegment:1];
+    [self.outputControl setLabel:@"Normal" forSegment:2];
+    [self.outputControl setLabel:@"Roughness" forSegment:3];
+    self.outputControl.selectedSegment = 0;
+    self.outputControl.target = self;
+    self.outputControl.action = @selector(outputChanged:);
+    self.outputControl.accessibilityLabel = @"Material output";
+
     auto* previewLabel = makeLabel(@"Preview tiling");
     self.tilingControl = [[NSSegmentedControl alloc] initWithFrame:NSZeroRect];
     self.tilingControl.segmentCount = 2;
@@ -447,7 +517,12 @@ NSStackView* makeColourRow(
         gainRow,
         lowColourRow,
         highColourRow,
+        normalStrengthRow,
+        roughnessLowRow,
+        roughnessHighRow,
         makeSeparator(),
+        outputLabel,
+        self.outputControl,
         previewLabel,
         self.tilingControl,
         resetButton,
@@ -456,13 +531,14 @@ NSStackView* makeColourRow(
     controlStack.translatesAutoresizingMaskIntoConstraints = NO;
     controlStack.orientation = NSUserInterfaceLayoutOrientationVertical;
     controlStack.alignment = NSLayoutAttributeLeading;
-    controlStack.spacing = 13.0;
+    controlStack.spacing = 10.0;
     [controlsPanel addSubview:controlStack];
     [NSLayoutConstraint activateConstraints:@[
         [controlStack.leadingAnchor constraintEqualToAnchor:controlsPanel.leadingAnchor constant:20.0],
         [controlStack.trailingAnchor constraintEqualToAnchor:controlsPanel.trailingAnchor constant:-20.0],
         [controlStack.topAnchor constraintEqualToAnchor:controlsPanel.topAnchor constant:24.0],
         [self.tilingControl.widthAnchor constraintEqualToAnchor:controlStack.widthAnchor],
+        [self.outputControl.widthAnchor constraintEqualToAnchor:controlStack.widthAnchor],
         [self.statusLabel.widthAnchor constraintEqualToAnchor:controlStack.widthAnchor],
     ]];
 }
@@ -484,6 +560,9 @@ NSStackView* makeColourRow(
     material_.octaves = static_cast<std::uint32_t>(std::llround(self.octavesSlider.doubleValue));
     material_.lacunarity = static_cast<std::uint32_t>(std::llround(self.lacunaritySlider.doubleValue));
     material_.gain = self.gainSlider.doubleValue;
+    material_.normalStrength = self.normalStrengthSlider.doubleValue;
+    material_.roughnessLow = self.roughnessLowSlider.doubleValue;
+    material_.roughnessHigh = self.roughnessHighSlider.doubleValue;
     [self updateControlLabels];
     [self regeneratePreview];
     [self markDirty];
@@ -509,6 +588,9 @@ NSStackView* makeColourRow(
     self.gainSlider.doubleValue = material_.gain;
     self.lowColourWell.color = colourFromRgba8(material_.lowColour);
     self.highColourWell.color = colourFromRgba8(material_.highColour);
+    self.normalStrengthSlider.doubleValue = material_.normalStrength;
+    self.roughnessLowSlider.doubleValue = material_.roughnessLow;
+    self.roughnessHighSlider.doubleValue = material_.roughnessHigh;
     [self updateControlLabels];
     [self regeneratePreview];
     [self markDirty];
@@ -529,12 +611,41 @@ NSStackView* makeColourRow(
     self.previewView.repeatCount = self.tilingControl.selectedSegment == 1 ? 3 : 1;
 }
 
+- (void)outputChanged:(id)sender
+{
+    static_cast<void>(sender);
+    switch (self.outputControl.selectedSegment) {
+    case 0:
+        selectedOutput_ = paperweight::MaterialOutput::colour;
+        break;
+    case 1:
+        selectedOutput_ = paperweight::MaterialOutput::height;
+        break;
+    case 2:
+        selectedOutput_ = paperweight::MaterialOutput::normal;
+        break;
+    case 3:
+        selectedOutput_ = paperweight::MaterialOutput::roughness;
+        break;
+    default:
+        selectedOutput_ = paperweight::MaterialOutput::colour;
+        break;
+    }
+    [self regeneratePreview];
+}
+
 - (void)updateControlLabels
 {
     self.frequencyValue.stringValue = [NSString stringWithFormat:@"%u", material_.frequency];
     self.octavesValue.stringValue = [NSString stringWithFormat:@"%u", material_.octaves];
     self.lacunarityValue.stringValue = [NSString stringWithFormat:@"%u", material_.lacunarity];
     self.gainValue.stringValue = [NSString stringWithFormat:@"%.2f", material_.gain];
+    self.normalStrengthValue.stringValue =
+        [NSString stringWithFormat:@"%.1f", material_.normalStrength];
+    self.roughnessLowValue.stringValue =
+        [NSString stringWithFormat:@"%.2f", material_.roughnessLow];
+    self.roughnessHighValue.stringValue =
+        [NSString stringWithFormat:@"%.2f", material_.roughnessHigh];
 }
 
 - (void)applyMaterialToControls
@@ -546,18 +657,23 @@ NSStackView* makeColourRow(
     self.gainSlider.doubleValue = material_.gain;
     self.lowColourWell.color = colourFromRgba8(material_.lowColour);
     self.highColourWell.color = colourFromRgba8(material_.highColour);
+    self.normalStrengthSlider.doubleValue = material_.normalStrength;
+    self.roughnessLowSlider.doubleValue = material_.roughnessLow;
+    self.roughnessHighSlider.doubleValue = material_.roughnessHigh;
     [self updateControlLabels];
     [self regeneratePreview];
 }
 
 - (void)regeneratePreview
 {
-    const paperweight::GenerationRequest request{material_, 512, 512};
+    const paperweight::GenerationRequest request{material_, 512, 512, selectedOutput_};
     auto result = paperweight::generate(request);
     if (const auto* image = std::get_if<paperweight::Image>(&result)) {
         [self.previewView setGeneratedImage:*image];
         generatedImage_ = *image;
-        self.statusLabel.stringValue = @"512 × 512 coloured RGBA8 — mathematically seamless";
+        self.statusLabel.stringValue = [NSString
+            stringWithFormat:@"512 × 512 %@ RGBA8 — mathematically seamless",
+                             outputName(selectedOutput_)];
         self.statusLabel.textColor = NSColor.secondaryLabelColor;
         return;
     }
@@ -743,7 +859,9 @@ NSStackView* makeColourRow(
 
     auto* panel = [NSSavePanel savePanel];
     panel.title = @"Export Generated Texture";
-    panel.nameFieldStringValue = @"Paperweight-512x512.png";
+    panel.nameFieldStringValue = [NSString
+        stringWithFormat:@"Paperweight-%@-512x512.png",
+                         outputName(selectedOutput_).lowercaseString];
     panel.allowedFileTypes = @[ @"png" ];
     panel.allowsOtherFileTypes = NO;
     panel.canCreateDirectories = YES;
@@ -759,7 +877,8 @@ NSStackView* makeColourRow(
         [self showErrorWithTitle:@"The PNG could not be exported" message:message];
         return;
     }
-    self.statusLabel.stringValue = @"PNG exported";
+    self.statusLabel.stringValue =
+        [NSString stringWithFormat:@"%@ PNG exported", outputName(selectedOutput_)];
     self.statusLabel.textColor = NSColor.secondaryLabelColor;
 }
 
