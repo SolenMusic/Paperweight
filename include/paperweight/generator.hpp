@@ -9,15 +9,24 @@
 
 namespace paperweight {
 
+enum class MaterialOutput {
+    colour,
+    height,
+    normal,
+    roughness,
+};
+
 struct GenerationRequest {
     Material material;
     std::uint32_t width{512};
     std::uint32_t height{512};
+    MaterialOutput output{MaterialOutput::colour};
 };
 
 enum class GenerationErrorCode {
     invalidDimensions,
     invalidMaterial,
+    invalidOutput,
     allocationFailure,
 };
 

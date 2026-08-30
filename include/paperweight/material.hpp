@@ -18,6 +18,9 @@ struct Material {
     double gain{0.5};
     Rgba8 lowColour{0, 0, 0, 255};
     Rgba8 highColour{255, 255, 255, 255};
+    double normalStrength{1.0};
+    double roughnessLow{0.25};
+    double roughnessHigh{0.85};
 
     friend constexpr bool operator==(const Material&, const Material&) = default;
 };
@@ -31,6 +34,10 @@ struct MaterialLimits {
     static constexpr std::uint32_t maximumLacunarity = 4;
     static constexpr double minimumGain = 0.1;
     static constexpr double maximumGain = 0.9;
+    static constexpr double minimumNormalStrength = 0.0;
+    static constexpr double maximumNormalStrength = 16.0;
+    static constexpr double minimumRoughness = 0.0;
+    static constexpr double maximumRoughness = 1.0;
     static constexpr std::uint32_t maximumLatticePeriod = 4096;
 };
 
@@ -39,6 +46,9 @@ enum class MaterialParameter {
     octaves,
     lacunarity,
     gain,
+    normalStrength,
+    roughnessLow,
+    roughnessHigh,
 };
 
 enum class MaterialColour {
@@ -57,11 +67,14 @@ struct ParameterMetadata {
     bool integral;
 };
 
-inline constexpr std::array<ParameterMetadata, 4> parameterMetadata{{
+inline constexpr std::array<ParameterMetadata, 7> parameterMetadata{{
     {MaterialParameter::frequency, "noise.frequency", "Frequency", 4.0, 1.0, 64.0, 1.0, true},
     {MaterialParameter::octaves, "noise.octaves", "Octaves", 5.0, 1.0, 8.0, 1.0, true},
     {MaterialParameter::lacunarity, "noise.lacunarity", "Lacunarity", 2.0, 1.0, 4.0, 1.0, true},
     {MaterialParameter::gain, "noise.gain", "Gain", 0.5, 0.1, 0.9, 0.01, false},
+    {MaterialParameter::normalStrength, "normal.strength", "Normal strength", 1.0, 0.0, 16.0, 0.1, false},
+    {MaterialParameter::roughnessLow, "roughness.low", "Roughness low", 0.25, 0.0, 1.0, 0.01, false},
+    {MaterialParameter::roughnessHigh, "roughness.high", "Roughness high", 0.85, 0.0, 1.0, 0.01, false},
 }};
 
 struct ColourParameterMetadata {

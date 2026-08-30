@@ -8,3 +8,6 @@ noise.frequency = 4
 noise.octaves = 5
 noise.lacunarity = 2
 noise.gain = 0.5
+normal.strength = 1
+roughness.low = 0.25
+roughness.high = 0.85

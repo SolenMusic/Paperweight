@@ -25,6 +25,9 @@ enum class Field : std::size_t {
     octaves,
     lacunarity,
     gain,
+    normalStrength,
+    roughnessLow,
+    roughnessHigh,
     count,
 };
 
@@ -38,6 +41,9 @@ constexpr std::array<std::string_view, static_cast<std::size_t>(Field::count)> f
     "noise.octaves",
     "noise.lacunarity",
     "noise.gain",
+    "normal.strength",
+    "roughness.low",
+    "roughness.high",
 };
 
 std::string_view trim(std::string_view value)
@@ -105,10 +111,17 @@ ParseDiagnostic diagnostic(std::size_t line, std::size_t column, std::string mes
 
 std::string formatDouble(double value)
 {
-    std::ostringstream stream;
-    stream.imbue(std::locale::classic());
-    stream << std::setprecision(std::numeric_limits<double>::max_digits10) << value;
-    return stream.str();
+    for (int precision = 1; precision <= std::numeric_limits<double>::max_digits10; ++precision) {
+        std::ostringstream stream;
+        stream.imbue(std::locale::classic());
+        stream << std::setprecision(precision) << value;
+        const auto candidate = stream.str();
+        double parsed = 0.0;
+        if (parseDouble(candidate, parsed) && parsed == value) {
+            return candidate;
+        }
+    }
+    return {};
 }
 
 std::string formatColour(const Rgba8& colour)
@@ -244,6 +257,21 @@ ParseResult parsePmat(std::string_view text)
                     return diagnostic(lineNumber, valueColumn, "noise.gain must be a decimal number");
                 }
                 break;
+            case Field::normalStrength:
+                if (!parseDouble(value, material.normalStrength)) {
+                    return diagnostic(lineNumber, valueColumn, "normal.strength must be a decimal number");
+                }
+                break;
+            case Field::roughnessLow:
+                if (!parseDouble(value, material.roughnessLow)) {
+                    return diagnostic(lineNumber, valueColumn, "roughness.low must be a decimal number");
+                }
+                break;
+            case Field::roughnessHigh:
+                if (!parseDouble(value, material.roughnessHigh)) {
+                    return diagnostic(lineNumber, valueColumn, "roughness.high must be a decimal number");
+                }
+                break;
             case Field::count:
                 break;
             }
@@ -257,8 +285,10 @@ ParseResult parsePmat(std::string_view text)
 
     for (std::size_t index = 0; index < seen.size(); ++index) {
         const auto field = static_cast<Field>(index);
-        const bool optionalColour = field == Field::lowColour || field == Field::highColour;
-        if (!seen[index] && !optionalColour) {
+        const bool optionalForCompatibility = field == Field::lowColour ||
+            field == Field::highColour || field == Field::normalStrength ||
+            field == Field::roughnessLow || field == Field::roughnessHigh;
+        if (!seen[index] && !optionalForCompatibility) {
             return diagnostic(lineNumber + 1, 1, "missing required key '" + std::string(fieldKeys[index]) + "'");
         }
     }
@@ -276,6 +306,18 @@ ParseResult parsePmat(std::string_view text)
                        material.gain < MaterialLimits::minimumGain ||
                        material.gain > MaterialLimits::maximumGain) {
                 relevantField = Field::gain;
+            } else if (!std::isfinite(material.normalStrength) ||
+                       material.normalStrength < MaterialLimits::minimumNormalStrength ||
+                       material.normalStrength > MaterialLimits::maximumNormalStrength) {
+                relevantField = Field::normalStrength;
+            } else if (!std::isfinite(material.roughnessLow) ||
+                       material.roughnessLow < MaterialLimits::minimumRoughness ||
+                       material.roughnessLow > MaterialLimits::maximumRoughness) {
+                relevantField = Field::roughnessLow;
+            } else if (!std::isfinite(material.roughnessHigh) ||
+                       material.roughnessHigh < MaterialLimits::minimumRoughness ||
+                       material.roughnessHigh > MaterialLimits::maximumRoughness) {
+                relevantField = Field::roughnessHigh;
             }
         }
         const auto index = static_cast<std::size_t>(relevantField);
@@ -290,8 +332,11 @@ SerialisationResult serialisePmat(const Material& material)
         return SerialisationError{*error};
     }
     const auto gain = formatDouble(material.gain);
-    if (gain.empty()) {
-        return SerialisationError{"could not format noise.gain"};
+    const auto normalStrength = formatDouble(material.normalStrength);
+    const auto roughnessLow = formatDouble(material.roughnessLow);
+    const auto roughnessHigh = formatDouble(material.roughnessHigh);
+    if (gain.empty() || normalStrength.empty() || roughnessLow.empty() || roughnessHigh.empty()) {
+        return SerialisationError{"could not format a decimal material parameter"};
     }
 
     std::string output;
@@ -306,6 +351,9 @@ SerialisationResult serialisePmat(const Material& material)
     output += "noise.octaves = " + std::to_string(material.octaves) + "\n";
     output += "noise.lacunarity = " + std::to_string(material.lacunarity) + "\n";
     output += "noise.gain = " + gain + "\n";
+    output += "normal.strength = " + normalStrength + "\n";
+    output += "roughness.low = " + roughnessLow + "\n";
+    output += "roughness.high = " + roughnessHigh + "\n";
     return output;
 }
 
