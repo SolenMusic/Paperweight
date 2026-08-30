@@ -1,0 +1,12 @@
+# CMake build trees
+/build*/
+/out/
+
+# macOS and editor metadata
+.DS_Store
+*.xcuserstate
+xcuserdata/
+
+# Local tooling
+.cache/
+compile_commands.json
