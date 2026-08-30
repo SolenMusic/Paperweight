@@ -10,6 +10,21 @@
     <string>com.solenmusic.paperweight</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>pmat</string>
+            </array>
+            <key>CFBundleTypeName</key>
+            <string>Paperweight Material</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSHandlerRank</key>
+            <string>Owner</string>
+        </dict>
+    </array>
     <key>CFBundleName</key>
     <string>Paperweight</string>
     <key>CFBundlePackageType</key>
@@ -24,5 +39,25 @@
     <true/>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.plain-text</string>
+            </array>
+            <key>UTTypeDescription</key>
+            <string>Paperweight Material</string>
+            <key>UTTypeIdentifier</key>
+            <string>com.solenmusic.paperweight.pmat</string>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>pmat</string>
+                </array>
+            </dict>
+        </dict>
+    </array>
 </dict>
 </plist>

@@ -1,6 +1,7 @@
 find_library(APPKIT_FRAMEWORK AppKit REQUIRED)
 
 add_executable(Paperweight MACOSX_BUNDLE
+    ImageBridge.mm
     main.mm
 )
 
@@ -20,3 +21,19 @@ set_target_properties(Paperweight PROPERTIES
     OUTPUT_NAME "Paperweight"
 )
 paperweight_enable_project_warnings(Paperweight)
+
+if(PAPERWEIGHT_BUILD_TESTS)
+    add_executable(paperweight_macos_bridge_tests
+        ImageBridge.mm
+        bridge_tests.mm
+    )
+    target_link_libraries(paperweight_macos_bridge_tests PRIVATE
+        Paperweight::Core
+        ${APPKIT_FRAMEWORK}
+    )
+    target_compile_features(paperweight_macos_bridge_tests PRIVATE cxx_std_20)
+    target_compile_options(paperweight_macos_bridge_tests PRIVATE -fobjc-arc)
+    set_target_properties(paperweight_macos_bridge_tests PROPERTIES CXX_EXTENSIONS OFF)
+    paperweight_enable_project_warnings(paperweight_macos_bridge_tests)
+    add_test(NAME paperweight.macos_bridge COMMAND paperweight_macos_bridge_tests)
+endif()

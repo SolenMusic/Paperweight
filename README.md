@@ -13,10 +13,10 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-Active v0.0.1 development. The first testable preview includes a deterministic,
-mathematically seamless FBM generator and a native macOS editor with live
-controls and 1x1/3x3 tiling views. The `.pmat` format, open/save, and PNG export
-are still to come.
+v0.0.2 adds a versioned, human-readable `.pmat` format, native open/save,
+unsaved-change protection, and lossless PNG export to the deterministic,
+mathematically seamless FBM preview introduced in v0.0.1. The native editor has
+live controls and 1x1/3x3 tiling views.
 
 The staged work is tracked in [GitHub Issues](https://github.com/SolenMusic/Paperweight/issues).
 
@@ -36,13 +36,16 @@ Native macOS AppKit frontend
 
 See [docs/architecture.md](docs/architecture.md) and [docs/roadmap.md](docs/roadmap.md).
 
-## v0.0.1 scope
+## Current scope
 
-The first release will establish the reusable core, deterministic seamless generation, a small native editor, live preview, parameter editing, tiled preview, open/save, PNG export, tests, and documentation.
+The current release establishes the reusable core, deterministic seamless
+generation, a small native editor, live preview, parameter editing, tiled
+preview, `.pmat` open/save, PNG export, tests, and documentation.
 
-Explicitly deferred beyond v0.0.1: Metal, Vulkan, node graphs, PBR workflows, specialised brick or Voronoi generators, and direct game integration.
+Explicitly deferred beyond v0.0.2: Metal, Vulkan, node graphs, PBR workflows,
+specialised brick or Voronoi generators, and direct game integration.
 
-## Planned repository layout
+## Repository layout
 
 ```text
 include/paperweight/  Public portable C++ API
@@ -83,6 +86,10 @@ Open it in Finder or run:
 ```sh
 open build/app/macos/Paperweight.app
 ```
+
+In the app, use File > Open to load a `.pmat` definition, File > Save or Save As
+to store one, and File > Export PNG to write the current 512x512 RGBA8 tile.
+See [the `.pmat` format reference](docs/pmat-format.md) for the text format.
 
 For a universal Intel and Apple Silicon build:
 
