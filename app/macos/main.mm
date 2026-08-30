@@ -7,8 +7,8 @@
 #include <paperweight/pmat.hpp>
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
-#include <cstdlib>
 #include <limits>
 #include <optional>
 #include <string>
@@ -115,6 +115,8 @@
 @property(nonatomic, strong) NSTextField* lacunarityValue;
 @property(nonatomic, strong) NSSlider* gainSlider;
 @property(nonatomic, strong) NSTextField* gainValue;
+@property(nonatomic, strong) NSColorWell* lowColourWell;
+@property(nonatomic, strong) NSColorWell* highColourWell;
 @property(nonatomic, strong) NSSegmentedControl* tilingControl;
 @property(nonatomic, strong) NSTextField* statusLabel;
 @property(nonatomic, strong) NSURL* currentFileURL;
@@ -170,6 +172,54 @@ NSBox* makeSeparator()
     auto* separator = [[NSBox alloc] initWithFrame:NSZeroRect];
     separator.boxType = NSBoxSeparator;
     return separator;
+}
+
+NSColor* colourFromRgba8(const paperweight::Rgba8& colour)
+{
+    constexpr CGFloat scale = 1.0 / 255.0;
+    return [NSColor colorWithSRGBRed:static_cast<CGFloat>(colour.red) * scale
+                               green:static_cast<CGFloat>(colour.green) * scale
+                                blue:static_cast<CGFloat>(colour.blue) * scale
+                               alpha:static_cast<CGFloat>(colour.alpha) * scale];
+}
+
+paperweight::Rgba8 rgba8FromColour(NSColor* colour)
+{
+    NSColor* converted = [colour colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
+    if (converted == nil) {
+        return {};
+    }
+    const auto channel = [](CGFloat value) {
+        return static_cast<std::uint8_t>(std::llround(std::clamp(value, 0.0, 1.0) * 255.0));
+    };
+    return {
+        channel(converted.redComponent),
+        channel(converted.greenComponent),
+        channel(converted.blueComponent),
+        channel(converted.alphaComponent),
+    };
+}
+
+NSStackView* makeColourRow(
+    NSString* title,
+    const paperweight::Rgba8& colour,
+    id target)
+{
+    auto* titleLabel = makeLabel(title);
+    [titleLabel.widthAnchor constraintEqualToConstant:78.0].active = YES;
+
+    auto* colourWell = [[NSColorWell alloc] initWithFrame:NSZeroRect];
+    colourWell.color = colourFromRgba8(colour);
+    colourWell.target = target;
+    colourWell.action = @selector(colourChanged:);
+    colourWell.accessibilityLabel = title;
+    [colourWell.heightAnchor constraintEqualToConstant:28.0].active = YES;
+
+    auto* row = [NSStackView stackViewWithViews:@[ titleLabel, colourWell ]];
+    row.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    row.alignment = NSLayoutAttributeCenterY;
+    row.spacing = 8.0;
+    return row;
 }
 
 } // namespace
@@ -265,6 +315,7 @@ NSBox* makeSeparator()
     self.window.title = @"Untitled.pmat — Paperweight";
     self.window.minSize = NSMakeSize(820, 560);
     self.window.delegate = self;
+    NSColorPanel.sharedColorPanel.showsAlpha = YES;
 
     auto* content = [[NSView alloc] initWithFrame:self.window.contentView.bounds];
     content.translatesAutoresizingMaskIntoConstraints = NO;
@@ -351,6 +402,19 @@ NSBox* makeSeparator()
     self.gainSlider = static_cast<NSSlider*>(gainRow.views[1]);
     self.gainValue = static_cast<NSTextField*>(gainRow.views[2]);
 
+    const auto& lowColourMetadata = paperweight::metadataFor(paperweight::MaterialColour::low);
+    const auto& highColourMetadata = paperweight::metadataFor(paperweight::MaterialColour::high);
+    NSStackView* lowColourRow = makeColourRow(
+        [NSString stringWithUTF8String:lowColourMetadata.displayName.data()],
+        material_.lowColour,
+        self);
+    self.lowColourWell = static_cast<NSColorWell*>(lowColourRow.views[1]);
+    NSStackView* highColourRow = makeColourRow(
+        [NSString stringWithUTF8String:highColourMetadata.displayName.data()],
+        material_.highColour,
+        self);
+    self.highColourWell = static_cast<NSColorWell*>(highColourRow.views[1]);
+
     auto* previewLabel = makeLabel(@"Preview tiling");
     self.tilingControl = [[NSSegmentedControl alloc] initWithFrame:NSZeroRect];
     self.tilingControl.segmentCount = 2;
@@ -381,6 +445,8 @@ NSBox* makeSeparator()
         octavesRow,
         lacunarityRow,
         gainRow,
+        lowColourRow,
+        highColourRow,
         makeSeparator(),
         previewLabel,
         self.tilingControl,
@@ -404,14 +470,14 @@ NSBox* makeSeparator()
 - (void)parameterChanged:(id)sender
 {
     if (sender == self.seedField) {
-        const char* text = self.seedField.stringValue.UTF8String;
-        char* end = nullptr;
-        const unsigned long long parsed = std::strtoull(text, &end, 10);
-        if (text == end || (end != nullptr && *end != '\0')) {
+        const std::string text = self.seedField.stringValue.UTF8String;
+        std::uint64_t parsed = 0;
+        const auto result = std::from_chars(text.data(), text.data() + text.size(), parsed, 10);
+        if (text.empty() || result.ec != std::errc{} || result.ptr != text.data() + text.size()) {
             self.statusLabel.stringValue = @"Seed must be a non-negative integer.";
             return;
         }
-        material_.seed = static_cast<std::uint64_t>(parsed);
+        material_.seed = parsed;
     }
 
     material_.frequency = static_cast<std::uint32_t>(std::llround(self.frequencySlider.doubleValue));
@@ -441,7 +507,18 @@ NSBox* makeSeparator()
     self.octavesSlider.doubleValue = material_.octaves;
     self.lacunaritySlider.doubleValue = material_.lacunarity;
     self.gainSlider.doubleValue = material_.gain;
+    self.lowColourWell.color = colourFromRgba8(material_.lowColour);
+    self.highColourWell.color = colourFromRgba8(material_.highColour);
     [self updateControlLabels];
+    [self regeneratePreview];
+    [self markDirty];
+}
+
+- (void)colourChanged:(id)sender
+{
+    static_cast<void>(sender);
+    material_.lowColour = rgba8FromColour(self.lowColourWell.color);
+    material_.highColour = rgba8FromColour(self.highColourWell.color);
     [self regeneratePreview];
     [self markDirty];
 }
@@ -467,6 +544,8 @@ NSBox* makeSeparator()
     self.octavesSlider.doubleValue = material_.octaves;
     self.lacunaritySlider.doubleValue = material_.lacunarity;
     self.gainSlider.doubleValue = material_.gain;
+    self.lowColourWell.color = colourFromRgba8(material_.lowColour);
+    self.highColourWell.color = colourFromRgba8(material_.highColour);
     [self updateControlLabels];
     [self regeneratePreview];
 }
@@ -478,7 +557,7 @@ NSBox* makeSeparator()
     if (const auto* image = std::get_if<paperweight::Image>(&result)) {
         [self.previewView setGeneratedImage:*image];
         generatedImage_ = *image;
-        self.statusLabel.stringValue = @"512 × 512 RGBA8 — mathematically seamless";
+        self.statusLabel.stringValue = @"512 × 512 coloured RGBA8 — mathematically seamless";
         self.statusLabel.textColor = NSColor.secondaryLabelColor;
         return;
     }

@@ -64,9 +64,9 @@ std::uint64_t checksum(std::span<const paperweight::Rgba8> pixels)
 
 void testVersion()
 {
-    constexpr paperweight::Version expected{0, 0, 2};
+    constexpr paperweight::Version expected{0, 0, 1};
     static_assert(paperweight::currentVersion == expected);
-    expect(paperweight::versionString() == "0.0.2", "version string is 0.0.2");
+    expect(paperweight::versionString() == "0.0.1", "version string is 0.0.1");
 }
 
 void testImage()
@@ -141,6 +141,10 @@ void testMaterialAndFbm()
     const auto& gainMetadata = paperweight::metadataFor(paperweight::MaterialParameter::gain);
     expect(gainMetadata.key == "noise.gain" && gainMetadata.defaultValue == material.gain,
            "parameter metadata describes the material defaults");
+    const auto& lowColourMetadata = paperweight::metadataFor(paperweight::MaterialColour::low);
+    expect(lowColourMetadata.key == "colour.low" &&
+               lowColourMetadata.defaultValue == material.lowColour,
+           "colour metadata describes the material defaults");
 
     auto invalid = material;
     invalid.octaves = 0;
@@ -208,6 +212,26 @@ void testGenerator()
         expect(checksum(first.pixels()) != checksum(changed->pixels()), "seed changes generated pixels");
     }
 
+    auto colouredRequest = request;
+    colouredRequest.material.lowColour = {20, 40, 80, 64};
+    colouredRequest.material.highColour = {240, 180, 100, 224};
+    const auto colouredA = paperweight::generate(colouredRequest);
+    const auto colouredB = paperweight::generate(colouredRequest);
+    const auto* colouredImageA = std::get_if<paperweight::Image>(&colouredA);
+    const auto* colouredImageB = std::get_if<paperweight::Image>(&colouredB);
+    expect(colouredImageA != nullptr && colouredImageB != nullptr &&
+               std::equal(
+                   colouredImageA->pixels().begin(),
+                   colouredImageA->pixels().end(),
+                   colouredImageB->pixels().begin()),
+           "custom two-colour generation is byte-deterministic");
+    if (colouredImageA != nullptr) {
+        const auto pixel = colouredImageA->pixels().front();
+        expect(pixel.red >= 20 && pixel.red <= 240 && pixel.green >= 40 && pixel.green <= 180 &&
+                   pixel.blue >= 80 && pixel.blue <= 100 && pixel.alpha >= 64 && pixel.alpha <= 224,
+               "generated channels interpolate within the selected colour endpoints");
+    }
+
     for (const auto [width, height] : std::array{
              std::pair<std::uint32_t, std::uint32_t>{1, 1},
              std::pair<std::uint32_t, std::uint32_t>{17, 29},
@@ -237,6 +261,8 @@ void testPmat()
         "pmat.version = 1\n"
         "material.type = fbm\n"
         "material.seed = 18431\n"
+        "colour.low = 0x000000FF\n"
+        "colour.high = 0xFFFFFFFF\n"
         "noise.frequency = 4\n"
         "noise.octaves = 5\n"
         "noise.lacunarity = 2\n"
@@ -273,10 +299,34 @@ void testPmat()
                "checked-in example retains the default golden image checksum");
     }
 
+    std::ifstream emberFile("ember.pmat", std::ios::binary);
+    const std::string emberText(
+        std::istreambuf_iterator<char>{emberFile},
+        std::istreambuf_iterator<char>{});
+    const auto ember = paperweight::parsePmat(emberText);
+    const auto* emberMaterial = std::get_if<paperweight::Material>(&ember);
+    expect(emberMaterial != nullptr && emberMaterial->seed == 918273 &&
+               emberMaterial->lowColour == paperweight::Rgba8{22, 12, 40, 255} &&
+               emberMaterial->highColour == paperweight::Rgba8{255, 179, 71, 255},
+           "checked-in coloured example parses with its expected endpoints");
+    if (emberMaterial != nullptr) {
+        const auto firstEmber = paperweight::generate({*emberMaterial, 37, 29});
+        const auto secondEmber = paperweight::generate({*emberMaterial, 37, 29});
+        const auto* firstImage = std::get_if<paperweight::Image>(&firstEmber);
+        const auto* secondImage = std::get_if<paperweight::Image>(&secondEmber);
+        expect(firstImage != nullptr && secondImage != nullptr &&
+                   std::equal(
+                       firstImage->pixels().begin(),
+                       firstImage->pixels().end(),
+                       secondImage->pixels().begin()),
+               "checked-in coloured example generates deterministically");
+    }
+
     const std::array roundTripMaterials{
         paperweight::Material{0, 1, 1, 1, 0.1},
         paperweight::Material{927364821, 13, 4, 2, 0.37},
         paperweight::Material{std::numeric_limits<std::uint64_t>::max(), 1, 7, 4, 0.9},
+        paperweight::Material{42, 8, 3, 2, 0.625, {1, 2, 3, 4}, {250, 240, 230, 220}},
     };
     for (const auto& candidate : roundTripMaterials) {
         const auto text = paperweight::serialisePmat(candidate);
@@ -287,6 +337,18 @@ void testPmat()
             expect(std::holds_alternative<paperweight::Material>(roundTrip) &&
                        std::get<paperweight::Material>(roundTrip) == candidate,
                    "boundary and custom materials round-trip exactly");
+            if (const auto* reparsed = std::get_if<paperweight::Material>(&roundTrip)) {
+                const auto directImage = paperweight::generate({candidate, 23, 17});
+                const auto fileImage = paperweight::generate({*reparsed, 23, 17});
+                const auto* directPixels = std::get_if<paperweight::Image>(&directImage);
+                const auto* filePixels = std::get_if<paperweight::Image>(&fileImage);
+                expect(directPixels != nullptr && filePixels != nullptr &&
+                           std::equal(
+                               directPixels->pixels().begin(),
+                               directPixels->pixels().end(),
+                               filePixels->pixels().begin()),
+                       "saved definition and standalone material produce identical pixels");
+            }
         }
     }
 
@@ -306,6 +368,9 @@ void testPmat()
         expect(material->seed == 99 && material->frequency == 7 && material->octaves == 4 &&
                    material->lacunarity == 3 && material->gain == 0.75,
                "flexible input produces expected values");
+        expect(material->lowColour == paperweight::Rgba8{0, 0, 0, 255} &&
+                   material->highColour == paperweight::Rgba8{255, 255, 255, 255},
+               "preview-era files without colour fields retain black-to-white defaults");
     }
 
     const auto expectDiagnostic = [](std::string_view text, std::size_t line, std::string_view phrase) {
@@ -325,6 +390,12 @@ void testPmat()
     expectDiagnostic("pmat.version = nope\n", 1, "integer");
     expectDiagnostic("pmat.version = 1\n", 3, "missing required key");
     expectDiagnostic("pmat.version = 1 = 2\n", 1, "exactly one");
+    expectDiagnostic(
+        "pmat.version = 1\nmaterial.type = fbm\nmaterial.seed = 0\n"
+        "colour.low = blue\nnoise.frequency = 1\nnoise.octaves = 1\n"
+        "noise.lacunarity = 1\nnoise.gain = 0.5\n",
+        4,
+        "0xRRGGBBAA");
     expectDiagnostic(
         "pmat.version = 1\nmaterial.type = fbm\nmaterial.seed = 0\n"
         "noise.frequency = 65\nnoise.octaves = 1\nnoise.lacunarity = 1\nnoise.gain = 0.5\n",

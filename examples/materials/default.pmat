@@ -2,6 +2,8 @@
 pmat.version = 1
 material.type = fbm
 material.seed = 18431
+colour.low = 0x000000FF
+colour.high = 0xFFFFFFFF
 noise.frequency = 4
 noise.octaves = 5
 noise.lacunarity = 2

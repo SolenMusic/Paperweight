@@ -19,6 +19,8 @@ enum class Field : std::size_t {
     version,
     type,
     seed,
+    lowColour,
+    highColour,
     frequency,
     octaves,
     lacunarity,
@@ -30,6 +32,8 @@ constexpr std::array<std::string_view, static_cast<std::size_t>(Field::count)> f
     "pmat.version",
     "material.type",
     "material.seed",
+    "colour.low",
+    "colour.high",
     "noise.frequency",
     "noise.octaves",
     "noise.lacunarity",
@@ -73,6 +77,27 @@ bool parseDouble(std::string_view value, double& output)
     return stream && stream.peek() == std::char_traits<char>::eof();
 }
 
+bool parseColour(std::string_view value, Rgba8& output)
+{
+    if (value.size() != 10 || value[0] != '0' || (value[1] != 'x' && value[1] != 'X')) {
+        return false;
+    }
+    std::uint32_t packed = 0;
+    const char* begin = value.data() + 2;
+    const char* end = value.data() + value.size();
+    const auto result = std::from_chars(begin, end, packed, 16);
+    if (result.ec != std::errc{} || result.ptr != end) {
+        return false;
+    }
+    output = {
+        static_cast<std::uint8_t>((packed >> 24U) & 0xffU),
+        static_cast<std::uint8_t>((packed >> 16U) & 0xffU),
+        static_cast<std::uint8_t>((packed >> 8U) & 0xffU),
+        static_cast<std::uint8_t>(packed & 0xffU),
+    };
+    return true;
+}
+
 ParseDiagnostic diagnostic(std::size_t line, std::size_t column, std::string message)
 {
     return ParseDiagnostic{line, column, std::move(message)};
@@ -84,6 +109,18 @@ std::string formatDouble(double value)
     stream.imbue(std::locale::classic());
     stream << std::setprecision(std::numeric_limits<double>::max_digits10) << value;
     return stream.str();
+}
+
+std::string formatColour(const Rgba8& colour)
+{
+    constexpr std::string_view digits = "0123456789ABCDEF";
+    std::string output{"0x00000000"};
+    const std::array channels{colour.red, colour.green, colour.blue, colour.alpha};
+    for (std::size_t index = 0; index < channels.size(); ++index) {
+        output[2 + index * 2] = digits[channels[index] >> 4U];
+        output[3 + index * 2] = digits[channels[index] & 0x0fU];
+    }
+    return output;
 }
 
 } // namespace
@@ -171,6 +208,22 @@ ParseResult parsePmat(std::string_view text)
                     return diagnostic(lineNumber, valueColumn, "material.seed must be an unsigned integer");
                 }
                 break;
+            case Field::lowColour:
+                if (!parseColour(value, material.lowColour)) {
+                    return diagnostic(
+                        lineNumber,
+                        valueColumn,
+                        "colour.low must use 0xRRGGBBAA hexadecimal notation");
+                }
+                break;
+            case Field::highColour:
+                if (!parseColour(value, material.highColour)) {
+                    return diagnostic(
+                        lineNumber,
+                        valueColumn,
+                        "colour.high must use 0xRRGGBBAA hexadecimal notation");
+                }
+                break;
             case Field::frequency:
                 if (!parseInteger(value, material.frequency)) {
                     return diagnostic(lineNumber, valueColumn, "noise.frequency must be an integer");
@@ -203,7 +256,9 @@ ParseResult parsePmat(std::string_view text)
     }
 
     for (std::size_t index = 0; index < seen.size(); ++index) {
-        if (!seen[index]) {
+        const auto field = static_cast<Field>(index);
+        const bool optionalColour = field == Field::lowColour || field == Field::highColour;
+        if (!seen[index] && !optionalColour) {
             return diagnostic(lineNumber + 1, 1, "missing required key '" + std::string(fieldKeys[index]) + "'");
         }
     }
@@ -245,6 +300,8 @@ SerialisationResult serialisePmat(const Material& material)
     output += "pmat.version = " + std::to_string(currentPmatVersion) + "\n";
     output += "material.type = fbm\n";
     output += "material.seed = " + std::to_string(material.seed) + "\n";
+    output += "colour.low = " + formatColour(material.lowColour) + "\n";
+    output += "colour.high = " + formatColour(material.highColour) + "\n";
     output += "noise.frequency = " + std::to_string(material.frequency) + "\n";
     output += "noise.octaves = " + std::to_string(material.octaves) + "\n";
     output += "noise.lacunarity = " + std::to_string(material.lacunarity) + "\n";

@@ -6,6 +6,8 @@
 #include <string>
 #include <string_view>
 
+#include <paperweight/image.hpp>
+
 namespace paperweight {
 
 struct Material {
@@ -14,6 +16,8 @@ struct Material {
     std::uint32_t octaves{5};
     std::uint32_t lacunarity{2};
     double gain{0.5};
+    Rgba8 lowColour{0, 0, 0, 255};
+    Rgba8 highColour{255, 255, 255, 255};
 
     friend constexpr bool operator==(const Material&, const Material&) = default;
 };
@@ -37,6 +41,11 @@ enum class MaterialParameter {
     gain,
 };
 
+enum class MaterialColour {
+    low,
+    high,
+};
+
 struct ParameterMetadata {
     MaterialParameter parameter;
     std::string_view key;
@@ -55,6 +64,18 @@ inline constexpr std::array<ParameterMetadata, 4> parameterMetadata{{
     {MaterialParameter::gain, "noise.gain", "Gain", 0.5, 0.1, 0.9, 0.01, false},
 }};
 
+struct ColourParameterMetadata {
+    MaterialColour colour;
+    std::string_view key;
+    std::string_view displayName;
+    Rgba8 defaultValue;
+};
+
+inline constexpr std::array<ColourParameterMetadata, 2> colourParameterMetadata{{
+    {MaterialColour::low, "colour.low", "Low colour", {0, 0, 0, 255}},
+    {MaterialColour::high, "colour.high", "High colour", {255, 255, 255, 255}},
+}};
+
 [[nodiscard]] constexpr const ParameterMetadata& metadataFor(MaterialParameter parameter)
 {
     for (const auto& metadata : parameterMetadata) {
@@ -63,6 +84,16 @@ inline constexpr std::array<ParameterMetadata, 4> parameterMetadata{{
         }
     }
     return parameterMetadata.front();
+}
+
+[[nodiscard]] constexpr const ColourParameterMetadata& metadataFor(MaterialColour colour)
+{
+    for (const auto& metadata : colourParameterMetadata) {
+        if (metadata.colour == colour) {
+            return metadata;
+        }
+    }
+    return colourParameterMetadata.front();
 }
 
 [[nodiscard]] std::optional<std::string> validateMaterial(const Material& material);

@@ -26,9 +26,10 @@ the generator API, leaving room for greyscale, higher precision, floating-point,
 and non-colour data formats later.
 
 The initial generator combines platform-stable integer hashing, periodic 2D
-value noise, and normalised periodic FBM. Texture samples are taken at pixel
-centres over one mathematical period; the algorithm wraps, rather than copying
-or repairing image edges.
+value noise, and normalised periodic FBM. It interpolates that shared scalar
+source component-by-component between two RGBA8 colours. Texture samples are
+taken at pixel centres over one mathematical period; the algorithm wraps,
+rather than copying or repairing image edges.
 
 ### macOS frontend
 
@@ -51,7 +52,7 @@ handle paths, while parsing and serialisation remain in portable C++.
 `.pmat` is a human-readable, versioned text format. Parsing and serialisation live in the portable core. Round trips should be stable and errors should identify useful source locations.
 
 The format version is deliberately independent of the application version.
-Paperweight v0.0.2 reads and writes `.pmat` format version 1. Unknown keys and
+Paperweight v0.0.1 reads and writes `.pmat` format version 1. Unknown keys and
 unsupported format versions fail explicitly instead of being silently ignored.
 See [pmat-format.md](pmat-format.md).
 
@@ -66,4 +67,6 @@ See [pmat-format.md](pmat-format.md).
 
 ## Deferred architecture
 
-WebAssembly bindings, game-engine adapters, GPU backends, node graphs, PBR channel sets, and specialised material generators are deliberately outside v0.0.2.
+Height/normal/roughness outputs, layers, warping, specialised generators,
+material graphs, WebAssembly bindings, game-engine adapters, and GPU backends
+are deliberately outside v0.0.1.

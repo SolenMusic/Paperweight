@@ -10,6 +10,8 @@ diffable, and small enough to embed alongside game assets.
 pmat.version = 1
 material.type = fbm
 material.seed = 18431
+colour.low = 0x000000FF
+colour.high = 0xFFFFFFFF
 noise.frequency = 4
 noise.octaves = 5
 noise.lacunarity = 2
@@ -27,7 +29,9 @@ round-trips the material's values exactly.
 - A `#` starts a comment that continues to the end of the line.
 - LF and CRLF line endings are accepted.
 - Keys may appear in any order when reading.
-- Every key is required and may appear only once.
+- Every canonical key may appear only once. The two colour keys are optional
+  only for compatibility with historical preview files; all other keys are
+  required.
 - Unknown keys are errors in format version 1.
 - Input must be valid UTF-8 when opened by the Mac app.
 
@@ -42,6 +46,8 @@ no material; it never returns a partially accepted definition.
 | `pmat.version` | File-format version | `1` |
 | `material.type` | Generator model | `fbm` |
 | `material.seed` | Deterministic seed | Unsigned 64-bit integer |
+| `colour.low` | Colour at scalar value zero | `0xRRGGBBAA` hexadecimal |
+| `colour.high` | Colour at scalar value one | `0xRRGGBBAA` hexadecimal |
 | `noise.frequency` | Base lattice frequency | Integer from 1 to 64 |
 | `noise.octaves` | FBM octave count | Integer from 1 to 8 |
 | `noise.lacunarity` | Frequency multiplier per octave | Integer from 1 to 4 |
@@ -49,14 +55,19 @@ no material; it never returns a partially accepted definition.
 
 The combination of frequency, octaves, and lacunarity must keep every lattice
 period at or below 4096. This is the same validation used by the generator.
+Colour channels are interpolated component-by-component in RGBA8 space.
 
 ## Compatibility policy
 
 The `.pmat` format version and Paperweight application version are separate.
-Paperweight v0.0.2 supports format version 1. A reader rejects unsupported
+Paperweight v0.0.1 supports format version 1. A reader rejects unsupported
 versions and unknown fields so that it cannot quietly reinterpret a future
 material. A future compatible extension can define a new version and an
 explicit migration path.
+
+The historical preview wrote format-version-1 files before the two colour keys
+were introduced. The reader accepts those two keys as absent and supplies the
+black-to-white defaults; canonical output always writes both keys.
 
 The portable entry points are `paperweight::parsePmat` and
 `paperweight::serialisePmat` in `include/paperweight/pmat.hpp`.
