@@ -14,5 +14,10 @@ namespace paperweight {
     std::uint64_t seed);
 
 [[nodiscard]] double periodicFbm2D(double u, double v, const Material& material);
+[[nodiscard]] double periodicFbm2D(
+    double u,
+    double v,
+    const Material& material,
+    std::uint64_t seed);
 
 } // namespace paperweight

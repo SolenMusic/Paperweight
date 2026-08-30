@@ -1,6 +1,8 @@
 #include <paperweight/generator.hpp>
 #include <paperweight/hash.hpp>
 #include <paperweight/image.hpp>
+#include <paperweight/evaluation.hpp>
+#include <paperweight/layer.hpp>
 #include <paperweight/material.hpp>
 #include <paperweight/noise.hpp>
 #include <paperweight/pmat.hpp>
@@ -62,11 +64,27 @@ std::uint64_t checksum(std::span<const paperweight::Rgba8> pixels)
     return hash;
 }
 
+paperweight::Material materialWithNoiseParameters(
+    std::uint64_t seed,
+    std::uint32_t frequency,
+    std::uint32_t octaves,
+    std::uint32_t lacunarity,
+    double gain)
+{
+    paperweight::Material material;
+    material.seed = seed;
+    material.frequency = frequency;
+    material.octaves = octaves;
+    material.lacunarity = lacunarity;
+    material.gain = gain;
+    return material;
+}
+
 void testVersion()
 {
-    constexpr paperweight::Version expected{0, 0, 2};
+    constexpr paperweight::Version expected{0, 0, 3};
     static_assert(paperweight::currentVersion == expected);
-    expect(paperweight::versionString() == "0.0.2", "version string is 0.0.2");
+    expect(paperweight::versionString() == "0.0.3", "version string is 0.0.3");
 }
 
 void testImage()
@@ -174,9 +192,10 @@ void testMaterialAndFbm()
     expect(sample >= 0.0 && sample <= 1.0, "normalised FBM stays in range");
 
     const std::array representativeMaterials{
-        paperweight::Material{0, 1, 1, 1, 0.1},
-        paperweight::Material{42, 7, 4, 2, 0.37},
-        paperweight::Material{std::numeric_limits<std::uint64_t>::max(), 1, 7, 4, 0.9},
+        materialWithNoiseParameters(0, 1, 1, 1, 0.1),
+        materialWithNoiseParameters(42, 7, 4, 2, 0.37),
+        materialWithNoiseParameters(
+            std::numeric_limits<std::uint64_t>::max(), 1, 7, 4, 0.9),
     };
     for (const auto& candidate : representativeMaterials) {
         for (const auto [u, v] : std::array{
@@ -192,6 +211,133 @@ void testMaterialAndFbm()
                        "representative FBM repeats on y");
         }
     }
+}
+
+void testLayerEvaluation()
+{
+    paperweight::Material legacy;
+    const auto legacySample = paperweight::evaluateMaterialSample(legacy, 0.375, 0.625);
+
+    auto explicitNoise = legacy;
+    explicitNoise.layers.push_back(paperweight::makeNoiseLayer());
+    const auto explicitSample = paperweight::evaluateMaterialSample(explicitNoise, 0.375, 0.625);
+    expect(explicitSample == legacySample,
+           "an explicit base-noise layer exactly preserves legacy evaluation");
+
+    explicitNoise.layers.front().operation = paperweight::NoiseOperation{41};
+    const auto offsetSample = paperweight::evaluateMaterialSample(explicitNoise, 0.375, 0.625);
+    expect(offsetSample != legacySample, "a noise-layer seed offset changes its sample");
+    expect(paperweight::evaluateMaterialSample(explicitNoise, 0.375, 0.625) == offsetSample,
+           "layer evaluation is deterministic");
+    expectNear(
+        offsetSample.scalar,
+        paperweight::evaluateMaterialSample(explicitNoise, 1.375, 0.625).scalar,
+        1.0e-12,
+        "layered evaluation remains periodic on x");
+    expectNear(
+        offsetSample.scalar,
+        paperweight::evaluateMaterialSample(explicitNoise, 0.375, 1.625).scalar,
+        1.0e-12,
+        "layered evaluation remains periodic on y");
+
+    const auto solid = paperweight::evaluateOperation(
+        paperweight::SolidColourOperation{{255, 0, 0, 128}},
+        {legacy, 0.0, 0.0},
+        {});
+    expectNear(solid.scalar, 0.2126, 1.0e-12,
+               "solid-colour scalar uses Rec. 709 luminance");
+    expectNear(solid.red, 1.0, 1.0e-12, "solid-colour operation preserves red");
+    expectNear(solid.alpha, 128.0 / 255.0, 1.0e-12,
+               "solid-colour operation preserves alpha");
+
+    const paperweight::EvaluatedSample background{0.25, 0.2, 0.4, 0.6, 0.8};
+    const paperweight::EvaluatedSample source{0.8, 0.9, 0.5, 0.25, 0.4};
+    const auto blended = paperweight::compositeSamples(
+        background, source, paperweight::CompositeMode::blend, 0.5);
+    expectNear(blended.scalar, 0.525, 1.0e-12, "blend interpolates scalar values");
+    expectNear(blended.red, 0.55, 1.0e-12, "blend interpolates colour channels");
+    const auto added = paperweight::compositeSamples(
+        background, source, paperweight::CompositeMode::add, 0.5);
+    expectNear(added.scalar, 0.65, 1.0e-12, "add combines scalar values");
+    expectNear(added.red, 0.65, 1.0e-12, "add combines colour channels");
+    const auto multiplied = paperweight::compositeSamples(
+        background, source, paperweight::CompositeMode::multiply, 0.5);
+    expectNear(multiplied.scalar, 0.225, 1.0e-12, "multiply combines scalar values");
+    expectNear(multiplied.red, 0.19, 1.0e-12, "multiply combines colour channels");
+
+    paperweight::Material disabled;
+    disabled.layers = {
+        paperweight::makeSolidColourLayer({32, 64, 96, 255}),
+        paperweight::MaterialLayer{
+            false,
+            1.0,
+            paperweight::CompositeMode::blend,
+            paperweight::SolidColourOperation{{255, 255, 255, 255}}},
+    };
+    const auto withoutDisabled = disabled;
+    auto baseOnly = withoutDisabled;
+    baseOnly.layers.pop_back();
+    expect(paperweight::evaluateMaterialSample(disabled, 0.2, 0.7) ==
+               paperweight::evaluateMaterialSample(baseOnly, 0.2, 0.7),
+           "disabled layers do not affect evaluation");
+
+    paperweight::Material ordered;
+    ordered.layers = {
+        paperweight::makeSolidColourLayer({255, 0, 0, 255}),
+        paperweight::MaterialLayer{
+            true,
+            0.5,
+            paperweight::CompositeMode::blend,
+            paperweight::SolidColourOperation{{0, 0, 255, 255}}},
+    };
+    auto reversed = ordered;
+    std::reverse(reversed.layers.begin(), reversed.layers.end());
+    expect(paperweight::evaluateMaterialSample(ordered, 0.0, 0.0) !=
+               paperweight::evaluateMaterialSample(reversed, 0.0, 0.0),
+           "layer order affects the accumulated result");
+
+    paperweight::Material adjusted;
+    adjusted.layers = {
+        paperweight::makeSolidColourLayer({64, 64, 64, 255}),
+        paperweight::MaterialLayer{
+            true,
+            1.0,
+            paperweight::CompositeMode::blend,
+            paperweight::LevelsOperation{0.0, 1.0, 2.0}},
+    };
+    const auto levelled = paperweight::evaluateMaterialSample(adjusted, 0.0, 0.0);
+    expectNear(levelled.red, std::sqrt(64.0 / 255.0), 1.0e-12,
+               "levels transforms the accumulated colour");
+
+    adjusted.layers.back().operation = paperweight::ThresholdOperation{0.6};
+    const auto below = paperweight::evaluateMaterialSample(adjusted, 0.0, 0.0);
+    expect(below.scalar == 0.0 && below.red == 0.0,
+           "threshold selects the low endpoint below its cut-off");
+    adjusted.layers.back().operation = paperweight::ThresholdOperation{0.2};
+    const auto above = paperweight::evaluateMaterialSample(adjusted, 0.0, 0.0);
+    expect(above.scalar == 1.0 && above.red == 1.0,
+           "threshold selects the high endpoint at or above its cut-off");
+
+    adjusted.layers.back().opacity = 0.0;
+    adjusted.layers.back().operation = paperweight::SolidColourOperation{{255, 0, 0, 255}};
+    adjusted.layers.pop_back();
+    const auto beforeTransparentLayer = paperweight::evaluateMaterialSample(adjusted, 0.0, 0.0);
+    adjusted.layers.push_back(paperweight::MaterialLayer{
+        true,
+        0.0,
+        paperweight::CompositeMode::blend,
+        paperweight::SolidColourOperation{{255, 0, 0, 255}}});
+    expect(paperweight::evaluateMaterialSample(adjusted, 0.0, 0.0) == beforeTransparentLayer,
+           "zero-opacity layers are exact no-ops");
+
+    auto invalid = adjusted;
+    invalid.layers.back().opacity = 1.1;
+    expect(paperweight::validateMaterial(invalid).has_value(),
+           "invalid layer opacity is diagnosed");
+    invalid = adjusted;
+    invalid.layers.back().operation = paperweight::LevelsOperation{0.8, 0.2, 1.0};
+    expect(paperweight::validateMaterial(invalid).has_value(),
+           "invalid levels bounds are diagnosed");
 }
 
 void testGenerator()
@@ -355,6 +501,45 @@ void testGenerator()
                "roughness maps the shared height sample between its endpoints");
     }
 
+    auto layeredMaterial = paperweight::Material{};
+    layeredMaterial.layers = {
+        paperweight::makeNoiseLayer(),
+        paperweight::MaterialLayer{
+            true,
+            1.0,
+            paperweight::CompositeMode::blend,
+            paperweight::LevelsOperation{0.15, 0.85, 1.2}},
+        paperweight::MaterialLayer{
+            true,
+            0.3,
+            paperweight::CompositeMode::multiply,
+            paperweight::SolidColourOperation{{220, 120, 80, 255}}},
+    };
+    for (const auto output : std::array{
+             paperweight::MaterialOutput::colour,
+             paperweight::MaterialOutput::height,
+             paperweight::MaterialOutput::normal,
+             paperweight::MaterialOutput::roughness,
+         }) {
+        const paperweight::GenerationRequest layeredRequest{layeredMaterial, 31, 27, output};
+        const auto layeredA = paperweight::generate(layeredRequest);
+        const auto layeredB = paperweight::generate(layeredRequest);
+        const auto* imageA = std::get_if<paperweight::Image>(&layeredA);
+        const auto* imageB = std::get_if<paperweight::Image>(&layeredB);
+        expect(imageA != nullptr && imageB != nullptr &&
+                   checksum(imageA->pixels()) == checksum(imageB->pixels()),
+               "every layered material output is byte-deterministic");
+    }
+    const auto layeredHeight = paperweight::generate(
+        {layeredMaterial, 31, 27, paperweight::MaterialOutput::height});
+    if (const auto* image = std::get_if<paperweight::Image>(&layeredHeight)) {
+        const auto sample = paperweight::evaluateMaterialSample(
+            layeredMaterial, 0.5 / 31.0, 0.5 / 27.0);
+        const auto encoded = static_cast<std::uint8_t>(std::round(sample.scalar * 255.0));
+        expect(image->row(0)[0] == paperweight::Rgba8{encoded, encoded, encoded, 255},
+               "layered height output encodes the portable evaluator's scalar");
+    }
+
     for (const auto [width, height] : std::array{
              std::pair<std::uint32_t, std::uint32_t>{1, 1},
              std::pair<std::uint32_t, std::uint32_t>{17, 29},
@@ -388,7 +573,7 @@ void testPmat()
 {
     constexpr std::string_view canonical =
         "# Paperweight procedural material\n"
-        "pmat.version = 1\n"
+        "pmat.version = 2\n"
         "material.type = fbm\n"
         "material.seed = 18431\n"
         "colour.low = 0x000000FF\n"
@@ -399,7 +584,8 @@ void testPmat()
         "noise.gain = 0.5\n"
         "normal.strength = 1\n"
         "roughness.low = 0.25\n"
-        "roughness.high = 0.85\n";
+        "roughness.high = 0.85\n"
+        "layers.count = 0\n";
 
     const auto parsed = paperweight::parsePmat(canonical);
     expect(std::holds_alternative<paperweight::Material>(parsed), "canonical .pmat parses");
@@ -423,8 +609,10 @@ void testPmat()
     expect(exampleFile.good() || exampleFile.eof(), "canonical example file is readable");
     const auto example = paperweight::parsePmat(exampleText);
     expect(std::holds_alternative<paperweight::Material>(example) &&
-               std::get<paperweight::Material>(example) == paperweight::Material{},
-           "checked-in canonical example parses as the default material");
+               std::get<paperweight::Material>(example).layers.size() == 1 &&
+               std::holds_alternative<paperweight::NoiseOperation>(
+                   std::get<paperweight::Material>(example).layers.front().operation),
+           "checked-in canonical example contains an explicit base-noise layer");
     if (const auto* material = std::get_if<paperweight::Material>(&example)) {
         const auto generated = paperweight::generate({*material, 48, 32});
         const auto* image = std::get_if<paperweight::Image>(&generated);
@@ -455,10 +643,30 @@ void testPmat()
                "checked-in coloured example generates deterministically");
     }
 
+    auto layeredRoundTrip = paperweight::Material{};
+    layeredRoundTrip.layers = {
+        paperweight::makeNoiseLayer(7),
+        paperweight::MaterialLayer{
+            false,
+            0.35,
+            paperweight::CompositeMode::add,
+            paperweight::SolidColourOperation{{12, 34, 56, 78}}},
+        paperweight::MaterialLayer{
+            true,
+            0.8,
+            paperweight::CompositeMode::multiply,
+            paperweight::LevelsOperation{0.15, 0.9, 1.25}},
+        paperweight::MaterialLayer{
+            true,
+            0.6,
+            paperweight::CompositeMode::blend,
+            paperweight::ThresholdOperation{0.42}},
+    };
     const std::array roundTripMaterials{
-        paperweight::Material{0, 1, 1, 1, 0.1},
-        paperweight::Material{927364821, 13, 4, 2, 0.37},
-        paperweight::Material{std::numeric_limits<std::uint64_t>::max(), 1, 7, 4, 0.9},
+        materialWithNoiseParameters(0, 1, 1, 1, 0.1),
+        materialWithNoiseParameters(927364821, 13, 4, 2, 0.37),
+        materialWithNoiseParameters(
+            std::numeric_limits<std::uint64_t>::max(), 1, 7, 4, 0.9),
         paperweight::Material{
             42,
             8,
@@ -469,7 +677,9 @@ void testPmat()
             {250, 240, 230, 220},
             4.5,
             0.15,
-            0.95},
+            0.95,
+            {}},
+        layeredRoundTrip,
     };
     for (const auto& candidate : roundTripMaterials) {
         const auto text = paperweight::serialisePmat(candidate);
@@ -524,13 +734,17 @@ void testPmat()
         expect(std::holds_alternative<paperweight::ParseDiagnostic>(result),
                "invalid .pmat produces a diagnostic");
         if (const auto* error = std::get_if<paperweight::ParseDiagnostic>(&result)) {
-            expect(error->line == line && error->column > 0 &&
-                       error->message.find(phrase) != std::string::npos,
-                   "diagnostic contains source position and reason");
+            const bool matches = error->line == line && error->column > 0 &&
+                error->message.find(phrase) != std::string::npos;
+            if (!matches) {
+                std::cerr << "Expected diagnostic line " << line << " containing '" << phrase
+                          << "', got line " << error->line << ": " << error->message << '\n';
+            }
+            expect(matches, "diagnostic contains source position and reason");
         }
     };
 
-    expectDiagnostic("pmat.version = 2\n", 1, "unsupported");
+    expectDiagnostic("pmat.version = 3\n", 1, "unsupported");
     expectDiagnostic("unknown.key = 1\n", 1, "unknown key");
     expectDiagnostic("pmat.version = 1\npmat.version = 1\n", 2, "duplicate");
     expectDiagnostic("pmat.version = nope\n", 1, "integer");
@@ -547,6 +761,38 @@ void testPmat()
         "noise.frequency = 65\nnoise.octaves = 1\nnoise.lacunarity = 1\nnoise.gain = 0.5\n",
         4,
         "frequency");
+    expectDiagnostic(
+        std::string(canonical) + "layer.0.enabled = true\n",
+        17,
+        "exceeds layers.count");
+
+    auto invalidLevelsMaterial = paperweight::Material{};
+    invalidLevelsMaterial.layers = {paperweight::makeLevelsLayer()};
+    auto invalidLevelsText = std::get<std::string>(
+        paperweight::serialisePmat(invalidLevelsMaterial));
+    const auto highPosition = invalidLevelsText.find("layer.0.levels.input_high = 1");
+    expect(highPosition != std::string::npos, "levels fixture contains its high input");
+    if (highPosition != std::string::npos) {
+        invalidLevelsText.replace(
+            highPosition,
+            std::string("layer.0.levels.input_high = 1").size(),
+            "layer.0.levels.input_high = 0");
+        expectDiagnostic(invalidLevelsText, 20, "greater than input low");
+    }
+
+    auto invalidThresholdMaterial = paperweight::Material{};
+    invalidThresholdMaterial.layers = {paperweight::makeThresholdLayer()};
+    auto invalidThresholdText = std::get<std::string>(
+        paperweight::serialisePmat(invalidThresholdMaterial));
+    const auto thresholdPosition = invalidThresholdText.find("layer.0.threshold.value = 0.5");
+    expect(thresholdPosition != std::string::npos, "threshold fixture contains its value");
+    if (thresholdPosition != std::string::npos) {
+        invalidThresholdText.replace(
+            thresholdPosition,
+            std::string("layer.0.threshold.value = 0.5").size(),
+            "layer.0.threshold.value = 1.5");
+        expectDiagnostic(invalidThresholdText, 19, "between 0 and 1");
+    }
 
     auto invalid = paperweight::Material{};
     invalid.gain = 2.0;
@@ -564,6 +810,7 @@ int main()
     testHashing();
     testPeriodicNoise();
     testMaterialAndFbm();
+    testLayerEvaluation();
     testGenerator();
     testPmat();
 

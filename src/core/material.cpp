@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <limits>
+#include <type_traits>
 
 namespace paperweight {
 
@@ -37,6 +38,58 @@ std::optional<std::string> validateMaterial(const Material& material)
         material.roughnessHigh < MaterialLimits::minimumRoughness ||
         material.roughnessHigh > MaterialLimits::maximumRoughness) {
         return "high roughness must be finite and between 0 and 1";
+    }
+    if (material.layers.size() > LayerLimits::maximumLayers) {
+        return "a material may contain at most 32 layers";
+    }
+    for (std::size_t index = 0; index < material.layers.size(); ++index) {
+        const auto& layer = material.layers[index];
+        const auto prefix = "layer " + std::to_string(index) + ": ";
+        if (!std::isfinite(layer.opacity) || layer.opacity < LayerLimits::minimumOpacity ||
+            layer.opacity > LayerLimits::maximumOpacity) {
+            return prefix + "opacity must be finite and between 0 and 1";
+        }
+        switch (layer.compositeMode) {
+        case CompositeMode::blend:
+        case CompositeMode::add:
+        case CompositeMode::multiply:
+            break;
+        default:
+            return prefix + "composite mode is not supported";
+        }
+        if (layer.operation.valueless_by_exception()) {
+            return prefix + "operation has no value";
+        }
+        const auto operationError = std::visit(
+            [&prefix](const auto& operation) -> std::optional<std::string> {
+                using Operation = std::decay_t<decltype(operation)>;
+                if constexpr (std::is_same_v<Operation, LevelsOperation>) {
+                    if (!std::isfinite(operation.inputLow) ||
+                        !std::isfinite(operation.inputHigh) ||
+                        operation.inputLow < LayerLimits::minimumLevel ||
+                        operation.inputHigh > LayerLimits::maximumLevel ||
+                        operation.inputLow >= operation.inputHigh) {
+                        return prefix +
+                            "levels input range must be finite, within 0 to 1, and increasing";
+                    }
+                    if (!std::isfinite(operation.gamma) ||
+                        operation.gamma < LayerLimits::minimumGamma ||
+                        operation.gamma > LayerLimits::maximumGamma) {
+                        return prefix + "levels gamma must be finite and between 0.1 and 4";
+                    }
+                } else if constexpr (std::is_same_v<Operation, ThresholdOperation>) {
+                    if (!std::isfinite(operation.threshold) ||
+                        operation.threshold < LayerLimits::minimumThreshold ||
+                        operation.threshold > LayerLimits::maximumThreshold) {
+                        return prefix + "threshold must be finite and between 0 and 1";
+                    }
+                }
+                return std::nullopt;
+            },
+            layer.operation);
+        if (operationError) {
+            return operationError;
+        }
     }
 
     std::uint64_t period = material.frequency;
