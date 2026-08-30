@@ -13,7 +13,7 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-Planning and repository bootstrap for v0.0.1. The application has not been implemented yet.
+Repository bootstrap for v0.0.1. The application and procedural generator have not been implemented yet.
 
 The staged work is tracked in [GitHub Issues](https://github.com/SolenMusic/Paperweight/issues).
 
@@ -56,3 +56,23 @@ docs/                 Architecture and roadmap
 - Seamlessness must be mathematical, not repaired after generation.
 - The core must remain independent of Apple frameworks and UI concerns.
 - Dependencies must earn their weight. Paperweight should not become one.
+
+## Build and test
+
+Paperweight requires CMake 3.24 or newer and a C++20 compiler. On macOS, the
+minimum deployment target is macOS 11 Big Sur; both Apple Silicon and Intel are
+supported.
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+The project currently uses a tiny in-repository test harness and has no
+third-party dependencies. See [CONTRIBUTING.md](CONTRIBUTING.md) for universal
+macOS build instructions and repository conventions.
+
+## Licence
+
+Paperweight is available under the [MIT License](LICENSE).
