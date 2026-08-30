@@ -12,10 +12,23 @@ namespace {
 
 constexpr std::uint32_t maximumDimension = 4096;
 
-std::uint8_t toByte(double value)
+std::uint8_t interpolateChannel(std::uint8_t low, std::uint8_t high, double value)
 {
-    const double scaled = std::round(std::clamp(value, 0.0, 1.0) * 255.0);
+    const double amount = std::clamp(value, 0.0, 1.0);
+    const double scaled = std::round(
+        static_cast<double>(low) +
+        (static_cast<double>(high) - static_cast<double>(low)) * amount);
     return static_cast<std::uint8_t>(scaled);
+}
+
+Rgba8 interpolateColour(const Rgba8& low, const Rgba8& high, double value)
+{
+    return {
+        interpolateChannel(low.red, high.red, value),
+        interpolateChannel(low.green, high.green, value),
+        interpolateChannel(low.blue, high.blue, value),
+        interpolateChannel(low.alpha, high.alpha, value),
+    };
 }
 
 } // namespace
@@ -40,8 +53,11 @@ GenerationResult generate(const GenerationRequest& request)
             const double v = (static_cast<double>(y) + 0.5) / request.height;
             for (std::uint32_t x = 0; x < request.width; ++x) {
                 const double u = (static_cast<double>(x) + 0.5) / request.width;
-                const auto grey = toByte(periodicFbm2D(u, v, request.material));
-                row[x] = Rgba8{grey, grey, grey, 255};
+                const double source = periodicFbm2D(u, v, request.material);
+                row[x] = interpolateColour(
+                    request.material.lowColour,
+                    request.material.highColour,
+                    source);
             }
         }
         return image;

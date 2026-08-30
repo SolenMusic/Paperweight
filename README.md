@@ -13,10 +13,10 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-v0.0.2 adds a versioned, human-readable `.pmat` format, native open/save,
-unsaved-change protection, and lossless PNG export to the deterministic,
-mathematically seamless FBM preview introduced in v0.0.1. The native editor has
-live controls and 1x1/3x3 tiling views.
+v0.0.1 is the current Procedural Foundation release. It includes a versioned,
+human-readable `.pmat` format, native open/save, unsaved-change protection,
+lossless PNG export, two-colour FBM materials, live controls, and 1x1/3x3
+seamless previews.
 
 The staged work is tracked in [GitHub Issues](https://github.com/SolenMusic/Paperweight/issues).
 
@@ -39,11 +39,14 @@ See [docs/architecture.md](docs/architecture.md) and [docs/roadmap.md](docs/road
 ## Current scope
 
 The current release establishes the reusable core, deterministic seamless
-generation, a small native editor, live preview, parameter editing, tiled
-preview, `.pmat` open/save, PNG export, tests, and documentation.
+generation, a basic two-colour material, a small native editor, live seed,
+noise, and colour controls, tiled preview, `.pmat` open/save, PNG export, tests,
+and documentation.
 
-Explicitly deferred beyond v0.0.2: Metal, Vulkan, node graphs, PBR workflows,
-specialised brick or Voronoi generators, and direct game integration.
+Height, normal, and roughness outputs begin in v0.0.2. Layers, warping,
+structural generators, a material graph, physical scale, advanced surface
+tools, performance work, and the stable game library follow in the documented
+roadmap.
 
 ## Repository layout
 
@@ -88,7 +91,8 @@ open build/app/macos/Paperweight.app
 ```
 
 In the app, use File > Open to load a `.pmat` definition, File > Save or Save As
-to store one, and File > Export PNG to write the current 512x512 RGBA8 tile.
+to store one, edit the low and high colour wells alongside the noise controls,
+and use File > Export PNG to write the current 512x512 RGBA8 tile.
 See [the `.pmat` format reference](docs/pmat-format.md) for the text format.
 
 For a universal Intel and Apple Silicon build:

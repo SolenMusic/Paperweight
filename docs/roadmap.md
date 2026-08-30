@@ -1,26 +1,76 @@
 # Roadmap
 
-## v0.0.1 - Foundations and native preview
+This is the canonical Paperweight product roadmap. GitHub milestones mirror
+these version boundaries; detailed implementation issues are expanded as a
+version becomes active.
 
-Delivered a portable deterministic core and a small native macOS editor with
-live controls and 1x1/3x3 seamless previews.
+## v0.0.1 - Procedural Foundation
 
-## v0.0.2 - Material files and export
+- Portable C++ core and image buffer.
+- Deterministic hashing/randomness, periodic 2D noise, and FBM.
+- Basic two-colour material with guaranteed seamless generation.
+- Native AppKit editor with seed, noise, and two colour controls.
+- Live 1x1 and 3x3 previews.
+- `.pmat` load/save, PNG export, and basic tests.
 
-Add the versioned `.pmat` parser and canonical serialiser, native open/save and
-unsaved-change protection, PNG export, cross-platform CI, and the corresponding
-format and usage documentation.
+Success means the application can create, save, reopen, and export seamless
+noise-based materials, while the same `.pmat` definition generates identical
+output through the standalone C++ library.
 
-The GitHub milestone and issues are the authoritative implementation backlog.
+## v0.0.2 - Material Outputs
 
-## Near term after v0.0.2
+Introduce height, normal, and roughness maps with native controls for previewing
+each output. Normals derive from height, and all maps derive from the same
+procedural source.
 
-- Harden the public API and `.pmat` compatibility policy.
-- Add performance benchmarks and profiling targets.
-- Establish an Emscripten/WebAssembly build and a minimal JavaScript bridge.
-- Add further general-purpose procedural operators.
-- Explore multiple output channels before committing to a PBR workflow.
+## v0.0.3 - Layers
 
-## Explicitly deferred
+Introduce a layer stack with noise, solid colour, add, multiply, blend, levels,
+and threshold. Every layer can be enabled independently. Begin separating
+procedural operations into reusable evaluation objects.
 
-Metal and Vulkan rendering, node graphs, PBR authoring, specialised brick or Voronoi generators, and direct Blastard/game integration are not part of v0.0.2.
+## v0.0.4 - Masks and Warping
+
+Add masks plus coordinate scale, offset, rotation, and warp/distortion.
+
+## v0.0.5 - Structural Generators
+
+Add brick and tile grids, Voronoi/Worley and random cells, lines, rectangles,
+and circles. Good procedural brick walls and cobblestones should become
+practical here.
+
+## v0.0.6 - Material Graph
+
+Replace or augment the simple layer model with generator, processing, mask, and
+output nodes. The editor may continue exposing a simpler layer-oriented view.
+
+## v0.0.7 - Physical Scale
+
+Add material-space dimensions and caller-selected physical coverage so
+materials retain consistent world scale across output resolutions.
+
+## v0.0.8 - Advanced Surface Tools
+
+Potential additions include cracks, erosion, edge wear, pitting, scratches,
+dirt, moss, rust, wood grain and knots, marble veins, pebbles, and terrain
+erosion.
+
+## v0.0.9 - Performance
+
+Profile before optimising. Candidate improvements include multithreaded CPU
+generation, SIMD, tile-based evaluation, cached intermediate nodes, incremental
+preview regeneration, and later GPU investigation. GPU choices must not dictate
+the core material model.
+
+## v0.1.0 - Game Library
+
+Stabilise the embedding API and add material-definition versioning, generator
+algorithm versioning, texture caches and hashes, runtime resolution selection,
+and asynchronous generation. Games should be able to distribute compact
+definitions and generate hardware-appropriate maps at installation, first
+launch, load time, or during development-time asset processing.
+
+## Unscheduled future work
+
+An Emscripten/WebAssembly portability proof remains planned but intentionally
+does not displace the numbered roadmap above.

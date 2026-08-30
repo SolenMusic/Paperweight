@@ -7,6 +7,11 @@ configure_file(
     "${CMAKE_CURRENT_BINARY_DIR}/default.pmat"
     COPYONLY
 )
+configure_file(
+    "${PROJECT_SOURCE_DIR}/examples/materials/ember.pmat"
+    "${CMAKE_CURRENT_BINARY_DIR}/ember.pmat"
+    COPYONLY
+)
 
 target_link_libraries(paperweight_tests PRIVATE Paperweight::Core)
 target_compile_features(paperweight_tests PRIVATE cxx_std_20)
