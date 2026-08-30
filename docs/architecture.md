@@ -20,6 +20,16 @@ Constraints:
 - Algorithms designed for native compilation and a later Emscripten/WebAssembly target.
 - Seamlessness achieved by periodic algorithms and coordinate wrapping.
 
+The initial image representation is tightly packed, opaque-capable RGBA8. It
+is deliberately exposed through an image abstraction rather than baked into
+the generator API, leaving room for greyscale, higher precision, floating-point,
+and non-colour data formats later.
+
+The initial generator combines platform-stable integer hashing, periodic 2D
+value noise, and normalised periodic FBM. Texture samples are taken at pixel
+centres over one mathematical period; the algorithm wraps, rather than copying
+or repairing image edges.
+
 ### macOS frontend
 
 Located under `app/macos/`.
@@ -30,6 +40,10 @@ Constraints:
 - Objective-C++ is restricted to the bridge between AppKit and the C++ core.
 - The frontend owns windows, controls, file panels, and presentation.
 - It contains no procedural-generation algorithms.
+
+The first preview is rendered through `NSBitmapImageRep`. This conversion lives
+in Objective-C++ and consumes the portable core's RGBA8 buffer without exposing
+AppKit types to the core.
 
 ### Material format
 
