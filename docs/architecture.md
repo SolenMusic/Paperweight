@@ -26,10 +26,19 @@ the generator API, leaving room for greyscale, higher precision, floating-point,
 and non-colour data formats later.
 
 The generator combines platform-stable integer hashing, periodic 2D value
-noise, and normalised periodic FBM. In v0.0.2, colour, height, tangent-space
-normal, and roughness outputs all derive from that one scalar source. Texture
-samples are taken at pixel centres over one mathematical period. Normal-map
-finite differences wrap both axes; no output copies or repairs image edges.
+noise, and normalised periodic FBM. In v0.0.3, reusable evaluation objects
+produce both normalised RGBA colour and a scalar value. An ordered layer stack
+composites those paired results, so colour, height, tangent-space normal, and
+roughness all continue to describe the same procedural surface. Texture samples
+are taken at pixel centres over one mathematical period. Normal-map finite
+differences wrap both axes; no output copies or repairs image edges.
+
+The initial operation variants are noise, solid colour, levels, and threshold.
+Every `MaterialLayer` also owns an enabled flag, opacity, and blend, add, or
+multiply composite mode. Levels and threshold process the accumulated input;
+noise and solid colour generate new samples. The evaluator itself has no UI or
+platform dependency, and the variant boundary can evolve into the reusable
+evaluation objects needed by later masks, layers, and graph work.
 
 `GenerationRequest::output` selects one portable RGBA8 result. The colour map
 interpolates two RGBA endpoints, height and roughness use explicit linear
@@ -59,26 +68,31 @@ handle paths, while parsing and serialisation remain in portable C++.
 `.pmat` is a human-readable, versioned text format. Parsing and serialisation live in the portable core. Round trips should be stable and errors should identify useful source locations.
 
 The format version is deliberately independent of the application version.
-Paperweight v0.0.2 reads and writes `.pmat` format version 1. Unknown keys and
-unsupported format versions fail explicitly instead of being silently ignored.
+Paperweight v0.0.3 reads `.pmat` format versions 1 and 2 and writes version 2.
+Unknown keys and unsupported format versions fail explicitly instead of being
+silently ignored. Version 1 maps to the original implicit FBM source; adding an
+explicit base noise layer produces byte-identical output.
 See [pmat-format.md](pmat-format.md).
 
 ## Initial data flow
 
 ```text
-.pmat text -> parser -> material model -> periodic FBM source
-                    ^                         |
-                    |              +----------+----------+---------+
-                serialiser         |          |          |         |
-                                  colour    height     normal   roughness
-                                    |          |          |         |
-                                    +----------+----------+---------+
-                                                   |
-                                             preview / PNG
+.pmat text -> parser -> material + ordered operation layers
+                    ^                   |
+                    |             portable evaluator
+                serialiser        (RGBA + scalar)
+                                        |
+                             +----------+----------+---------+
+                             |          |          |         |
+                           colour    height     normal   roughness
+                             |          |          |         |
+                             +----------+----------+---------+
+                                            |
+                                      preview / PNG
 ```
 
 ## Deferred architecture
 
-Layers, warping, specialised generators, material graphs, WebAssembly
-bindings, game-engine adapters, complete PBR authoring, and GPU backends remain
-outside v0.0.2.
+Masks, warping, specialised generators, material graphs, WebAssembly bindings,
+game-engine adapters, complete PBR authoring, and GPU backends remain outside
+v0.0.3.

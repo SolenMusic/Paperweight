@@ -4,6 +4,7 @@
 
 #include <paperweight/generator.hpp>
 #include <paperweight/hash.hpp>
+#include <paperweight/layer.hpp>
 #include <paperweight/pmat.hpp>
 
 #include <algorithm>
@@ -21,6 +22,16 @@
 
 - (void)setGeneratedImage:(const paperweight::Image&)image;
 
+@end
+
+@interface FlippedView : NSView
+@end
+
+@implementation FlippedView
+- (BOOL)isFlipped
+{
+    return YES;
+}
 @end
 
 @implementation MaterialPreviewView
@@ -127,6 +138,32 @@
 @property(nonatomic, strong) NSSegmentedControl* tilingControl;
 @property(nonatomic, strong) NSTextField* statusLabel;
 @property(nonatomic, strong) NSURL* currentFileURL;
+@property(nonatomic, strong) NSStackView* layerListStack;
+@property(nonatomic, strong) NSPopUpButton* addOperationPopup;
+@property(nonatomic, strong) NSButton* removeLayerButton;
+@property(nonatomic, strong) NSButton* moveLayerUpButton;
+@property(nonatomic, strong) NSButton* moveLayerDownButton;
+@property(nonatomic, strong) NSTextField* layerTypeLabel;
+@property(nonatomic, strong) NSButton* layerEnabledCheckbox;
+@property(nonatomic, strong) NSSegmentedControl* layerCompositeControl;
+@property(nonatomic, strong) NSSlider* layerOpacitySlider;
+@property(nonatomic, strong) NSTextField* layerOpacityValue;
+@property(nonatomic, strong) NSStackView* noiseSeedRow;
+@property(nonatomic, strong) NSTextField* noiseSeedOffsetField;
+@property(nonatomic, strong) NSStackView* solidColourRow;
+@property(nonatomic, strong) NSColorWell* solidColourWell;
+@property(nonatomic, strong) NSStackView* levelsLowRow;
+@property(nonatomic, strong) NSSlider* levelsLowSlider;
+@property(nonatomic, strong) NSTextField* levelsLowValue;
+@property(nonatomic, strong) NSStackView* levelsHighRow;
+@property(nonatomic, strong) NSSlider* levelsHighSlider;
+@property(nonatomic, strong) NSTextField* levelsHighValue;
+@property(nonatomic, strong) NSStackView* levelsGammaRow;
+@property(nonatomic, strong) NSSlider* levelsGammaSlider;
+@property(nonatomic, strong) NSTextField* levelsGammaValue;
+@property(nonatomic, strong) NSStackView* thresholdRow;
+@property(nonatomic, strong) NSSlider* thresholdSlider;
+@property(nonatomic, strong) NSTextField* thresholdValue;
 
 @end
 
@@ -171,6 +208,35 @@ NSStackView* makeSliderRow(
     row.alignment = NSLayoutAttributeCenterY;
     row.spacing = 8.0;
 
+    return row;
+}
+
+NSStackView* makeLayerSliderRow(
+    NSString* title,
+    double minimum,
+    double maximum,
+    double value,
+    id target)
+{
+    auto* titleLabel = makeLabel(title);
+    [titleLabel.widthAnchor constraintEqualToConstant:72.0].active = YES;
+
+    auto* slider = [NSSlider sliderWithValue:value
+                                    minValue:minimum
+                                    maxValue:maximum
+                                      target:target
+                                      action:@selector(layerParameterChanged:)];
+    slider.continuous = YES;
+
+    auto* valueLabel = makeLabel(@"");
+    valueLabel.alignment = NSTextAlignmentRight;
+    valueLabel.font = [NSFont monospacedDigitSystemFontOfSize:12.0 weight:NSFontWeightRegular];
+    [valueLabel.widthAnchor constraintEqualToConstant:44.0].active = YES;
+
+    auto* row = [NSStackView stackViewWithViews:@[ titleLabel, slider, valueLabel ]];
+    row.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    row.alignment = NSLayoutAttributeCenterY;
+    row.spacing = 8.0;
     return row;
 }
 
@@ -244,6 +310,30 @@ NSString* outputName(paperweight::MaterialOutput output)
     return @"Unknown";
 }
 
+NSString* operationDisplayName(const paperweight::LayerOperation& operation)
+{
+    switch (operation.index()) {
+    case 0:
+        return @"Noise";
+    case 1:
+        return @"Solid Colour";
+    case 2:
+        return @"Levels";
+    case 3:
+        return @"Threshold";
+    default:
+        return @"Unknown";
+    }
+}
+
+paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger index)
+{
+    if (index < 0 || static_cast<std::size_t>(index) >= material.layers.size()) {
+        return nullptr;
+    }
+    return &material.layers[static_cast<std::size_t>(index)];
+}
+
 } // namespace
 
 @implementation AppDelegate {
@@ -251,12 +341,15 @@ NSString* outputName(paperweight::MaterialOutput output)
     paperweight::MaterialOutput selectedOutput_;
     std::optional<paperweight::Image> generatedImage_;
     bool dirty_;
+    NSInteger selectedLayer_;
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification*)notification
 {
     static_cast<void>(notification);
     selectedOutput_ = paperweight::MaterialOutput::colour;
+    material_.layers.push_back(paperweight::makeNoiseLayer());
+    selectedLayer_ = 0;
     [self buildMenus];
     [self buildWindow];
     [self updateControlLabels];
@@ -332,12 +425,12 @@ NSString* outputName(paperweight::MaterialOutput output)
 {
     const NSWindowStyleMask style = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
         NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;
-    self.window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 1120, 800)
+    self.window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 1430, 820)
                                               styleMask:style
                                                 backing:NSBackingStoreBuffered
                                                   defer:NO];
     self.window.title = @"Untitled.pmat — Paperweight";
-    self.window.minSize = NSMakeSize(900, 720);
+    self.window.minSize = NSMakeSize(1120, 720);
     self.window.delegate = self;
     NSColorPanel.sharedColorPanel.showsAlpha = YES;
 
@@ -351,17 +444,28 @@ NSString* outputName(paperweight::MaterialOutput output)
     controlsPanel.blendingMode = NSVisualEffectBlendingModeBehindWindow;
     controlsPanel.state = NSVisualEffectStateActive;
 
+    auto* layersPanel = [[NSVisualEffectView alloc] initWithFrame:NSZeroRect];
+    layersPanel.translatesAutoresizingMaskIntoConstraints = NO;
+    layersPanel.material = NSVisualEffectMaterialSidebar;
+    layersPanel.blendingMode = NSVisualEffectBlendingModeWithinWindow;
+    layersPanel.state = NSVisualEffectStateActive;
+
     self.previewView = [[MaterialPreviewView alloc] initWithFrame:NSZeroRect];
     self.previewView.translatesAutoresizingMaskIntoConstraints = NO;
 
     [content addSubview:controlsPanel];
+    [content addSubview:layersPanel];
     [content addSubview:self.previewView];
     [NSLayoutConstraint activateConstraints:@[
         [controlsPanel.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
         [controlsPanel.topAnchor constraintEqualToAnchor:content.topAnchor],
         [controlsPanel.bottomAnchor constraintEqualToAnchor:content.bottomAnchor],
         [controlsPanel.widthAnchor constraintEqualToConstant:310.0],
-        [self.previewView.leadingAnchor constraintEqualToAnchor:controlsPanel.trailingAnchor constant:20.0],
+        [layersPanel.leadingAnchor constraintEqualToAnchor:controlsPanel.trailingAnchor],
+        [layersPanel.topAnchor constraintEqualToAnchor:content.topAnchor],
+        [layersPanel.bottomAnchor constraintEqualToAnchor:content.bottomAnchor],
+        [layersPanel.widthAnchor constraintEqualToConstant:340.0],
+        [self.previewView.leadingAnchor constraintEqualToAnchor:layersPanel.trailingAnchor constant:20.0],
         [self.previewView.trailingAnchor constraintEqualToAnchor:content.trailingAnchor constant:-20.0],
         [self.previewView.topAnchor constraintEqualToAnchor:content.topAnchor constant:20.0],
         [self.previewView.bottomAnchor constraintEqualToAnchor:content.bottomAnchor constant:-20.0],
@@ -541,6 +645,463 @@ NSString* outputName(paperweight::MaterialOutput output)
         [self.outputControl.widthAnchor constraintEqualToAnchor:controlStack.widthAnchor],
         [self.statusLabel.widthAnchor constraintEqualToAnchor:controlStack.widthAnchor],
     ]];
+
+    auto* layersTitle = makeLabel(@"Layer Stack");
+    layersTitle.font = [NSFont systemFontOfSize:22.0 weight:NSFontWeightSemibold];
+    auto* layersSubtitle = makeLabel(@"Evaluated from bottom to top");
+    layersSubtitle.textColor = NSColor.secondaryLabelColor;
+
+    self.layerListStack = [[NSStackView alloc] initWithFrame:NSZeroRect];
+    self.layerListStack.translatesAutoresizingMaskIntoConstraints = NO;
+    self.layerListStack.orientation = NSUserInterfaceLayoutOrientationVertical;
+    self.layerListStack.alignment = NSLayoutAttributeLeading;
+    self.layerListStack.spacing = 4.0;
+
+    auto* layerListDocument = [[FlippedView alloc] initWithFrame:NSZeroRect];
+    layerListDocument.translatesAutoresizingMaskIntoConstraints = NO;
+    [layerListDocument addSubview:self.layerListStack];
+    [NSLayoutConstraint activateConstraints:@[
+        [self.layerListStack.leadingAnchor constraintEqualToAnchor:layerListDocument.leadingAnchor],
+        [self.layerListStack.trailingAnchor constraintEqualToAnchor:layerListDocument.trailingAnchor],
+        [self.layerListStack.topAnchor constraintEqualToAnchor:layerListDocument.topAnchor],
+        [self.layerListStack.bottomAnchor constraintLessThanOrEqualToAnchor:layerListDocument.bottomAnchor],
+        [layerListDocument.widthAnchor constraintEqualToAnchor:self.layerListStack.widthAnchor],
+    ]];
+
+    auto* layerScrollView = [[NSScrollView alloc] initWithFrame:NSZeroRect];
+    layerScrollView.translatesAutoresizingMaskIntoConstraints = NO;
+    layerScrollView.documentView = layerListDocument;
+    layerScrollView.hasVerticalScroller = YES;
+    layerScrollView.drawsBackground = NO;
+    layerScrollView.borderType = NSBezelBorder;
+    [layerScrollView.heightAnchor constraintEqualToConstant:210.0].active = YES;
+
+    self.addOperationPopup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+    [self.addOperationPopup addItemsWithTitles:@[ @"Noise", @"Solid Colour", @"Levels", @"Threshold" ]];
+    auto* addLayerButton = [NSButton buttonWithTitle:@"Add"
+                                              target:self
+                                              action:@selector(addLayer:)];
+    auto* addRow = [NSStackView stackViewWithViews:@[ self.addOperationPopup, addLayerButton ]];
+    addRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    addRow.spacing = 8.0;
+    [self.addOperationPopup.widthAnchor constraintGreaterThanOrEqualToConstant:160.0].active = YES;
+
+    self.removeLayerButton = [NSButton buttonWithTitle:@"Remove"
+                                                 target:self
+                                                 action:@selector(removeLayer:)];
+    self.moveLayerDownButton = [NSButton buttonWithTitle:@"Move Down"
+                                                   target:self
+                                                   action:@selector(moveLayerDown:)];
+    self.moveLayerUpButton = [NSButton buttonWithTitle:@"Move Up"
+                                                 target:self
+                                                 action:@selector(moveLayerUp:)];
+    auto* arrangeRow = [NSStackView stackViewWithViews:@[
+        self.removeLayerButton,
+        self.moveLayerDownButton,
+        self.moveLayerUpButton,
+    ]];
+    arrangeRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    arrangeRow.distribution = NSStackViewDistributionFillEqually;
+    arrangeRow.spacing = 6.0;
+
+    auto* inspectorLabel = makeLabel(@"Selected Layer");
+    inspectorLabel.font = [NSFont systemFontOfSize:15.0 weight:NSFontWeightSemibold];
+    self.layerTypeLabel = makeLabel(@"");
+    self.layerTypeLabel.textColor = NSColor.secondaryLabelColor;
+    self.layerEnabledCheckbox = [NSButton checkboxWithTitle:@"Enabled"
+                                                    target:self
+                                                    action:@selector(layerEnabledChanged:)];
+
+    auto* compositeLabel = makeLabel(@"Composite");
+    self.layerCompositeControl = [[NSSegmentedControl alloc] initWithFrame:NSZeroRect];
+    self.layerCompositeControl.segmentCount = 3;
+    [self.layerCompositeControl setLabel:@"Blend" forSegment:0];
+    [self.layerCompositeControl setLabel:@"Add" forSegment:1];
+    [self.layerCompositeControl setLabel:@"Multiply" forSegment:2];
+    self.layerCompositeControl.target = self;
+    self.layerCompositeControl.action = @selector(layerParameterChanged:);
+
+    auto* opacityRow = makeLayerSliderRow(@"Opacity", 0.0, 1.0, 1.0, self);
+    self.layerOpacitySlider = static_cast<NSSlider*>(opacityRow.views[1]);
+    self.layerOpacityValue = static_cast<NSTextField*>(opacityRow.views[2]);
+
+    auto* seedOffsetLabel = makeLabel(@"Seed offset");
+    [seedOffsetLabel.widthAnchor constraintEqualToConstant:72.0].active = YES;
+    self.noiseSeedOffsetField = [[NSTextField alloc] initWithFrame:NSZeroRect];
+    self.noiseSeedOffsetField.target = self;
+    self.noiseSeedOffsetField.action = @selector(layerParameterChanged:);
+    self.noiseSeedRow = [NSStackView stackViewWithViews:@[
+        seedOffsetLabel,
+        self.noiseSeedOffsetField,
+    ]];
+    self.noiseSeedRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    self.noiseSeedRow.alignment = NSLayoutAttributeCenterY;
+    self.noiseSeedRow.spacing = 8.0;
+
+    self.solidColourRow = makeColourRow(
+        @"Colour", paperweight::Rgba8{128, 128, 128, 255}, self);
+    self.solidColourWell = static_cast<NSColorWell*>(self.solidColourRow.views[1]);
+    self.solidColourWell.action = @selector(layerColourChanged:);
+
+    self.levelsLowRow = makeLayerSliderRow(@"Input low", 0.0, 1.0, 0.0, self);
+    self.levelsLowSlider = static_cast<NSSlider*>(self.levelsLowRow.views[1]);
+    self.levelsLowValue = static_cast<NSTextField*>(self.levelsLowRow.views[2]);
+    self.levelsHighRow = makeLayerSliderRow(@"Input high", 0.0, 1.0, 1.0, self);
+    self.levelsHighSlider = static_cast<NSSlider*>(self.levelsHighRow.views[1]);
+    self.levelsHighValue = static_cast<NSTextField*>(self.levelsHighRow.views[2]);
+    self.levelsGammaRow = makeLayerSliderRow(
+        @"Gamma",
+        paperweight::LayerLimits::minimumGamma,
+        paperweight::LayerLimits::maximumGamma,
+        1.0,
+        self);
+    self.levelsGammaSlider = static_cast<NSSlider*>(self.levelsGammaRow.views[1]);
+    self.levelsGammaValue = static_cast<NSTextField*>(self.levelsGammaRow.views[2]);
+    self.thresholdRow = makeLayerSliderRow(@"Threshold", 0.0, 1.0, 0.5, self);
+    self.thresholdSlider = static_cast<NSSlider*>(self.thresholdRow.views[1]);
+    self.thresholdValue = static_cast<NSTextField*>(self.thresholdRow.views[2]);
+
+    auto* layerStack = [NSStackView stackViewWithViews:@[
+        layersTitle,
+        layersSubtitle,
+        makeSeparator(),
+        layerScrollView,
+        addRow,
+        arrangeRow,
+        makeSeparator(),
+        inspectorLabel,
+        self.layerTypeLabel,
+        self.layerEnabledCheckbox,
+        compositeLabel,
+        self.layerCompositeControl,
+        opacityRow,
+        self.noiseSeedRow,
+        self.solidColourRow,
+        self.levelsLowRow,
+        self.levelsHighRow,
+        self.levelsGammaRow,
+        self.thresholdRow,
+    ]];
+    layerStack.translatesAutoresizingMaskIntoConstraints = NO;
+    layerStack.orientation = NSUserInterfaceLayoutOrientationVertical;
+    layerStack.alignment = NSLayoutAttributeLeading;
+    layerStack.spacing = 9.0;
+    [layersPanel addSubview:layerStack];
+    [NSLayoutConstraint activateConstraints:@[
+        [layerStack.leadingAnchor constraintEqualToAnchor:layersPanel.leadingAnchor constant:18.0],
+        [layerStack.trailingAnchor constraintEqualToAnchor:layersPanel.trailingAnchor constant:-18.0],
+        [layerStack.topAnchor constraintEqualToAnchor:layersPanel.topAnchor constant:24.0],
+        [layerScrollView.widthAnchor constraintEqualToAnchor:layerStack.widthAnchor],
+        [addRow.widthAnchor constraintEqualToAnchor:layerStack.widthAnchor],
+        [arrangeRow.widthAnchor constraintEqualToAnchor:layerStack.widthAnchor],
+        [self.layerCompositeControl.widthAnchor constraintEqualToAnchor:layerStack.widthAnchor],
+    ]];
+
+    [self rebuildLayerList];
+    [self refreshLayerInspector];
+}
+
+- (void)rebuildLayerList
+{
+    for (NSView* view in [self.layerListStack.arrangedSubviews copy]) {
+        [self.layerListStack removeArrangedSubview:view];
+        [view removeFromSuperview];
+    }
+
+    for (std::size_t index = 0; index < material_.layers.size(); ++index) {
+        const auto& layer = material_.layers[index];
+        auto* enabled = [NSButton checkboxWithTitle:@""
+                                            target:self
+                                            action:@selector(layerListEnabledChanged:)];
+        enabled.tag = static_cast<NSInteger>(index);
+        enabled.state = layer.enabled ? NSControlStateValueOn : NSControlStateValueOff;
+        enabled.accessibilityLabel = [NSString
+            stringWithFormat:@"Enable layer %zu", index + 1];
+        [enabled.widthAnchor constraintEqualToConstant:22.0].active = YES;
+
+        NSString* marker = selectedLayer_ == static_cast<NSInteger>(index) ? @"› " : @"  ";
+        NSString* name = [NSString
+            stringWithFormat:@"%@%zu  %@", marker, index + 1, operationDisplayName(layer.operation)];
+        auto* select = [NSButton buttonWithTitle:name
+                                          target:self
+                                          action:@selector(selectLayer:)];
+        select.tag = static_cast<NSInteger>(index);
+        select.bezelStyle = NSBezelStyleInline;
+        select.alignment = NSTextAlignmentLeft;
+        select.font = selectedLayer_ == static_cast<NSInteger>(index)
+            ? [NSFont systemFontOfSize:13.0 weight:NSFontWeightSemibold]
+            : [NSFont systemFontOfSize:13.0 weight:NSFontWeightRegular];
+
+        auto* row = [NSStackView stackViewWithViews:@[ enabled, select ]];
+        row.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+        row.alignment = NSLayoutAttributeCenterY;
+        row.spacing = 3.0;
+        [self.layerListStack addArrangedSubview:row];
+        [row.widthAnchor constraintEqualToAnchor:self.layerListStack.widthAnchor].active = YES;
+    }
+}
+
+- (void)refreshLayerInspector
+{
+    auto* layer = layerAt(material_, selectedLayer_);
+    const BOOL hasLayer = layer != nullptr;
+    self.removeLayerButton.enabled = material_.layers.size() > 1;
+    self.moveLayerDownButton.enabled = hasLayer && selectedLayer_ > 0;
+    self.moveLayerUpButton.enabled = hasLayer &&
+        static_cast<std::size_t>(selectedLayer_ + 1) < material_.layers.size();
+    self.layerEnabledCheckbox.enabled = hasLayer;
+    self.layerCompositeControl.enabled = hasLayer;
+    self.layerOpacitySlider.enabled = hasLayer;
+    if (!hasLayer) {
+        self.layerTypeLabel.stringValue = @"No layer selected";
+        self.noiseSeedRow.hidden = YES;
+        self.solidColourRow.hidden = YES;
+        self.levelsLowRow.hidden = YES;
+        self.levelsHighRow.hidden = YES;
+        self.levelsGammaRow.hidden = YES;
+        self.thresholdRow.hidden = YES;
+        return;
+    }
+
+    self.layerTypeLabel.stringValue = [NSString
+        stringWithFormat:@"%ld. %@", selectedLayer_ + 1, operationDisplayName(layer->operation)];
+    self.layerEnabledCheckbox.state = layer->enabled
+        ? NSControlStateValueOn
+        : NSControlStateValueOff;
+    switch (layer->compositeMode) {
+    case paperweight::CompositeMode::blend:
+        self.layerCompositeControl.selectedSegment = 0;
+        break;
+    case paperweight::CompositeMode::add:
+        self.layerCompositeControl.selectedSegment = 1;
+        break;
+    case paperweight::CompositeMode::multiply:
+        self.layerCompositeControl.selectedSegment = 2;
+        break;
+    }
+    self.layerOpacitySlider.doubleValue = layer->opacity;
+    self.layerOpacityValue.stringValue = [NSString stringWithFormat:@"%.2f", layer->opacity];
+
+    const auto* noise = std::get_if<paperweight::NoiseOperation>(&layer->operation);
+    const auto* solid = std::get_if<paperweight::SolidColourOperation>(&layer->operation);
+    const auto* levels = std::get_if<paperweight::LevelsOperation>(&layer->operation);
+    const auto* threshold = std::get_if<paperweight::ThresholdOperation>(&layer->operation);
+    self.noiseSeedRow.hidden = noise == nullptr;
+    self.solidColourRow.hidden = solid == nullptr;
+    self.levelsLowRow.hidden = levels == nullptr;
+    self.levelsHighRow.hidden = levels == nullptr;
+    self.levelsGammaRow.hidden = levels == nullptr;
+    self.thresholdRow.hidden = threshold == nullptr;
+
+    if (noise != nullptr) {
+        self.noiseSeedOffsetField.stringValue = [NSString
+            stringWithFormat:@"%llu", noise->seedOffset];
+    }
+    if (solid != nullptr) {
+        self.solidColourWell.color = colourFromRgba8(solid->colour);
+    }
+    if (levels != nullptr) {
+        self.levelsLowSlider.doubleValue = levels->inputLow;
+        self.levelsHighSlider.doubleValue = levels->inputHigh;
+        self.levelsGammaSlider.doubleValue = levels->gamma;
+        self.levelsLowValue.stringValue = [NSString stringWithFormat:@"%.2f", levels->inputLow];
+        self.levelsHighValue.stringValue = [NSString stringWithFormat:@"%.2f", levels->inputHigh];
+        self.levelsGammaValue.stringValue = [NSString stringWithFormat:@"%.2f", levels->gamma];
+    }
+    if (threshold != nullptr) {
+        self.thresholdSlider.doubleValue = threshold->threshold;
+        self.thresholdValue.stringValue = [NSString
+            stringWithFormat:@"%.2f", threshold->threshold];
+    }
+}
+
+- (void)selectLayer:(NSButton*)sender
+{
+    selectedLayer_ = sender.tag;
+    [self rebuildLayerList];
+    [self refreshLayerInspector];
+}
+
+- (void)layerListEnabledChanged:(NSButton*)sender
+{
+    auto* layer = layerAt(material_, sender.tag);
+    if (layer == nullptr) {
+        return;
+    }
+    layer->enabled = sender.state == NSControlStateValueOn;
+    selectedLayer_ = sender.tag;
+    [self rebuildLayerList];
+    [self refreshLayerInspector];
+    [self regeneratePreview];
+    [self markDirty];
+}
+
+- (void)layerEnabledChanged:(NSButton*)sender
+{
+    auto* layer = layerAt(material_, selectedLayer_);
+    if (layer == nullptr) {
+        return;
+    }
+    layer->enabled = sender.state == NSControlStateValueOn;
+    [self rebuildLayerList];
+    [self regeneratePreview];
+    [self markDirty];
+}
+
+- (void)addLayer:(id)sender
+{
+    static_cast<void>(sender);
+    if (material_.layers.size() >= paperweight::LayerLimits::maximumLayers) {
+        self.statusLabel.stringValue = @"A material may contain at most 32 layers.";
+        self.statusLabel.textColor = NSColor.systemRedColor;
+        return;
+    }
+    switch (self.addOperationPopup.indexOfSelectedItem) {
+    case 0:
+        material_.layers.push_back(paperweight::makeNoiseLayer(material_.layers.size()));
+        break;
+    case 1:
+        material_.layers.push_back(paperweight::makeSolidColourLayer());
+        break;
+    case 2:
+        material_.layers.push_back(paperweight::makeLevelsLayer());
+        break;
+    case 3:
+        material_.layers.push_back(paperweight::makeThresholdLayer());
+        break;
+    default:
+        return;
+    }
+    selectedLayer_ = static_cast<NSInteger>(material_.layers.size() - 1);
+    [self rebuildLayerList];
+    [self refreshLayerInspector];
+    [self regeneratePreview];
+    [self markDirty];
+}
+
+- (void)removeLayer:(id)sender
+{
+    static_cast<void>(sender);
+    if (material_.layers.size() <= 1 || layerAt(material_, selectedLayer_) == nullptr) {
+        return;
+    }
+    material_.layers.erase(material_.layers.begin() + selectedLayer_);
+    selectedLayer_ = std::min(
+        selectedLayer_, static_cast<NSInteger>(material_.layers.size() - 1));
+    [self rebuildLayerList];
+    [self refreshLayerInspector];
+    [self regeneratePreview];
+    [self markDirty];
+}
+
+- (void)moveLayerDown:(id)sender
+{
+    static_cast<void>(sender);
+    if (selectedLayer_ <= 0 || layerAt(material_, selectedLayer_) == nullptr) {
+        return;
+    }
+    std::swap(
+        material_.layers[static_cast<std::size_t>(selectedLayer_)],
+        material_.layers[static_cast<std::size_t>(selectedLayer_ - 1)]);
+    --selectedLayer_;
+    [self rebuildLayerList];
+    [self refreshLayerInspector];
+    [self regeneratePreview];
+    [self markDirty];
+}
+
+- (void)moveLayerUp:(id)sender
+{
+    static_cast<void>(sender);
+    if (selectedLayer_ < 0 ||
+        static_cast<std::size_t>(selectedLayer_ + 1) >= material_.layers.size()) {
+        return;
+    }
+    std::swap(
+        material_.layers[static_cast<std::size_t>(selectedLayer_)],
+        material_.layers[static_cast<std::size_t>(selectedLayer_ + 1)]);
+    ++selectedLayer_;
+    [self rebuildLayerList];
+    [self refreshLayerInspector];
+    [self regeneratePreview];
+    [self markDirty];
+}
+
+- (void)layerColourChanged:(id)sender
+{
+    static_cast<void>(sender);
+    auto* layer = layerAt(material_, selectedLayer_);
+    if (layer == nullptr) {
+        return;
+    }
+    auto* solid = std::get_if<paperweight::SolidColourOperation>(&layer->operation);
+    if (solid == nullptr) {
+        return;
+    }
+    solid->colour = rgba8FromColour(self.solidColourWell.color);
+    [self regeneratePreview];
+    [self markDirty];
+}
+
+- (void)layerParameterChanged:(id)sender
+{
+    auto* layer = layerAt(material_, selectedLayer_);
+    if (layer == nullptr) {
+        return;
+    }
+
+    switch (self.layerCompositeControl.selectedSegment) {
+    case 1:
+        layer->compositeMode = paperweight::CompositeMode::add;
+        break;
+    case 2:
+        layer->compositeMode = paperweight::CompositeMode::multiply;
+        break;
+    default:
+        layer->compositeMode = paperweight::CompositeMode::blend;
+        break;
+    }
+    layer->opacity = self.layerOpacitySlider.doubleValue;
+
+    if (sender == self.noiseSeedOffsetField) {
+        const std::string text = self.noiseSeedOffsetField.stringValue.UTF8String;
+        std::uint64_t parsed = 0;
+        const auto result = std::from_chars(text.data(), text.data() + text.size(), parsed, 10);
+        if (text.empty() || result.ec != std::errc{} || result.ptr != text.data() + text.size()) {
+            self.statusLabel.stringValue = @"A noise seed offset must be a non-negative integer.";
+            self.statusLabel.textColor = NSColor.systemRedColor;
+            return;
+        }
+        if (auto* noise = std::get_if<paperweight::NoiseOperation>(&layer->operation)) {
+            noise->seedOffset = parsed;
+        }
+    }
+
+    if (auto* levels = std::get_if<paperweight::LevelsOperation>(&layer->operation)) {
+        double low = self.levelsLowSlider.doubleValue;
+        double high = self.levelsHighSlider.doubleValue;
+        if (low >= high) {
+            if (sender == self.levelsLowSlider) {
+                low = std::min(low, 0.99);
+                high = std::max(high, low + 0.01);
+            } else {
+                high = std::max(high, 0.01);
+                low = std::min(low, high - 0.01);
+            }
+            self.levelsLowSlider.doubleValue = low;
+            self.levelsHighSlider.doubleValue = high;
+        }
+        levels->inputLow = low;
+        levels->inputHigh = high;
+        levels->gamma = self.levelsGammaSlider.doubleValue;
+    }
+    if (auto* threshold = std::get_if<paperweight::ThresholdOperation>(&layer->operation)) {
+        threshold->threshold = self.thresholdSlider.doubleValue;
+    }
+
+    [self refreshLayerInspector];
+    [self regeneratePreview];
+    [self markDirty];
 }
 
 - (void)parameterChanged:(id)sender
@@ -581,6 +1142,8 @@ NSString* outputName(paperweight::MaterialOutput output)
 {
     static_cast<void>(sender);
     material_ = paperweight::Material{};
+    material_.layers.push_back(paperweight::makeNoiseLayer());
+    selectedLayer_ = 0;
     self.seedField.stringValue = [NSString stringWithFormat:@"%llu", material_.seed];
     self.frequencySlider.doubleValue = material_.frequency;
     self.octavesSlider.doubleValue = material_.octaves;
@@ -591,6 +1154,8 @@ NSString* outputName(paperweight::MaterialOutput output)
     self.normalStrengthSlider.doubleValue = material_.normalStrength;
     self.roughnessLowSlider.doubleValue = material_.roughnessLow;
     self.roughnessHighSlider.doubleValue = material_.roughnessHigh;
+    [self rebuildLayerList];
+    [self refreshLayerInspector];
     [self updateControlLabels];
     [self regeneratePreview];
     [self markDirty];
@@ -650,6 +1215,13 @@ NSString* outputName(paperweight::MaterialOutput output)
 
 - (void)applyMaterialToControls
 {
+    if (material_.layers.empty()) {
+        material_.layers.push_back(paperweight::makeNoiseLayer());
+    }
+    selectedLayer_ = std::clamp(
+        selectedLayer_,
+        static_cast<NSInteger>(0),
+        static_cast<NSInteger>(material_.layers.size() - 1));
     self.seedField.stringValue = [NSString stringWithFormat:@"%llu", material_.seed];
     self.frequencySlider.doubleValue = material_.frequency;
     self.octavesSlider.doubleValue = material_.octaves;
@@ -660,6 +1232,8 @@ NSString* outputName(paperweight::MaterialOutput output)
     self.normalStrengthSlider.doubleValue = material_.normalStrength;
     self.roughnessLowSlider.doubleValue = material_.roughnessLow;
     self.roughnessHighSlider.doubleValue = material_.roughnessHigh;
+    [self rebuildLayerList];
+    [self refreshLayerInspector];
     [self updateControlLabels];
     [self regeneratePreview];
 }

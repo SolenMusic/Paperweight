@@ -69,6 +69,11 @@ double periodicValueNoise2D(
 
 double periodicFbm2D(double u, double v, const Material& material)
 {
+    return periodicFbm2D(u, v, material, material.seed);
+}
+
+double periodicFbm2D(double u, double v, const Material& material, std::uint64_t seed)
+{
     if (const auto error = validateMaterial(material)) {
         throw std::invalid_argument(*error);
     }
@@ -82,7 +87,7 @@ double periodicFbm2D(double u, double v, const Material& material)
     std::uint32_t frequency = material.frequency;
 
     for (std::uint32_t octave = 0; octave < material.octaves; ++octave) {
-        const auto octaveSeed = mixBits(material.seed ^ static_cast<std::uint64_t>(octave));
+        const auto octaveSeed = mixBits(seed ^ static_cast<std::uint64_t>(octave));
         total += periodicValueNoise2D(
             u * frequency,
             v * frequency,

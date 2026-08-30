@@ -13,10 +13,11 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-v0.0.2 is the current Material Outputs release. Colour, height, tangent-space
-normal, and roughness maps derive from the same deterministic seamless FBM
-source. The native editor previews and exports each output while retaining the
-v0.0.1 authoring, open/save, and 1x1/3x3 tiling workflow.
+v0.0.3 is the current Layers release. An ordered stack now combines reusable
+noise, solid-colour, levels, and threshold operations with blend, add, and
+multiply compositing. Every layer has its own enabled state and opacity. Colour,
+height, tangent-space normal, and roughness continue to derive from the same
+deterministic, seamless evaluation result.
 
 The staged work is tracked in [GitHub Issues](https://github.com/SolenMusic/Paperweight/issues).
 
@@ -25,7 +26,7 @@ The staged work is tracked in [GitHub Issues](https://github.com/SolenMusic/Pape
 ```text
 Portable C++20 core
   image buffers, deterministic primitives, periodic noise,
-  material model, generator API, .pmat parsing/serialisation
+  reusable layer evaluation, generator API, .pmat parsing/serialisation
              |
              +-- Native builds and game embedding
              +-- Future WebAssembly build
@@ -38,14 +39,15 @@ See [docs/architecture.md](docs/architecture.md) and [docs/roadmap.md](docs/road
 
 ## Current scope
 
-The current release adds height, normal, and roughness to the foundation's
-two-colour output. Normal strength and roughness endpoints are portable
-material parameters and round-trip through `.pmat`. A native output selector
-switches the live 1x1/3x3 preview, and PNG export writes the selected map.
+The current release adds a native layer editor with add, remove, reorder,
+enable/disable, composite-mode, opacity, and operation-specific controls. The
+portable evaluator applies the same stack for all four material outputs, and
+format-version-2 `.pmat` files preserve it exactly. Format-version-1 files still
+open and retain their output; saving migrates them to the current format.
 
-Layers begin in v0.0.3. Warping, structural generators, a material graph,
-physical scale, advanced surface tools, performance work, and the stable game
-library follow in the documented roadmap.
+Masks and warping, structural generators, a material graph, physical scale,
+advanced surface tools, performance work, and the stable game library follow
+in the documented roadmap.
 
 ## Repository layout
 
@@ -90,8 +92,9 @@ open build/app/macos/Paperweight.app
 ```
 
 In the app, use File > Open to load a `.pmat` definition, File > Save or Save As
-to store one, edit the colour, noise, normal, and roughness controls, choose a
-material output, and use File > Export PNG to write that 512x512 RGBA8 tile.
+to store one, build a stack in the Layer Stack panel, choose a material output,
+and use File > Export PNG to write that 512x512 RGBA8 tile. The stack is shown
+bottom-to-top, matching evaluation order.
 See [the `.pmat` format reference](docs/pmat-format.md) for the text format.
 
 For a universal Intel and Apple Silicon build:

@@ -5,8 +5,10 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <paperweight/image.hpp>
+#include <paperweight/layer.hpp>
 
 namespace paperweight {
 
@@ -21,8 +23,9 @@ struct Material {
     double normalStrength{1.0};
     double roughnessLow{0.25};
     double roughnessHigh{0.85};
+    std::vector<MaterialLayer> layers;
 
-    friend constexpr bool operator==(const Material&, const Material&) = default;
+    friend bool operator==(const Material&, const Material&) = default;
 };
 
 struct MaterialLimits {

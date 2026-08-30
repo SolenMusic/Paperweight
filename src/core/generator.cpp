@@ -1,5 +1,6 @@
 #include <paperweight/generator.hpp>
 
+#include <paperweight/evaluation.hpp>
 #include <paperweight/noise.hpp>
 
 #include <algorithm>
@@ -13,15 +14,6 @@ namespace {
 
 constexpr std::uint32_t maximumDimension = 4096;
 
-std::uint8_t interpolateChannel(std::uint8_t low, std::uint8_t high, double value)
-{
-    const double amount = std::clamp(value, 0.0, 1.0);
-    const double scaled = std::round(
-        static_cast<double>(low) +
-        (static_cast<double>(high) - static_cast<double>(low)) * amount);
-    return static_cast<std::uint8_t>(scaled);
-}
-
 std::uint8_t toUnorm8(double value)
 {
     return static_cast<std::uint8_t>(std::round(std::clamp(value, 0.0, 1.0) * 255.0));
@@ -32,13 +24,13 @@ std::uint8_t signedToUnorm8(double value)
     return toUnorm8(std::clamp(value, -1.0, 1.0) * 0.5 + 0.5);
 }
 
-Rgba8 interpolateColour(const Rgba8& low, const Rgba8& high, double value)
+Rgba8 encodeColour(const EvaluatedSample& sample)
 {
     return {
-        interpolateChannel(low.red, high.red, value),
-        interpolateChannel(low.green, high.green, value),
-        interpolateChannel(low.blue, high.blue, value),
-        interpolateChannel(low.alpha, high.alpha, value),
+        toUnorm8(sample.red),
+        toUnorm8(sample.green),
+        toUnorm8(sample.blue),
+        toUnorm8(sample.alpha),
     };
 }
 
@@ -85,7 +77,7 @@ GenerationResult generate(const GenerationRequest& request)
                 for (std::uint32_t x = 0; x < request.width; ++x) {
                     const double u = (static_cast<double>(x) + 0.5) / request.width;
                     heights[static_cast<std::size_t>(y) * request.width + x] =
-                        periodicFbm2D(u, v, request.material);
+                        evaluateMaterialSample(request.material, u, v).scalar;
                 }
             }
 
@@ -119,21 +111,19 @@ GenerationResult generate(const GenerationRequest& request)
             const double v = (static_cast<double>(y) + 0.5) / request.height;
             for (std::uint32_t x = 0; x < request.width; ++x) {
                 const double u = (static_cast<double>(x) + 0.5) / request.width;
-                const double source = periodicFbm2D(u, v, request.material);
+                const auto sample = evaluateMaterialSample(request.material, u, v);
                 switch (request.output) {
                 case MaterialOutput::colour:
-                    row[x] = interpolateColour(
-                        request.material.lowColour,
-                        request.material.highColour,
-                        source);
+                    row[x] = encodeColour(sample);
                     break;
                 case MaterialOutput::height:
-                    row[x] = encodeScalar(source);
+                    row[x] = encodeScalar(sample.scalar);
                     break;
                 case MaterialOutput::roughness:
                     row[x] = encodeScalar(
                         request.material.roughnessLow +
-                        (request.material.roughnessHigh - request.material.roughnessLow) * source);
+                        (request.material.roughnessHigh - request.material.roughnessLow) *
+                            sample.scalar);
                     break;
                 case MaterialOutput::normal:
                     break;

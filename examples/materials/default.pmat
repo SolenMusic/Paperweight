@@ -1,5 +1,5 @@
 # Paperweight procedural material
-pmat.version = 1
+pmat.version = 2
 material.type = fbm
 material.seed = 18431
 colour.low = 0x000000FF
@@ -11,3 +11,9 @@ noise.gain = 0.5
 normal.strength = 1
 roughness.low = 0.25
 roughness.high = 0.85
+layers.count = 1
+layer.0.enabled = true
+layer.0.operation = noise
+layer.0.composite = blend
+layer.0.opacity = 1
+layer.0.noise.seed_offset = 0
