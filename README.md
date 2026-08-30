@@ -13,7 +13,10 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-Repository bootstrap for v0.0.1. The application and procedural generator have not been implemented yet.
+Active v0.0.1 development. The first testable preview includes a deterministic,
+mathematically seamless FBM generator and a native macOS editor with live
+controls and 1x1/3x3 tiling views. The `.pmat` format, open/save, and PNG export
+are still to come.
 
 The staged work is tracked in [GitHub Issues](https://github.com/SolenMusic/Paperweight/issues).
 
@@ -69,9 +72,31 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+The native application is produced at:
+
+```text
+build/app/macos/Paperweight.app
+```
+
+Open it in Finder or run:
+
+```sh
+open build/app/macos/Paperweight.app
+```
+
+For a universal Intel and Apple Silicon build:
+
+```sh
+cmake -S . -B build-universal \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+cmake --build build-universal
+ctest --test-dir build-universal --output-on-failure
+```
+
 The project currently uses a tiny in-repository test harness and has no
-third-party dependencies. See [CONTRIBUTING.md](CONTRIBUTING.md) for universal
-macOS build instructions and repository conventions.
+third-party dependencies. See [CONTRIBUTING.md](CONTRIBUTING.md) for repository
+conventions.
 
 ## Licence
 

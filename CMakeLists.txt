@@ -9,6 +9,8 @@ endif()
 project(Paperweight VERSION 0.0.1 LANGUAGES CXX)
 
 option(PAPERWEIGHT_BUILD_TESTS "Build the Paperweight test suite" ON)
+option(PAPERWEIGHT_BUILD_MACOS_APP "Build the native macOS application" ${APPLE})
+option(PAPERWEIGHT_BUILD_EXAMPLES "Build Paperweight core examples" ON)
 
 function(paperweight_enable_project_warnings target)
     if(MSVC)
@@ -25,6 +27,11 @@ function(paperweight_enable_project_warnings target)
 endfunction()
 
 add_library(paperweight_core STATIC
+    src/core/generator.cpp
+    src/core/hash.cpp
+    src/core/image.cpp
+    src/core/material.cpp
+    src/core/noise.cpp
     src/core/version.cpp
 )
 add_library(Paperweight::Core ALIAS paperweight_core)
@@ -44,4 +51,16 @@ paperweight_enable_project_warnings(paperweight_core)
 if(PAPERWEIGHT_BUILD_TESTS)
     include(CTest)
     add_subdirectory(tests)
+endif()
+
+if(PAPERWEIGHT_BUILD_EXAMPLES)
+    add_subdirectory(examples)
+endif()
+
+if(PAPERWEIGHT_BUILD_MACOS_APP)
+    if(NOT APPLE)
+        message(FATAL_ERROR "PAPERWEIGHT_BUILD_MACOS_APP requires macOS")
+    endif()
+    enable_language(OBJCXX)
+    add_subdirectory(app/macos)
 endif()

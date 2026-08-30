@@ -1,0 +1,8 @@
+add_executable(paperweight_generate_example
+    generate_preview.cpp
+)
+
+target_link_libraries(paperweight_generate_example PRIVATE Paperweight::Core)
+target_compile_features(paperweight_generate_example PRIVATE cxx_std_20)
+set_target_properties(paperweight_generate_example PROPERTIES CXX_EXTENSIONS OFF)
+paperweight_enable_project_warnings(paperweight_generate_example)
