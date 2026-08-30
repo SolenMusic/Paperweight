@@ -43,11 +43,17 @@ Constraints:
 
 The first preview is rendered through `NSBitmapImageRep`. This conversion lives
 in Objective-C++ and consumes the portable core's RGBA8 buffer without exposing
-AppKit types to the core.
+AppKit types to the core. The same bridge encodes PNG data. Native file panels
+handle paths, while parsing and serialisation remain in portable C++.
 
 ### Material format
 
 `.pmat` is a human-readable, versioned text format. Parsing and serialisation live in the portable core. Round trips should be stable and errors should identify useful source locations.
+
+The format version is deliberately independent of the application version.
+Paperweight v0.0.2 reads and writes `.pmat` format version 1. Unknown keys and
+unsupported format versions fail explicitly instead of being silently ignored.
+See [pmat-format.md](pmat-format.md).
 
 ## Initial data flow
 
@@ -60,4 +66,4 @@ AppKit types to the core.
 
 ## Deferred architecture
 
-WebAssembly bindings, game-engine adapters, GPU backends, node graphs, PBR channel sets, and specialised material generators are deliberately outside v0.0.1.
+WebAssembly bindings, game-engine adapters, GPU backends, node graphs, PBR channel sets, and specialised material generators are deliberately outside v0.0.2.

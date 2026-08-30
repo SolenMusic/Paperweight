@@ -1,13 +1,17 @@
 #import <AppKit/AppKit.h>
 
+#include "ImageBridge.hpp"
+
 #include <paperweight/generator.hpp>
 #include <paperweight/hash.hpp>
+#include <paperweight/pmat.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
-#include <cstring>
 #include <limits>
+#include <optional>
+#include <string>
 #include <variant>
 
 @interface MaterialPreviewView : NSView
@@ -40,25 +44,13 @@
 
 - (void)setGeneratedImage:(const paperweight::Image&)image
 {
-    auto* representation = [[NSBitmapImageRep alloc]
-        initWithBitmapDataPlanes:nullptr
-                      pixelsWide:static_cast<NSInteger>(image.width())
-                      pixelsHigh:static_cast<NSInteger>(image.height())
-                   bitsPerSample:8
-                 samplesPerPixel:4
-                        hasAlpha:YES
-                        isPlanar:NO
-                  colorSpaceName:NSCalibratedRGBColorSpace
-                     bitmapFormat:NSBitmapFormatAlphaNonpremultiplied
-                      bytesPerRow:static_cast<NSInteger>(image.bytesPerRow())
-                     bitsPerPixel:32];
-    if (representation == nil || representation.bitmapData == nullptr) {
+    auto* representation = paperweight::macos::makeBitmapRepresentation(image);
+    if (representation == nil) {
         self.materialImage = nil;
         [self setNeedsDisplay:YES];
         return;
     }
 
-    std::memcpy(representation.bitmapData, image.pixels().data(), image.pixels().size_bytes());
     auto* displayImage = [[NSImage alloc]
         initWithSize:NSMakeSize(static_cast<CGFloat>(image.width()),
                                static_cast<CGFloat>(image.height()))];
@@ -125,6 +117,7 @@
 @property(nonatomic, strong) NSTextField* gainValue;
 @property(nonatomic, strong) NSSegmentedControl* tilingControl;
 @property(nonatomic, strong) NSTextField* statusLabel;
+@property(nonatomic, strong) NSURL* currentFileURL;
 
 @end
 
@@ -183,6 +176,8 @@ NSBox* makeSeparator()
 
 @implementation AppDelegate {
     paperweight::Material material_;
+    std::optional<paperweight::Image> generatedImage_;
+    bool dirty_;
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification*)notification
@@ -192,6 +187,7 @@ NSBox* makeSeparator()
     [self buildWindow];
     [self updateControlLabels];
     [self regeneratePreview];
+    [self updateWindowTitle];
     [self.window center];
     [self.window makeKeyAndOrderFront:nil];
     [NSApp activateIgnoringOtherApps:YES];
@@ -201,6 +197,18 @@ NSBox* makeSeparator()
 {
     static_cast<void>(sender);
     return YES;
+}
+
+- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication*)sender
+{
+    static_cast<void>(sender);
+    return [self confirmDiscardIfNeeded] ? NSTerminateNow : NSTerminateCancel;
+}
+
+- (BOOL)windowShouldClose:(NSWindow*)sender
+{
+    static_cast<void>(sender);
+    return [self confirmDiscardIfNeeded];
 }
 
 - (void)buildMenus
@@ -220,6 +228,18 @@ NSBox* makeSeparator()
     auto* fileMenuItem = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
     [mainMenu addItem:fileMenuItem];
     auto* fileMenu = [[NSMenu alloc] initWithTitle:@"File"];
+    [fileMenu addItemWithTitle:@"Open…" action:@selector(openMaterial:) keyEquivalent:@"o"];
+    [fileMenu addItemWithTitle:@"Save" action:@selector(saveMaterial:) keyEquivalent:@"s"];
+    auto* saveAsItem = [fileMenu addItemWithTitle:@"Save As…"
+                                          action:@selector(saveMaterialAs:)
+                                   keyEquivalent:@"s"];
+    saveAsItem.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift;
+    [fileMenu addItem:[NSMenuItem separatorItem]];
+    auto* exportItem = [fileMenu addItemWithTitle:@"Export PNG…"
+                                          action:@selector(exportPng:)
+                                   keyEquivalent:@"e"];
+    exportItem.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift;
+    [fileMenu addItem:[NSMenuItem separatorItem]];
     [fileMenu addItemWithTitle:@"Close Window" action:@selector(performClose:) keyEquivalent:@"w"];
     fileMenuItem.submenu = fileMenu;
 
@@ -242,7 +262,7 @@ NSBox* makeSeparator()
                                               styleMask:style
                                                 backing:NSBackingStoreBuffered
                                                   defer:NO];
-    self.window.title = @"Paperweight — Seamless Material Preview";
+    self.window.title = @"Untitled.pmat — Paperweight";
     self.window.minSize = NSMakeSize(820, 560);
     self.window.delegate = self;
 
@@ -400,6 +420,7 @@ NSBox* makeSeparator()
     material_.gain = self.gainSlider.doubleValue;
     [self updateControlLabels];
     [self regeneratePreview];
+    [self markDirty];
 }
 
 - (void)randomiseSeed:(id)sender
@@ -408,6 +429,7 @@ NSBox* makeSeparator()
     material_.seed = paperweight::mixBits(material_.seed);
     self.seedField.stringValue = [NSString stringWithFormat:@"%llu", material_.seed];
     [self regeneratePreview];
+    [self markDirty];
 }
 
 - (void)resetMaterial:(id)sender
@@ -421,6 +443,7 @@ NSBox* makeSeparator()
     self.gainSlider.doubleValue = material_.gain;
     [self updateControlLabels];
     [self regeneratePreview];
+    [self markDirty];
 }
 
 - (void)tilingChanged:(id)sender
@@ -437,20 +460,228 @@ NSBox* makeSeparator()
     self.gainValue.stringValue = [NSString stringWithFormat:@"%.2f", material_.gain];
 }
 
+- (void)applyMaterialToControls
+{
+    self.seedField.stringValue = [NSString stringWithFormat:@"%llu", material_.seed];
+    self.frequencySlider.doubleValue = material_.frequency;
+    self.octavesSlider.doubleValue = material_.octaves;
+    self.lacunaritySlider.doubleValue = material_.lacunarity;
+    self.gainSlider.doubleValue = material_.gain;
+    [self updateControlLabels];
+    [self regeneratePreview];
+}
+
 - (void)regeneratePreview
 {
     const paperweight::GenerationRequest request{material_, 512, 512};
     auto result = paperweight::generate(request);
     if (const auto* image = std::get_if<paperweight::Image>(&result)) {
         [self.previewView setGeneratedImage:*image];
+        generatedImage_ = *image;
         self.statusLabel.stringValue = @"512 × 512 RGBA8 — mathematically seamless";
         self.statusLabel.textColor = NSColor.secondaryLabelColor;
         return;
     }
 
     const auto& error = std::get<paperweight::GenerationError>(result);
+    generatedImage_.reset();
     self.statusLabel.stringValue = [NSString stringWithUTF8String:error.message.c_str()];
     self.statusLabel.textColor = NSColor.systemRedColor;
+}
+
+- (void)markDirty
+{
+    dirty_ = true;
+    [self updateWindowTitle];
+}
+
+- (void)updateWindowTitle
+{
+    NSString* name = self.currentFileURL == nil ? @"Untitled.pmat" : self.currentFileURL.lastPathComponent;
+    self.window.title = [NSString stringWithFormat:@"%@ — Paperweight", name];
+    self.window.documentEdited = dirty_;
+    self.window.representedURL = self.currentFileURL;
+}
+
+- (void)showErrorWithTitle:(NSString*)title message:(NSString*)message
+{
+    auto* alert = [[NSAlert alloc] init];
+    alert.alertStyle = NSAlertStyleCritical;
+    alert.messageText = title;
+    alert.informativeText = message;
+    [alert runModal];
+}
+
+- (BOOL)confirmDiscardIfNeeded
+{
+    if (!dirty_) {
+        return YES;
+    }
+
+    auto* alert = [[NSAlert alloc] init];
+    alert.alertStyle = NSAlertStyleWarning;
+    alert.messageText = @"Do you want to save this material?";
+    alert.informativeText = @"Your changes will be lost if you don’t save them.";
+    [alert addButtonWithTitle:@"Save"];
+    [alert addButtonWithTitle:@"Cancel"];
+    [alert addButtonWithTitle:@"Don’t Save"];
+    const NSModalResponse response = [alert runModal];
+    if (response == NSAlertFirstButtonReturn) {
+        return [self saveMaterialWithPanelIfNeeded];
+    }
+    if (response == NSAlertThirdButtonReturn) {
+        dirty_ = false;
+        [self updateWindowTitle];
+        return YES;
+    }
+    return NO;
+}
+
+- (BOOL)saveMaterialWithPanelIfNeeded
+{
+    if (self.currentFileURL != nil) {
+        return [self saveMaterialToURL:self.currentFileURL];
+    }
+
+    auto* panel = [NSSavePanel savePanel];
+    panel.title = @"Save Paperweight Material";
+    panel.nameFieldStringValue = @"Untitled.pmat";
+    panel.allowedFileTypes = @[ @"pmat" ];
+    panel.allowsOtherFileTypes = NO;
+    panel.canCreateDirectories = YES;
+    if ([panel runModal] != NSModalResponseOK) {
+        return NO;
+    }
+    return [self saveMaterialToURL:panel.URL];
+}
+
+- (BOOL)saveMaterialToURL:(NSURL*)url
+{
+    const auto result = paperweight::serialisePmat(material_);
+    if (const auto* error = std::get_if<paperweight::SerialisationError>(&result)) {
+        [self showErrorWithTitle:@"The material could not be saved"
+                         message:[NSString stringWithUTF8String:error->message.c_str()]];
+        return NO;
+    }
+
+    const auto& text = std::get<std::string>(result);
+    auto* contents = [[NSString alloc] initWithBytes:text.data()
+                                              length:text.size()
+                                            encoding:NSUTF8StringEncoding];
+    NSError* error = nil;
+    if (contents == nil || ![contents writeToURL:url
+                                      atomically:YES
+                                        encoding:NSUTF8StringEncoding
+                                           error:&error]) {
+        NSString* message = error == nil ? @"The material could not be encoded as UTF-8."
+                                         : error.localizedDescription;
+        [self showErrorWithTitle:@"The material could not be saved" message:message];
+        return NO;
+    }
+
+    self.currentFileURL = url;
+    dirty_ = false;
+    [self updateWindowTitle];
+    [NSDocumentController.sharedDocumentController noteNewRecentDocumentURL:url];
+    self.statusLabel.stringValue = @"Material saved";
+    self.statusLabel.textColor = NSColor.secondaryLabelColor;
+    return YES;
+}
+
+- (void)saveMaterial:(id)sender
+{
+    static_cast<void>(sender);
+    [self saveMaterialWithPanelIfNeeded];
+}
+
+- (void)saveMaterialAs:(id)sender
+{
+    static_cast<void>(sender);
+    NSURL* previousURL = self.currentFileURL;
+    self.currentFileURL = nil;
+    if (![self saveMaterialWithPanelIfNeeded]) {
+        self.currentFileURL = previousURL;
+        [self updateWindowTitle];
+    }
+}
+
+- (void)openMaterial:(id)sender
+{
+    static_cast<void>(sender);
+    auto* panel = [NSOpenPanel openPanel];
+    panel.title = @"Open Paperweight Material";
+    panel.allowedFileTypes = @[ @"pmat" ];
+    panel.allowsMultipleSelection = NO;
+    panel.canChooseDirectories = NO;
+    if ([panel runModal] != NSModalResponseOK) {
+        return;
+    }
+
+    NSError* readError = nil;
+    auto* contents = [NSString stringWithContentsOfURL:panel.URL
+                                              encoding:NSUTF8StringEncoding
+                                                 error:&readError];
+    if (contents == nil) {
+        [self showErrorWithTitle:@"The material could not be opened"
+                         message:readError.localizedDescription];
+        return;
+    }
+    const char* utf8 = contents.UTF8String;
+    if (utf8 == nullptr) {
+        [self showErrorWithTitle:@"The material could not be opened"
+                         message:@"The file is not valid UTF-8 text."];
+        return;
+    }
+    const auto parsed = paperweight::parsePmat(utf8);
+    if (const auto* diagnostic = std::get_if<paperweight::ParseDiagnostic>(&parsed)) {
+        auto* message = [NSString stringWithFormat:@"Line %zu, column %zu: %s",
+                                                   diagnostic->line,
+                                                   diagnostic->column,
+                                                   diagnostic->message.c_str()];
+        [self showErrorWithTitle:@"This is not a valid .pmat file" message:message];
+        return;
+    }
+    if (![self confirmDiscardIfNeeded]) {
+        return;
+    }
+
+    material_ = std::get<paperweight::Material>(parsed);
+    self.currentFileURL = panel.URL;
+    dirty_ = false;
+    [self applyMaterialToControls];
+    [self updateWindowTitle];
+    [NSDocumentController.sharedDocumentController noteNewRecentDocumentURL:panel.URL];
+}
+
+- (void)exportPng:(id)sender
+{
+    static_cast<void>(sender);
+    if (!generatedImage_) {
+        [self showErrorWithTitle:@"There is no texture to export"
+                         message:@"Generate a valid preview before exporting."];
+        return;
+    }
+
+    auto* panel = [NSSavePanel savePanel];
+    panel.title = @"Export Generated Texture";
+    panel.nameFieldStringValue = @"Paperweight-512x512.png";
+    panel.allowedFileTypes = @[ @"png" ];
+    panel.allowsOtherFileTypes = NO;
+    panel.canCreateDirectories = YES;
+    if ([panel runModal] != NSModalResponseOK) {
+        return;
+    }
+
+    NSData* data = paperweight::macos::makePngData(*generatedImage_);
+    NSError* error = nil;
+    if (data == nil || ![data writeToURL:panel.URL options:NSDataWritingAtomic error:&error]) {
+        NSString* message = error == nil ? @"The preview could not be encoded as PNG."
+                                         : error.localizedDescription;
+        [self showErrorWithTitle:@"The PNG could not be exported" message:message];
+        return;
+    }
+    self.statusLabel.stringValue = @"PNG exported";
+    self.statusLabel.textColor = NSColor.secondaryLabelColor;
 }
 
 @end

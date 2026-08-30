@@ -3,16 +3,20 @@
 #include <paperweight/image.hpp>
 #include <paperweight/material.hpp>
 #include <paperweight/noise.hpp>
+#include <paperweight/pmat.hpp>
 #include <paperweight/version.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <exception>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <variant>
 #include <utility>
@@ -60,9 +64,9 @@ std::uint64_t checksum(std::span<const paperweight::Rgba8> pixels)
 
 void testVersion()
 {
-    constexpr paperweight::Version expected{0, 0, 1};
+    constexpr paperweight::Version expected{0, 0, 2};
     static_assert(paperweight::currentVersion == expected);
-    expect(paperweight::versionString() == "0.0.1", "version string is 0.0.1");
+    expect(paperweight::versionString() == "0.0.2", "version string is 0.0.2");
 }
 
 void testImage()
@@ -151,6 +155,26 @@ void testMaterialAndFbm()
     expectNear(sample, paperweight::periodicFbm2D(-0.375, 1.625, material), 1.0e-12,
                "FBM repeats after one tile on y");
     expect(sample >= 0.0 && sample <= 1.0, "normalised FBM stays in range");
+
+    const std::array representativeMaterials{
+        paperweight::Material{0, 1, 1, 1, 0.1},
+        paperweight::Material{42, 7, 4, 2, 0.37},
+        paperweight::Material{std::numeric_limits<std::uint64_t>::max(), 1, 7, 4, 0.9},
+    };
+    for (const auto& candidate : representativeMaterials) {
+        for (const auto [u, v] : std::array{
+                 std::pair{-2.25, -0.125},
+                 std::pair{0.0, 0.0},
+                 std::pair{0.375, 0.875},
+                 std::pair{4.125, 9.625},
+             }) {
+            const double value = paperweight::periodicFbm2D(u, v, candidate);
+            expectNear(value, paperweight::periodicFbm2D(u + 1.0, v, candidate), 1.0e-12,
+                       "representative FBM repeats on x");
+            expectNear(value, paperweight::periodicFbm2D(u, v + 1.0, candidate), 1.0e-12,
+                       "representative FBM repeats on y");
+        }
+    }
 }
 
 void testGenerator()
@@ -184,11 +208,134 @@ void testGenerator()
         expect(checksum(first.pixels()) != checksum(changed->pixels()), "seed changes generated pixels");
     }
 
+    for (const auto [width, height] : std::array{
+             std::pair<std::uint32_t, std::uint32_t>{1, 1},
+             std::pair<std::uint32_t, std::uint32_t>{17, 29},
+             std::pair<std::uint32_t, std::uint32_t>{65, 3},
+         }) {
+        const paperweight::GenerationRequest representative{paperweight::Material{}, width, height};
+        const auto generatedA = paperweight::generate(representative);
+        const auto generatedB = paperweight::generate(representative);
+        const auto* imageA = std::get_if<paperweight::Image>(&generatedA);
+        const auto* imageB = std::get_if<paperweight::Image>(&generatedB);
+        expect(imageA != nullptr && imageB != nullptr &&
+                   checksum(imageA->pixels()) == checksum(imageB->pixels()),
+               "representative output dimensions remain byte-deterministic");
+    }
+
     auto invalidRequest = request;
     invalidRequest.width = 0;
     const auto invalidResult = paperweight::generate(invalidRequest);
     expect(std::holds_alternative<paperweight::GenerationError>(invalidResult),
            "invalid dimensions return a structured error");
+}
+
+void testPmat()
+{
+    constexpr std::string_view canonical =
+        "# Paperweight procedural material\n"
+        "pmat.version = 1\n"
+        "material.type = fbm\n"
+        "material.seed = 18431\n"
+        "noise.frequency = 4\n"
+        "noise.octaves = 5\n"
+        "noise.lacunarity = 2\n"
+        "noise.gain = 0.5\n";
+
+    const auto parsed = paperweight::parsePmat(canonical);
+    expect(std::holds_alternative<paperweight::Material>(parsed), "canonical .pmat parses");
+    if (const auto* material = std::get_if<paperweight::Material>(&parsed)) {
+        expect(*material == paperweight::Material{}, "canonical .pmat has default values");
+        const auto serialised = paperweight::serialisePmat(*material);
+        expect(std::holds_alternative<std::string>(serialised), "valid material serialises");
+        if (const auto* text = std::get_if<std::string>(&serialised)) {
+            expect(*text == canonical, "serialisation uses the canonical representation");
+            const auto reparsed = paperweight::parsePmat(*text);
+            expect(std::holds_alternative<paperweight::Material>(reparsed) &&
+                       std::get<paperweight::Material>(reparsed) == *material,
+                   "parse-serialise-parse preserves the material");
+        }
+    }
+
+    std::ifstream exampleFile("default.pmat", std::ios::binary);
+    const std::string exampleText(
+        std::istreambuf_iterator<char>{exampleFile},
+        std::istreambuf_iterator<char>{});
+    expect(exampleFile.good() || exampleFile.eof(), "canonical example file is readable");
+    const auto example = paperweight::parsePmat(exampleText);
+    expect(std::holds_alternative<paperweight::Material>(example) &&
+               std::get<paperweight::Material>(example) == paperweight::Material{},
+           "checked-in canonical example parses as the default material");
+    if (const auto* material = std::get_if<paperweight::Material>(&example)) {
+        const auto generated = paperweight::generate({*material, 48, 32});
+        const auto* image = std::get_if<paperweight::Image>(&generated);
+        expect(image != nullptr && checksum(image->pixels()) == 4981563472745378647ULL,
+               "checked-in example retains the default golden image checksum");
+    }
+
+    const std::array roundTripMaterials{
+        paperweight::Material{0, 1, 1, 1, 0.1},
+        paperweight::Material{927364821, 13, 4, 2, 0.37},
+        paperweight::Material{std::numeric_limits<std::uint64_t>::max(), 1, 7, 4, 0.9},
+    };
+    for (const auto& candidate : roundTripMaterials) {
+        const auto text = paperweight::serialisePmat(candidate);
+        expect(std::holds_alternative<std::string>(text),
+               "boundary and custom materials serialise");
+        if (const auto* serialised = std::get_if<std::string>(&text)) {
+            const auto roundTrip = paperweight::parsePmat(*serialised);
+            expect(std::holds_alternative<paperweight::Material>(roundTrip) &&
+                       std::get<paperweight::Material>(roundTrip) == candidate,
+                   "boundary and custom materials round-trip exactly");
+        }
+    }
+
+    constexpr std::string_view flexible =
+        "  # Comments and CRLF are accepted\r\n"
+        "noise.gain=0.75 # trailing comment\r\n"
+        "noise.lacunarity = 3\r\n"
+        "noise.octaves = 4\r\n"
+        "noise.frequency = 7\r\n"
+        "material.seed = 99\r\n"
+        "material.type = fbm\r\n"
+        "pmat.version = 1\r\n";
+    const auto flexibleResult = paperweight::parsePmat(flexible);
+    expect(std::holds_alternative<paperweight::Material>(flexibleResult),
+           "comments, whitespace, CRLF, and key order are flexible");
+    if (const auto* material = std::get_if<paperweight::Material>(&flexibleResult)) {
+        expect(material->seed == 99 && material->frequency == 7 && material->octaves == 4 &&
+                   material->lacunarity == 3 && material->gain == 0.75,
+               "flexible input produces expected values");
+    }
+
+    const auto expectDiagnostic = [](std::string_view text, std::size_t line, std::string_view phrase) {
+        const auto result = paperweight::parsePmat(text);
+        expect(std::holds_alternative<paperweight::ParseDiagnostic>(result),
+               "invalid .pmat produces a diagnostic");
+        if (const auto* error = std::get_if<paperweight::ParseDiagnostic>(&result)) {
+            expect(error->line == line && error->column > 0 &&
+                       error->message.find(phrase) != std::string::npos,
+                   "diagnostic contains source position and reason");
+        }
+    };
+
+    expectDiagnostic("pmat.version = 2\n", 1, "unsupported");
+    expectDiagnostic("unknown.key = 1\n", 1, "unknown key");
+    expectDiagnostic("pmat.version = 1\npmat.version = 1\n", 2, "duplicate");
+    expectDiagnostic("pmat.version = nope\n", 1, "integer");
+    expectDiagnostic("pmat.version = 1\n", 3, "missing required key");
+    expectDiagnostic("pmat.version = 1 = 2\n", 1, "exactly one");
+    expectDiagnostic(
+        "pmat.version = 1\nmaterial.type = fbm\nmaterial.seed = 0\n"
+        "noise.frequency = 65\nnoise.octaves = 1\nnoise.lacunarity = 1\nnoise.gain = 0.5\n",
+        4,
+        "frequency");
+
+    auto invalid = paperweight::Material{};
+    invalid.gain = 2.0;
+    expect(std::holds_alternative<paperweight::SerialisationError>(
+               paperweight::serialisePmat(invalid)),
+           "invalid materials are not serialised");
 }
 
 } // namespace
@@ -201,6 +348,7 @@ int main()
     testPeriodicNoise();
     testMaterialAndFbm();
     testGenerator();
+    testPmat();
 
     if (failures != 0) {
         std::cerr << failures << " test assertion(s) failed\n";

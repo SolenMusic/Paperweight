@@ -51,5 +51,5 @@ ctest --test-dir build-universal --output-on-failure
 ## Scope discipline
 
 Keep each pull request tied to one issue and its acceptance criteria. Features
-deferred from v0.0.1 should stay deferred; a paperweight stops being funny when
+deferred from v0.0.2 should stay deferred; a paperweight stops being funny when
 it becomes heavy enough to require a forklift.
