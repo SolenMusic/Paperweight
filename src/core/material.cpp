@@ -5,6 +5,28 @@
 #include <type_traits>
 
 namespace paperweight {
+namespace {
+
+bool validPatternCount(std::uint32_t value)
+{
+    return value >= LayerLimits::minimumPatternCount &&
+        value <= LayerLimits::maximumPatternCount;
+}
+
+bool validRange(double value, double minimum, double maximum)
+{
+    return std::isfinite(value) && value >= minimum && value <= maximum;
+}
+
+bool validSoftness(double value)
+{
+    return validRange(
+        value,
+        LayerLimits::minimumSoftness,
+        LayerLimits::maximumSoftness);
+}
+
+} // namespace
 
 std::optional<std::string> validateMaterial(const Material& material)
 {
@@ -120,6 +142,114 @@ std::optional<std::string> validateMaterial(const Material& material)
                         operation.threshold < LayerLimits::minimumThreshold ||
                         operation.threshold > LayerLimits::maximumThreshold) {
                         return prefix + "threshold must be finite and between 0 and 1";
+                    }
+                } else if constexpr (std::is_same_v<Operation, BrickGridOperation>) {
+                    if (!validPatternCount(operation.columns) ||
+                        !validPatternCount(operation.rows)) {
+                        return prefix + "brick columns and rows must be between 1 and 64";
+                    }
+                    if (!validRange(
+                            operation.mortar,
+                            LayerLimits::minimumGap,
+                            LayerLimits::maximumGap)) {
+                        return prefix + "brick mortar must be finite and between 0 and 0.95";
+                    }
+                    if (!validRange(
+                            operation.stagger,
+                            LayerLimits::minimumStagger,
+                            LayerLimits::maximumStagger)) {
+                        return prefix + "brick stagger must be finite and between 0 and 1";
+                    }
+                    if (!validSoftness(operation.softness)) {
+                        return prefix + "brick softness must be finite and between 0 and 0.25";
+                    }
+                } else if constexpr (std::is_same_v<Operation, TileGridOperation>) {
+                    if (!validPatternCount(operation.columns) ||
+                        !validPatternCount(operation.rows)) {
+                        return prefix + "tile columns and rows must be between 1 and 64";
+                    }
+                    if (!validRange(
+                            operation.grout,
+                            LayerLimits::minimumGap,
+                            LayerLimits::maximumGap)) {
+                        return prefix + "tile grout must be finite and between 0 and 0.95";
+                    }
+                    if (!validSoftness(operation.softness)) {
+                        return prefix + "tile softness must be finite and between 0 and 0.25";
+                    }
+                } else if constexpr (std::is_same_v<Operation, WorleyCellsOperation>) {
+                    if (!validPatternCount(operation.columns) ||
+                        !validPatternCount(operation.rows)) {
+                        return prefix + "Worley columns and rows must be between 1 and 64";
+                    }
+                    if (!validRange(
+                            operation.jitter,
+                            LayerLimits::minimumJitter,
+                            LayerLimits::maximumJitter)) {
+                        return prefix + "Worley jitter must be finite and between 0 and 1";
+                    }
+                    if (!validRange(
+                            operation.edgeWidth,
+                            LayerLimits::minimumCellEdgeWidth,
+                            LayerLimits::maximumCellEdgeWidth)) {
+                        return prefix + "Worley edge width must be finite and between 0.01 and 2";
+                    }
+                } else if constexpr (std::is_same_v<Operation, RandomCellsOperation>) {
+                    if (!validPatternCount(operation.columns) ||
+                        !validPatternCount(operation.rows)) {
+                        return prefix + "random-cell columns and rows must be between 1 and 64";
+                    }
+                } else if constexpr (std::is_same_v<Operation, LinesOperation>) {
+                    if (!validPatternCount(operation.count)) {
+                        return prefix + "line count must be between 1 and 64";
+                    }
+                    switch (operation.direction) {
+                    case LineDirection::vertical:
+                    case LineDirection::horizontal:
+                        break;
+                    default:
+                        return prefix + "line direction is not supported";
+                    }
+                    if (!validRange(
+                            operation.width,
+                            LayerLimits::minimumShapeSize,
+                            LayerLimits::maximumShapeSize)) {
+                        return prefix + "line width must be finite and between 0 and 1";
+                    }
+                    if (!validSoftness(operation.softness)) {
+                        return prefix + "line softness must be finite and between 0 and 0.25";
+                    }
+                } else if constexpr (std::is_same_v<Operation, RectanglesOperation>) {
+                    if (!validPatternCount(operation.columns) ||
+                        !validPatternCount(operation.rows)) {
+                        return prefix + "rectangle columns and rows must be between 1 and 64";
+                    }
+                    if (!validRange(
+                            operation.width,
+                            LayerLimits::minimumShapeSize,
+                            LayerLimits::maximumShapeSize) ||
+                        !validRange(
+                            operation.height,
+                            LayerLimits::minimumShapeSize,
+                            LayerLimits::maximumShapeSize)) {
+                        return prefix + "rectangle width and height must be finite and between 0 and 1";
+                    }
+                    if (!validSoftness(operation.softness)) {
+                        return prefix + "rectangle softness must be finite and between 0 and 0.25";
+                    }
+                } else if constexpr (std::is_same_v<Operation, CirclesOperation>) {
+                    if (!validPatternCount(operation.columns) ||
+                        !validPatternCount(operation.rows)) {
+                        return prefix + "circle columns and rows must be between 1 and 64";
+                    }
+                    if (!validRange(
+                            operation.radius,
+                            LayerLimits::minimumCircleRadius,
+                            LayerLimits::maximumCircleRadius)) {
+                        return prefix + "circle radius must be finite and between 0 and 0.5";
+                    }
+                    if (!validSoftness(operation.softness)) {
+                        return prefix + "circle softness must be finite and between 0 and 0.25";
                     }
                 }
                 return std::nullopt;

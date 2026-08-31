@@ -12,6 +12,16 @@ configure_file(
     "${CMAKE_CURRENT_BINARY_DIR}/ember.pmat"
     COPYONLY
 )
+configure_file(
+    "${PROJECT_SOURCE_DIR}/examples/materials/brick-wall.pmat"
+    "${CMAKE_CURRENT_BINARY_DIR}/brick-wall.pmat"
+    COPYONLY
+)
+configure_file(
+    "${PROJECT_SOURCE_DIR}/examples/materials/cobblestone.pmat"
+    "${CMAKE_CURRENT_BINARY_DIR}/cobblestone.pmat"
+    COPYONLY
+)
 
 target_link_libraries(paperweight_tests PRIVATE Paperweight::Core)
 target_compile_features(paperweight_tests PRIVATE cxx_std_20)

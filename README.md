@@ -13,11 +13,11 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-v0.0.4 is the current Masks and Warping release. Every layer can now transform
-its coordinates with independent integer scale, continuous periodic offset, and
-quarter-turn rotation, then apply deterministic periodic distortion and a
-remappable noise mask. Colour, height, tangent-space normal, and roughness still
-derive from the same deterministic, mathematically seamless evaluation result.
+v0.0.5 is the current Structural Generators release. Layers can now generate
+brick and tile grids, seeded Worley and random cells, lines, rectangles, and
+circles. Each generator remains deterministic and mathematically periodic, and
+works with the existing transforms, warp, masks, composites, and four material
+outputs.
 
 The staged work is tracked in [GitHub Issues](https://github.com/SolenMusic/Paperweight/issues).
 
@@ -26,7 +26,7 @@ The staged work is tracked in [GitHub Issues](https://github.com/SolenMusic/Pape
 ```text
 Portable C++20 core
   image buffers, deterministic primitives, periodic noise,
-  layer transforms, masks and evaluation, generator API,
+  structural generators, layer transforms, masks and evaluation, generator API,
   .pmat parsing/serialisation
              |
              +-- Native builds and game embedding
@@ -40,16 +40,17 @@ See [docs/architecture.md](docs/architecture.md) and [docs/roadmap.md](docs/road
 
 ## Current scope
 
-The current release adds Layer, Transform, and Mask inspector tabs to the native
-editor. Scale, offset, rotation, warp strength/frequency/seed, and mask
-enable/invert/seed/remapping all regenerate the preview live. The portable
-evaluator applies the same stack for all four material outputs. Format-version-1
-and version-2 `.pmat` files still open with their historical output intact;
-saving migrates them to format version 3.
+The native editor offers all eleven layer operations in its Layer inspector.
+Structural dimensions, gaps, staggering, softness, direction, jitter, and seed
+offsets regenerate the preview live. Scale, offset, rotation, warp, masks, and
+the 1x1/3x3 preview remain available for every structural layer. Included brick
+wall and cobblestone materials demonstrate useful starting points.
 
-Structural generators, a material graph, physical scale, advanced surface
-tools, performance work, and the stable game library follow in the documented
-roadmap.
+Format-version-1, version-2, and version-3 `.pmat` files still open with their
+historical output intact; saving migrates them to format version 4.
+
+A material graph, physical scale, advanced surface tools, performance work,
+and the stable game library follow in the documented roadmap.
 
 ## Repository layout
 
@@ -96,8 +97,9 @@ open build/app/macos/Paperweight.app
 In the app, use File > Open to load a `.pmat` definition, File > Save or Save As
 to store one, build a stack in the Layer Stack panel, choose a material output,
 and use File > Export PNG to write that 512x512 RGBA8 tile. Select a layer and
-use the Layer, Transform, and Mask tabs to shape it. The stack is shown
-bottom-to-top, matching evaluation order.
+use the Layer, Transform, and Mask tabs to shape it. Structural operations show
+their own controls in the Layer tab. The stack is shown bottom-to-top, matching
+evaluation order.
 See [the `.pmat` format reference](docs/pmat-format.md) for the text format.
 
 For a universal Intel and Apple Silicon build:

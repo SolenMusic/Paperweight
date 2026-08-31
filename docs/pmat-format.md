@@ -1,4 +1,4 @@
-# `.pmat` format version 3
+# `.pmat` format version 4
 
 Paperweight material files are UTF-8 text. They are intended to be readable,
 diffable, and small enough to embed alongside game assets.
@@ -7,7 +7,7 @@ diffable, and small enough to embed alongside game assets.
 
 ```text
 # Paperweight procedural material
-pmat.version = 3
+pmat.version = 4
 material.type = fbm
 material.seed = 18431
 colour.low = 0x000000FF
@@ -66,7 +66,7 @@ no material; it never returns a partially accepted definition.
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
-| `pmat.version` | File-format version | `3` |
+| `pmat.version` | File-format version | `4` |
 | `material.type` | Generator model | `fbm` |
 | `material.seed` | Deterministic seed | Unsigned 64-bit integer |
 | `colour.low` | Low colour and threshold endpoint | `0xRRGGBBAA` hexadecimal |
@@ -91,7 +91,7 @@ Every layer `N` has these common keys:
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
 | `layer.N.enabled` | Whether evaluation includes this layer | `true` or `false` |
-| `layer.N.operation` | Reusable evaluation operation | `noise`, `solid_colour`, `levels`, or `threshold` |
+| `layer.N.operation` | Reusable evaluation operation | See operation table below |
 | `layer.N.composite` | How the result combines with accumulated input | `blend`, `add`, or `multiply` |
 | `layer.N.opacity` | Composite amount | Decimal from 0 to 1 |
 
@@ -105,8 +105,38 @@ The operation selects exactly one parameter group:
 | `levels` | `layer.N.levels.input_high` | Decimal from 0 to 1 and greater than input low |
 | `levels` | `layer.N.levels.gamma` | Decimal from 0.1 to 4 |
 | `threshold` | `layer.N.threshold.value` | Decimal from 0 to 1 |
+| `brick_grid` | `layer.N.brick.columns`, `rows` | Integers from 1 to 64 |
+| `brick_grid` | `layer.N.brick.mortar` | Decimal from 0 to 0.95 |
+| `brick_grid` | `layer.N.brick.stagger` | Decimal from 0 to 1 |
+| `brick_grid` | `layer.N.brick.softness` | Decimal from 0 to 0.25 |
+| `tile_grid` | `layer.N.tile.columns`, `rows` | Integers from 1 to 64 |
+| `tile_grid` | `layer.N.tile.grout` | Decimal from 0 to 0.95 |
+| `tile_grid` | `layer.N.tile.softness` | Decimal from 0 to 0.25 |
+| `worley_cells` | `layer.N.worley.columns`, `rows` | Integers from 1 to 64 |
+| `worley_cells` | `layer.N.worley.jitter` | Decimal from 0 to 1 |
+| `worley_cells` | `layer.N.worley.edge_width` | Decimal from 0.01 to 2 |
+| `worley_cells` | `layer.N.worley.seed_offset` | Unsigned 64-bit integer |
+| `random_cells` | `layer.N.random_cells.columns`, `rows` | Integers from 1 to 64 |
+| `random_cells` | `layer.N.random_cells.seed_offset` | Unsigned 64-bit integer |
+| `lines` | `layer.N.lines.direction` | `vertical` or `horizontal` |
+| `lines` | `layer.N.lines.count` | Integer from 1 to 64 |
+| `lines` | `layer.N.lines.width` | Decimal from 0 to 1 |
+| `lines` | `layer.N.lines.softness` | Decimal from 0 to 0.25 |
+| `rectangles` | `layer.N.rectangles.columns`, `rows` | Integers from 1 to 64 |
+| `rectangles` | `layer.N.rectangles.width`, `height` | Decimals from 0 to 1 |
+| `rectangles` | `layer.N.rectangles.softness` | Decimal from 0 to 0.25 |
+| `circles` | `layer.N.circles.columns`, `rows` | Integers from 1 to 64 |
+| `circles` | `layer.N.circles.radius` | Decimal from 0 to 0.5 |
+| `circles` | `layer.N.circles.softness` | Decimal from 0 to 0.25 |
 
-Every version-3 layer also has this coordinate-transform group:
+Brick and tile values are one inside each unit and zero in mortar or grout.
+Stagger shifts alternate brick rows by a fraction of one brick. Worley values
+rise towards cell interiors and approach zero at cell boundaries; `edge_width`
+controls that transition. Random cells assign one deterministic value per cell.
+Shape sizes are fractions of a repeated cell, and softness controls a smooth
+coverage transition around an edge.
+
+Every version-3 or version-4 layer also has this coordinate-transform group:
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
@@ -125,7 +155,7 @@ Offsets are continuous and wrap naturally. When enabled, warp uses two
 independent periodic FBM channels to displace the transformed coordinates.
 Disabling warp, or setting its strength to zero, is exactly the identity path.
 
-Every version-3 layer also declares its optional mask:
+Every version-3 or version-4 layer also declares its optional mask:
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
@@ -139,7 +169,7 @@ The mask samples an independent periodic FBM field in the layer's transformed
 coordinates. Its remapped value multiplies the layer opacity, allowing smooth,
 threshold-like, or inverted spatial control without changing the operation.
 Disabled masks evaluate to exactly one. Transform, warp, and mask fields remain
-required in version 3 even when their optional features are disabled; this
+required in versions 3 and 4 even when their optional features are disabled; this
 keeps canonical files explicit and round trips unambiguous.
 
 Noise seed offset zero reproduces the original material seed exactly. Other
@@ -155,7 +185,7 @@ formula is applied to scalar, red, green, blue, and alpha channels.
 
 ## Material outputs
 
-Every v0.0.4 output derives from the same final layered sample at the same pixel
+Every v0.0.5 output derives from the same final layered sample at the same pixel
 centre:
 
 - Colour encodes the final RGBA channels.
@@ -172,7 +202,7 @@ generation wrap mathematically across both tile axes.
 ## Compatibility policy
 
 The `.pmat` format version and Paperweight application version are separate.
-Paperweight v0.0.4 reads versions 1, 2, and 3 and writes version 3. A reader
+Paperweight v0.0.5 reads versions 1, 2, 3, and 4 and writes version 4. A reader
 rejects unsupported versions and unknown fields so that it cannot quietly
 reinterpret a future material.
 
@@ -181,7 +211,9 @@ that behaviour, including historical files that omit later colour, normal, or
 roughness keys. The Mac editor presents an explicit base noise layer after
 opening such a file; this is byte-identical. Version-2 layers acquire identity
 transforms with warp and masks disabled, which also preserves every generated
-pixel. Saving either older format performs the explicit migration to version 3.
+pixel. Version 3 remains the exact Masks and Warping representation. Structural
+operations require version 4; saving any older format performs the explicit
+migration to version 4.
 
 The portable entry points are `paperweight::parsePmat` and
 `paperweight::serialisePmat` in `include/paperweight/pmat.hpp`.

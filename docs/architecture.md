@@ -33,7 +33,8 @@ continue to describe the same procedural surface. Texture samples are taken at
 pixel centres over one mathematical period. Normal-map finite differences wrap
 both axes; no output copies or repairs image edges.
 
-The initial operation variants are noise, solid colour, levels, and threshold.
+The operation variants are noise, solid colour, levels, threshold, brick grid,
+tile grid, Worley cells, random cells, lines, rectangles, and circles.
 Every `MaterialLayer` also owns an enabled flag, opacity, and blend, add, or
 multiply composite mode. Levels and threshold process the accumulated input;
 noise and solid colour generate new samples. The evaluator itself has no UI or
@@ -53,6 +54,16 @@ moves transformed coordinates by whole periods. Periodic warp and mask fields
 therefore remain periodic under the same shift. Arbitrary-angle toroidal
 resampling may be explored later, but v0.0.4 never offers a transform that can
 quietly break a tile edge.
+
+In v0.0.5, the structural operations share small portable coordinate and
+coverage primitives. Repeated coordinates always wrap into the unit tile.
+Brick and tile grids expose mortar or grout coverage; lines, rectangles, and
+circles expose anti-aliased shape coverage; random cells use stable integer
+hashing; and Worley cells compare the nearest two feature points across a
+toroidally wrapped neighbourhood. Seed domains keep structurally random
+operations independent of noise, warp, and masks. Each operation returns the
+same paired scalar and colour sample used by the existing layer pipeline, so it
+automatically composes with transforms, masks, and every material output.
 
 `GenerationRequest::output` selects one portable RGBA8 result. The colour map
 interpolates two RGBA endpoints, height and roughness use explicit linear
@@ -82,12 +93,13 @@ handle paths, while parsing and serialisation remain in portable C++.
 `.pmat` is a human-readable, versioned text format. Parsing and serialisation live in the portable core. Round trips should be stable and errors should identify useful source locations.
 
 The format version is deliberately independent of the application version.
-Paperweight v0.0.4 reads `.pmat` format versions 1, 2, and 3 and writes version 3.
+Paperweight v0.0.5 reads `.pmat` format versions 1 through 4 and writes version 4.
 Unknown keys and unsupported format versions fail explicitly instead of being
 silently ignored. Version 1 maps to the original implicit FBM source; adding an
 explicit base noise layer produces byte-identical output. Version-2 layers map
 to identity transforms with warp and masks disabled, also preserving their
-historical output exactly.
+historical output exactly. Format version 4 adds the seven structural operation
+names and their explicit parameter groups.
 See [pmat-format.md](pmat-format.md).
 
 ## Initial data flow
@@ -113,6 +125,5 @@ See [pmat-format.md](pmat-format.md).
 
 ## Deferred architecture
 
-Specialised generators, material graphs, WebAssembly bindings, game-engine
-adapters, complete PBR authoring, arbitrary-angle rotation, and GPU backends
-remain outside v0.0.4.
+Material graphs, WebAssembly bindings, game-engine adapters, complete PBR
+authoring, arbitrary-angle rotation, and GPU backends remain outside v0.0.5.

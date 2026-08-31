@@ -2,6 +2,7 @@
 
 #include <paperweight/hash.hpp>
 #include <paperweight/noise.hpp>
+#include <paperweight/structural.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -35,18 +36,10 @@ EvaluatedSample sampleFromColour(const Rgba8& colour)
     };
 }
 
-EvaluatedSample noiseSample(const EvaluationContext& context, std::uint64_t seedOffset)
+EvaluatedSample sampleFromScalar(const Material& material, double scalar)
 {
-    const auto seed = seedOffset == 0
-        ? context.material.seed
-        : mixBits(context.material.seed ^ seedOffset);
-    const double scalar = periodicFbm2D(
-        context.u,
-        context.v,
-        context.material,
-        seed);
-    const auto low = sampleFromColour(context.material.lowColour);
-    const auto high = sampleFromColour(context.material.highColour);
+    const auto low = sampleFromColour(material.lowColour);
+    const auto high = sampleFromColour(material.highColour);
     const auto interpolate = [scalar](double from, double to) {
         return from + (to - from) * scalar;
     };
@@ -57,6 +50,19 @@ EvaluatedSample noiseSample(const EvaluationContext& context, std::uint64_t seed
         interpolate(low.blue, high.blue),
         interpolate(low.alpha, high.alpha),
     };
+}
+
+EvaluatedSample noiseSample(const EvaluationContext& context, std::uint64_t seedOffset)
+{
+    const auto seed = seedOffset == 0
+        ? context.material.seed
+        : mixBits(context.material.seed ^ seedOffset);
+    const double scalar = periodicFbm2D(
+        context.u,
+        context.v,
+        context.material,
+        seed);
+    return sampleFromScalar(context.material, scalar);
 }
 
 double applyLevels(double value, const LevelsOperation& levels)
@@ -208,6 +214,49 @@ EvaluatedSample evaluateOperation(
             },
             [&input, &context](const ThresholdOperation& threshold) {
                 return thresholdSample(input, context, threshold);
+            },
+            [&context](const BrickGridOperation& brick) {
+                return sampleFromScalar(
+                    context.material,
+                    evaluateBrickGrid(brick, context.u, context.v));
+            },
+            [&context](const TileGridOperation& tile) {
+                return sampleFromScalar(
+                    context.material,
+                    evaluateTileGrid(tile, context.u, context.v));
+            },
+            [&context](const WorleyCellsOperation& worley) {
+                return sampleFromScalar(
+                    context.material,
+                    evaluateWorleyCells(
+                        worley,
+                        context.u,
+                        context.v,
+                        context.material.seed));
+            },
+            [&context](const RandomCellsOperation& cells) {
+                return sampleFromScalar(
+                    context.material,
+                    evaluateRandomCells(
+                        cells,
+                        context.u,
+                        context.v,
+                        context.material.seed));
+            },
+            [&context](const LinesOperation& lines) {
+                return sampleFromScalar(
+                    context.material,
+                    evaluateLines(lines, context.u, context.v));
+            },
+            [&context](const RectanglesOperation& rectangles) {
+                return sampleFromScalar(
+                    context.material,
+                    evaluateRectangles(rectangles, context.u, context.v));
+            },
+            [&context](const CirclesOperation& circles) {
+                return sampleFromScalar(
+                    context.material,
+                    evaluateCircles(circles, context.u, context.v));
             },
         },
         operation);

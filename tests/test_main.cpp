@@ -6,6 +6,7 @@
 #include <paperweight/material.hpp>
 #include <paperweight/noise.hpp>
 #include <paperweight/pmat.hpp>
+#include <paperweight/structural.hpp>
 #include <paperweight/version.hpp>
 
 #include <algorithm>
@@ -82,9 +83,9 @@ paperweight::Material materialWithNoiseParameters(
 
 void testVersion()
 {
-    constexpr paperweight::Version expected{0, 0, 4};
+    constexpr paperweight::Version expected{0, 0, 5};
     static_assert(paperweight::currentVersion == expected);
-    expect(paperweight::versionString() == "0.0.4", "version string is 0.0.4");
+    expect(paperweight::versionString() == "0.0.5", "version string is 0.0.5");
 }
 
 void testImage()
@@ -486,6 +487,146 @@ void testMasksAndWarping()
     expect(paperweight::validateMaterial(invalid).has_value(), "invalid mask range is diagnosed");
 }
 
+void testStructuralGenerators()
+{
+    expectNear(paperweight::wrapUnit(-0.25), 0.75, 1.0e-12,
+               "structural coordinates wrap negative values into one tile");
+    const auto repeated = paperweight::repeatedCoordinate(-0.01, 8);
+    expect(repeated.index == 7 && repeated.local > 0.4,
+           "repeated-cell addressing wraps indices and preserves local position");
+    expect(paperweight::smoothCoverage(-1.0, 0.0) == 0.0 &&
+               paperweight::smoothCoverage(1.0, 0.0) == 1.0,
+           "zero-softness structural edges remain well-defined");
+
+    const paperweight::BrickGridOperation brick;
+    expect(paperweight::evaluateBrickGrid(
+               brick, 0.5 / brick.columns, 0.5 / brick.rows) == 1.0,
+           "brick cell centres are solid");
+    expect(paperweight::evaluateBrickGrid(brick, 0.0, 0.0) == 0.0,
+           "brick cell boundaries form mortar");
+    auto unstaggeredBrick = brick;
+    unstaggeredBrick.stagger = 0.0;
+    expect(paperweight::evaluateBrickGrid(
+               brick, 0.5 / brick.columns, 1.5 / brick.rows) !=
+               paperweight::evaluateBrickGrid(
+                   unstaggeredBrick, 0.5 / brick.columns, 1.5 / brick.rows),
+           "brick staggering shifts alternating rows");
+
+    const paperweight::TileGridOperation tile;
+    expect(paperweight::evaluateTileGrid(
+               tile, 0.5 / tile.columns, 0.5 / tile.rows) == 1.0,
+           "tile cell centres are solid");
+    expect(paperweight::evaluateTileGrid(tile, 0.0, 0.0) == 0.0,
+           "tile cell boundaries form grout");
+
+    const paperweight::WorleyCellsOperation worley;
+    const double worleyValue = paperweight::evaluateWorleyCells(
+        worley, 0.23, 0.67, 9981);
+    expect(worleyValue >= 0.0 && worleyValue <= 1.0,
+           "Worley cell interiors and boundaries remain normalised");
+    expect(worleyValue == paperweight::evaluateWorleyCells(
+               worley, 0.23, 0.67, 9981),
+           "Worley feature placement is deterministic");
+    auto alternateWorley = worley;
+    alternateWorley.seedOffset = 1;
+    expect(worleyValue != paperweight::evaluateWorleyCells(
+               alternateWorley, 0.23, 0.67, 9981),
+           "Worley seed offsets select distinct feature fields");
+
+    const paperweight::RandomCellsOperation randomCells;
+    const double randomValue = paperweight::evaluateRandomCells(
+        randomCells, 0.01, 0.01, 771);
+    expect(randomValue == paperweight::evaluateRandomCells(
+               randomCells, 0.1 / randomCells.columns, 0.1 / randomCells.rows, 771),
+           "random-cell values remain constant within a cell");
+    expect(randomValue != paperweight::evaluateRandomCells(
+               randomCells, 1.1 / randomCells.columns, 0.1 / randomCells.rows, 771),
+           "random cells receive independent deterministic values");
+
+    const paperweight::LinesOperation lines;
+    expect(paperweight::evaluateLines(lines, 0.5 / lines.count, 0.37) == 1.0 &&
+               paperweight::evaluateLines(lines, 0.0, 0.37) == 0.0,
+           "line generators repeat solid strokes with empty spacing");
+    auto horizontalLines = lines;
+    horizontalLines.direction = paperweight::LineDirection::horizontal;
+    expect(paperweight::evaluateLines(horizontalLines, 0.37, 0.5 / lines.count) == 1.0,
+           "line direction selects the evaluated axis");
+
+    const paperweight::RectanglesOperation rectangles;
+    expect(paperweight::evaluateRectangles(
+               rectangles, 0.5 / rectangles.columns, 0.5 / rectangles.rows) == 1.0 &&
+               paperweight::evaluateRectangles(rectangles, 0.0, 0.0) == 0.0,
+           "rectangle generators distinguish repeated interiors and exteriors");
+
+    const paperweight::CirclesOperation circles;
+    expect(paperweight::evaluateCircles(
+               circles, 0.5 / circles.columns, 0.5 / circles.rows) == 1.0 &&
+               paperweight::evaluateCircles(circles, 0.0, 0.0) == 0.0,
+           "circle generators distinguish repeated interiors and exteriors");
+
+    std::array structuralLayers{
+        paperweight::makeBrickGridLayer(),
+        paperweight::makeTileGridLayer(),
+        paperweight::makeWorleyCellsLayer(),
+        paperweight::makeRandomCellsLayer(),
+        paperweight::makeLinesLayer(),
+        paperweight::makeRectanglesLayer(),
+        paperweight::makeCirclesLayer(),
+    };
+    for (auto layer : structuralLayers) {
+        paperweight::Material material;
+        material.layers = {layer};
+        const auto sample = paperweight::evaluateMaterialSample(material, -0.37, 0.58);
+        expectNear(
+            sample.scalar,
+            paperweight::evaluateMaterialSample(material, 0.63, 0.58).scalar,
+            1.0e-12,
+            "every structural operation repeats on x");
+        expectNear(
+            sample.scalar,
+            paperweight::evaluateMaterialSample(material, -0.37, 1.58).scalar,
+            1.0e-12,
+            "every structural operation repeats on y");
+        expect(sample.scalar >= 0.0 && sample.scalar <= 1.0 &&
+                   sample.red == sample.scalar && sample.green == sample.scalar &&
+                   sample.blue == sample.scalar,
+               "structural operations emit paired normalised scalar and colour samples");
+    }
+
+    auto composed = paperweight::Material{};
+    composed.layers = {paperweight::makeWorleyCellsLayer()};
+    composed.layers.front().transform.scaleX = 2;
+    composed.layers.front().transform.rotation = paperweight::QuarterTurn::clockwise90;
+    composed.layers.front().transform.warpEnabled = true;
+    composed.layers.front().transform.warpStrength = 0.15;
+    composed.layers.front().mask.enabled = true;
+    const auto composedSample = paperweight::evaluateMaterialSample(composed, 0.19, 0.73);
+    expectNear(
+        composedSample.scalar,
+        paperweight::evaluateMaterialSample(composed, 1.19, 0.73).scalar,
+        1.0e-12,
+        "structural generators compose with transforms, warp, and masks seamlessly");
+
+    auto invalid = paperweight::Material{};
+    invalid.layers = {paperweight::makeBrickGridLayer()};
+    std::get<paperweight::BrickGridOperation>(invalid.layers.front().operation).columns = 0;
+    expect(paperweight::validateMaterial(invalid).has_value(),
+           "invalid structural repeat counts are diagnosed");
+    invalid.layers = {paperweight::makeWorleyCellsLayer()};
+    std::get<paperweight::WorleyCellsOperation>(invalid.layers.front().operation).jitter = 1.1;
+    expect(paperweight::validateMaterial(invalid).has_value(),
+           "invalid Worley jitter is diagnosed");
+    invalid.layers = {paperweight::makeLinesLayer()};
+    std::get<paperweight::LinesOperation>(invalid.layers.front().operation).direction =
+        static_cast<paperweight::LineDirection>(99);
+    expect(paperweight::validateMaterial(invalid).has_value(),
+           "unknown line directions are diagnosed");
+    invalid.layers = {paperweight::makeCirclesLayer()};
+    std::get<paperweight::CirclesOperation>(invalid.layers.front().operation).radius = 0.6;
+    expect(paperweight::validateMaterial(invalid).has_value(),
+           "invalid circle radii are diagnosed");
+}
+
 void testGenerator()
 {
     const paperweight::GenerationRequest request{paperweight::Material{}, 48, 32};
@@ -733,7 +874,7 @@ void testPmat()
 {
     constexpr std::string_view canonical =
         "# Paperweight procedural material\n"
-        "pmat.version = 3\n"
+        "pmat.version = 4\n"
         "material.type = fbm\n"
         "material.seed = 18431\n"
         "colour.low = 0x000000FF\n"
@@ -811,6 +952,44 @@ void testPmat()
                "checked-in coloured example generates deterministically");
     }
 
+    const auto readExample = [](const char* path) {
+        std::ifstream file(path, std::ios::binary);
+        return std::string(
+            std::istreambuf_iterator<char>{file},
+            std::istreambuf_iterator<char>{});
+    };
+    const auto brickExample = paperweight::parsePmat(readExample("brick-wall.pmat"));
+    const auto cobblestoneExample = paperweight::parsePmat(readExample("cobblestone.pmat"));
+    const auto* brickMaterial = std::get_if<paperweight::Material>(&brickExample);
+    const auto* cobblestoneMaterial = std::get_if<paperweight::Material>(&cobblestoneExample);
+    expect(brickMaterial != nullptr && !brickMaterial->layers.empty() &&
+               std::holds_alternative<paperweight::BrickGridOperation>(
+                   brickMaterial->layers.front().operation),
+           "checked-in brick-wall example uses the brick-grid generator");
+    expect(cobblestoneMaterial != nullptr && !cobblestoneMaterial->layers.empty() &&
+               std::holds_alternative<paperweight::WorleyCellsOperation>(
+                   cobblestoneMaterial->layers.front().operation),
+           "checked-in cobblestone example uses the Worley-cell generator");
+    if (brickMaterial != nullptr && cobblestoneMaterial != nullptr) {
+        const auto brickA = paperweight::generate({*brickMaterial, 41, 37});
+        const auto brickB = paperweight::generate({*brickMaterial, 41, 37});
+        const auto cobbleA = paperweight::generate({*cobblestoneMaterial, 41, 37});
+        const auto cobbleB = paperweight::generate({*cobblestoneMaterial, 41, 37});
+        const auto* brickImageA = std::get_if<paperweight::Image>(&brickA);
+        const auto* brickImageB = std::get_if<paperweight::Image>(&brickB);
+        const auto* cobbleImageA = std::get_if<paperweight::Image>(&cobbleA);
+        const auto* cobbleImageB = std::get_if<paperweight::Image>(&cobbleB);
+        expect(brickImageA != nullptr && brickImageB != nullptr &&
+                   checksum(brickImageA->pixels()) == checksum(brickImageB->pixels()),
+               "checked-in brick-wall example generates deterministically");
+        expect(cobbleImageA != nullptr && cobbleImageB != nullptr &&
+                   checksum(cobbleImageA->pixels()) == checksum(cobbleImageB->pixels()),
+               "checked-in cobblestone example generates deterministically");
+        expect(brickImageA != nullptr && cobbleImageA != nullptr &&
+                   checksum(brickImageA->pixels()) != checksum(cobbleImageA->pixels()),
+               "brick and cobblestone examples produce distinct structural materials");
+    }
+
     auto layeredRoundTrip = paperweight::Material{};
     layeredRoundTrip.layers = {
         paperweight::makeNoiseLayer(7),
@@ -854,6 +1033,31 @@ void testPmat()
         0.2,
         0.75,
     };
+    auto structuralRoundTrip = paperweight::Material{};
+    structuralRoundTrip.layers = {
+        paperweight::MaterialLayer{
+            true, 1.0, paperweight::CompositeMode::blend,
+            paperweight::BrickGridOperation{9, 6, 0.11, 0.5, 0.015}, {}, {}},
+        paperweight::MaterialLayer{
+            true, 0.8, paperweight::CompositeMode::add,
+            paperweight::TileGridOperation{5, 7, 0.09, 0.025}, {}, {}},
+        paperweight::MaterialLayer{
+            true, 0.7, paperweight::CompositeMode::multiply,
+            paperweight::WorleyCellsOperation{8, 5, 0.9, 0.31, 71}, {}, {}},
+        paperweight::MaterialLayer{
+            true, 0.6, paperweight::CompositeMode::blend,
+            paperweight::RandomCellsOperation{11, 13, 81}, {}, {}},
+        paperweight::MaterialLayer{
+            true, 0.5, paperweight::CompositeMode::add,
+            paperweight::LinesOperation{
+                paperweight::LineDirection::horizontal, 12, 0.16, 0.03}, {}, {}},
+        paperweight::MaterialLayer{
+            true, 0.4, paperweight::CompositeMode::multiply,
+            paperweight::RectanglesOperation{3, 9, 0.63, 0.42, 0.04}, {}, {}},
+        paperweight::MaterialLayer{
+            true, 0.3, paperweight::CompositeMode::blend,
+            paperweight::CirclesOperation{7, 4, 0.28, 0.05}, {}, {}},
+    };
     const std::array roundTripMaterials{
         materialWithNoiseParameters(0, 1, 1, 1, 0.1),
         materialWithNoiseParameters(927364821, 13, 4, 2, 0.37),
@@ -872,6 +1076,7 @@ void testPmat()
             0.95,
             {}},
         layeredRoundTrip,
+        structuralRoundTrip,
     };
     for (const auto& candidate : roundTripMaterials) {
         const auto text = paperweight::serialisePmat(candidate);
@@ -953,6 +1158,43 @@ void testPmat()
                "v0.0.3 .pmat migration preserves its exact generated pixels");
     }
 
+    std::string versionThree(versionTwo);
+    versionThree.replace(
+        versionThree.find("pmat.version = 2"),
+        std::string("pmat.version = 2").size(),
+        "pmat.version = 3");
+    versionThree +=
+        "layer.0.transform.scale_x = 1\n"
+        "layer.0.transform.scale_y = 1\n"
+        "layer.0.transform.offset_x = 0\n"
+        "layer.0.transform.offset_y = 0\n"
+        "layer.0.transform.rotation = 0\n"
+        "layer.0.warp.enabled = false\n"
+        "layer.0.warp.strength = 0\n"
+        "layer.0.warp.frequency = 1\n"
+        "layer.0.warp.seed_offset = 0\n"
+        "layer.0.mask.enabled = false\n"
+        "layer.0.mask.inverted = false\n"
+        "layer.0.mask.seed_offset = 0\n"
+        "layer.0.mask.input_low = 0\n"
+        "layer.0.mask.input_high = 1\n";
+    const auto versionThreeResult = paperweight::parsePmat(versionThree);
+    const auto* versionThreeMaterial = std::get_if<paperweight::Material>(&versionThreeResult);
+    expect(versionThreeMaterial != nullptr && versionThreeMaterial->layers.size() == 1,
+           "v0.0.4 .pmat files remain readable without structural parameters");
+    if (versionThreeMaterial != nullptr) {
+        const auto generated = paperweight::generate({*versionThreeMaterial, 48, 32});
+        const auto* image = std::get_if<paperweight::Image>(&generated);
+        expect(image != nullptr && checksum(image->pixels()) == 4981563472745378647ULL,
+               "v0.0.4 .pmat compatibility preserves its exact generated pixels");
+    }
+    const auto prematureStructural = paperweight::parsePmat(
+        versionThree + "layer.0.brick.columns = 6\n");
+    expect(std::holds_alternative<paperweight::ParseDiagnostic>(prematureStructural) &&
+               std::get<paperweight::ParseDiagnostic>(prematureStructural).message.find(
+                   "require .pmat version 4") != std::string::npos,
+           "format version 3 rejects structural-generator fields explicitly");
+
     const auto expectDiagnostic = [](std::string_view text, std::size_t line, std::string_view phrase) {
         const auto result = paperweight::parsePmat(text);
         expect(std::holds_alternative<paperweight::ParseDiagnostic>(result),
@@ -968,7 +1210,7 @@ void testPmat()
         }
     };
 
-    expectDiagnostic("pmat.version = 4\n", 1, "unsupported");
+    expectDiagnostic("pmat.version = 5\n", 1, "unsupported");
     expectDiagnostic("unknown.key = 1\n", 1, "unknown key");
     expectDiagnostic("pmat.version = 1\npmat.version = 1\n", 2, "duplicate");
     expectDiagnostic("pmat.version = nope\n", 1, "integer");
@@ -1005,6 +1247,25 @@ void testPmat()
             maskHighPosition,
             std::string("layer.0.mask.input_high = 1\n").size());
         expectDiagnostic(missingV3Field, 34, "mask.input_high");
+    }
+
+    auto invalidBrickMaterial = paperweight::Material{};
+    invalidBrickMaterial.layers = {paperweight::makeBrickGridLayer()};
+    auto invalidBrickText = std::get<std::string>(
+        paperweight::serialisePmat(invalidBrickMaterial));
+    const auto brickColumnsPosition = invalidBrickText.find("layer.0.brick.columns = 6");
+    expect(brickColumnsPosition != std::string::npos,
+           "brick fixture contains its column count");
+    if (brickColumnsPosition != std::string::npos) {
+        const auto brickColumnsLine = static_cast<std::size_t>(std::count(
+            invalidBrickText.begin(),
+            invalidBrickText.begin() + static_cast<std::ptrdiff_t>(brickColumnsPosition),
+            '\n')) + 1;
+        invalidBrickText.replace(
+            brickColumnsPosition,
+            std::string("layer.0.brick.columns = 6").size(),
+            "layer.0.brick.columns = 0");
+        expectDiagnostic(invalidBrickText, brickColumnsLine, "between 1 and 64");
     }
 
     auto invalidLevelsMaterial = paperweight::Material{};
@@ -1053,6 +1314,7 @@ int main()
     testMaterialAndFbm();
     testLayerEvaluation();
     testMasksAndWarping();
+    testStructuralGenerators();
     testGenerator();
     testPmat();
 
