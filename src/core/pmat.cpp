@@ -65,6 +65,8 @@ enum class OperationKind {
     lines,
     rectangles,
     circles,
+    surfacePattern,
+    surfaceFilter,
 };
 
 enum class BrickSizing {
@@ -139,6 +141,16 @@ struct LayerBuilder {
     ParsedValue<std::uint32_t> circleRows;
     ParsedValue<double> circleRadius;
     ParsedValue<double> circleSoftness;
+    ParsedValue<SurfacePatternKind> surfaceKind;
+    ParsedValue<std::uint32_t> surfaceScale;
+    ParsedValue<double> surfaceWidth;
+    ParsedValue<double> surfaceDetail;
+    ParsedValue<double> surfaceDistortion;
+    ParsedValue<double> surfaceVariation;
+    ParsedValue<std::uint64_t> surfaceSeedOffset;
+    ParsedValue<SurfaceFilterKind> filterKind;
+    ParsedValue<double> filterRadius;
+    ParsedValue<double> filterStrength;
 };
 
 std::string_view trim(std::string_view value)
@@ -332,6 +344,61 @@ std::optional<OperationKind> parseOperationKind(std::string_view value)
     if (value == "circles") {
         return OperationKind::circles;
     }
+    if (value == "surface_pattern") {
+        return OperationKind::surfacePattern;
+    }
+    if (value == "surface_filter") {
+        return OperationKind::surfaceFilter;
+    }
+    return std::nullopt;
+}
+
+std::optional<SurfacePatternKind> parseSurfacePatternKind(std::string_view value)
+{
+    if (value == "ridged_noise") {
+        return SurfacePatternKind::ridgedNoise;
+    }
+    if (value == "bands") {
+        return SurfacePatternKind::bands;
+    }
+    if (value == "rings") {
+        return SurfacePatternKind::rings;
+    }
+    if (value == "scatter") {
+        return SurfacePatternKind::scatter;
+    }
+    if (value == "streaks") {
+        return SurfacePatternKind::streaks;
+    }
+    return std::nullopt;
+}
+
+std::optional<SurfaceFilterKind> parseSurfaceFilterKind(std::string_view value)
+{
+    if (value == "invert") {
+        return SurfaceFilterKind::invert;
+    }
+    if (value == "soften") {
+        return SurfaceFilterKind::soften;
+    }
+    if (value == "expand") {
+        return SurfaceFilterKind::expand;
+    }
+    if (value == "contract") {
+        return SurfaceFilterKind::contract;
+    }
+    if (value == "edge") {
+        return SurfaceFilterKind::edge;
+    }
+    if (value == "slope") {
+        return SurfaceFilterKind::slope;
+    }
+    if (value == "cavity") {
+        return SurfaceFilterKind::cavity;
+    }
+    if (value == "peaks") {
+        return SurfaceFilterKind::peaks;
+    }
     return std::nullopt;
 }
 
@@ -439,10 +506,19 @@ bool hasVersionSixFields(const LayerBuilder& builder)
         builder.brickHeightMetres.value || builder.brickMortarMetres.value;
 }
 
+bool hasVersionSevenFields(const LayerBuilder& builder)
+{
+    return builder.surfaceKind.value || builder.surfaceScale.value ||
+        builder.surfaceWidth.value || builder.surfaceDetail.value ||
+        builder.surfaceDistortion.value || builder.surfaceVariation.value ||
+        builder.surfaceSeedOffset.value || builder.filterKind.value ||
+        builder.filterRadius.value || builder.filterStrength.value;
+}
+
 bool hasStructuralFields(const LayerBuilder& builder)
 {
     return hasVersionFourFields(builder) || hasVersionFiveFields(builder) ||
-        hasVersionSixFields(builder);
+        hasVersionSixFields(builder) || hasVersionSevenFields(builder);
 }
 
 template<typename Value>
@@ -1063,6 +1139,92 @@ ParseResult parsePmat(std::string_view text)
                     if (!storeValue(builder.circleSoftness, parsed, lineNumber, valueColumn)) {
                         return duplicate();
                     }
+                } else if (property == "surface.kind") {
+                    const auto parsed = parseSurfacePatternKind(value);
+                    if (!parsed) {
+                        return diagnostic(
+                            lineNumber,
+                            valueColumn,
+                            "surface kind must be 'ridged_noise', 'bands', 'rings', 'scatter', or 'streaks'");
+                    }
+                    if (!storeValue(builder.surfaceKind, *parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "surface.scale") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "surface scale must be an integer");
+                    }
+                    if (!storeValue(builder.surfaceScale, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "surface.width") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "surface width must be a decimal number");
+                    }
+                    if (!storeValue(builder.surfaceWidth, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "surface.detail") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "surface detail must be a decimal number");
+                    }
+                    if (!storeValue(builder.surfaceDetail, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "surface.distortion") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "surface distortion must be a decimal number");
+                    }
+                    if (!storeValue(builder.surfaceDistortion, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "surface.variation") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "surface variation must be a decimal number");
+                    }
+                    if (!storeValue(builder.surfaceVariation, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "surface.seed_offset") {
+                    std::uint64_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "surface seed offset must be an unsigned integer");
+                    }
+                    if (!storeValue(builder.surfaceSeedOffset, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "filter.kind") {
+                    const auto parsed = parseSurfaceFilterKind(value);
+                    if (!parsed) {
+                        return diagnostic(
+                            lineNumber,
+                            valueColumn,
+                            "filter kind must be 'invert', 'soften', 'expand', 'contract', 'edge', 'slope', 'cavity', or 'peaks'");
+                    }
+                    if (!storeValue(builder.filterKind, *parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "filter.radius") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "filter radius must be a decimal number");
+                    }
+                    if (!storeValue(builder.filterRadius, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "filter.strength") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "filter strength must be a decimal number");
+                    }
+                    if (!storeValue(builder.filterStrength, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
                 } else if (property == "transform.scale_x") {
                     std::uint32_t parsed = 0;
                     if (!parseInteger(value, parsed)) {
@@ -1267,6 +1429,16 @@ ParseResult parsePmat(std::string_view text)
                     "physical brick dimensions require .pmat version 6");
             }
 
+            if (formatVersion < 7 &&
+                (hasVersionSevenFields(builder) ||
+                 *builder.operation.value == OperationKind::surfacePattern ||
+                 *builder.operation.value == OperationKind::surfaceFilter)) {
+                return diagnostic(
+                    lineNumber + 1,
+                    1,
+                    "advanced surface operations require .pmat version 7");
+            }
+
             if (formatVersion < 4 &&
                 (hasVersionFourFields(builder) ||
                  isStructuralOperation(*builder.operation.value))) {
@@ -1428,10 +1600,17 @@ ParseResult parsePmat(std::string_view text)
                 builder.rectangleHeight.value || builder.rectangleSoftness.value;
             const bool hasCircleFields = builder.circleColumns.value || builder.circleRows.value ||
                 builder.circleRadius.value || builder.circleSoftness.value;
-            const int structuralGroupCount = static_cast<int>(hasBrickFields) +
+            const bool hasSurfaceFields = builder.surfaceKind.value ||
+                builder.surfaceScale.value || builder.surfaceWidth.value ||
+                builder.surfaceDetail.value || builder.surfaceDistortion.value ||
+                builder.surfaceVariation.value || builder.surfaceSeedOffset.value;
+            const bool hasFilterFields = builder.filterKind.value ||
+                builder.filterRadius.value || builder.filterStrength.value;
+            const int operationGroupCount = static_cast<int>(hasBrickFields) +
                 static_cast<int>(hasTileFields) + static_cast<int>(hasWorleyFields) +
                 static_cast<int>(hasRandomFields) + static_cast<int>(hasLineFields) +
-                static_cast<int>(hasRectangleFields) + static_cast<int>(hasCircleFields);
+                static_cast<int>(hasRectangleFields) + static_cast<int>(hasCircleFields) +
+                static_cast<int>(hasSurfaceFields) + static_cast<int>(hasFilterFields);
             const bool hasClassicFields = builder.seedOffset.value || builder.solidColour.value ||
                 builder.levelsLow.value || builder.levelsHigh.value ||
                 builder.levelsGamma.value || builder.threshold.value;
@@ -1558,7 +1737,7 @@ ParseResult parsePmat(std::string_view text)
                 if (!builder.brickSoftness.value) {
                     return missingLayerField(lineNumber + 1, index, "brick.softness");
                 }
-                if (hasClassicFields || structuralGroupCount != 1) {
+                if (hasClassicFields || operationGroupCount != 1) {
                     return crossOperationError();
                 }
                 if (outside(*builder.brickStagger.value, 0.0, 1.0)) {
@@ -1668,7 +1847,7 @@ ParseResult parsePmat(std::string_view text)
                 if (!builder.tileSoftness.value) {
                     return missingLayerField(lineNumber + 1, index, "tile.softness");
                 }
-                if (hasClassicFields || structuralGroupCount != 1) {
+                if (hasClassicFields || operationGroupCount != 1) {
                     return crossOperationError();
                 }
                 if (invalidCount(*builder.tileColumns.value) ||
@@ -1713,7 +1892,7 @@ ParseResult parsePmat(std::string_view text)
                 if (!builder.worleySeedOffset.value) {
                     return missingLayerField(lineNumber + 1, index, "worley.seed_offset");
                 }
-                if (hasClassicFields || structuralGroupCount != 1) {
+                if (hasClassicFields || operationGroupCount != 1) {
                     return crossOperationError();
                 }
                 if (invalidCount(*builder.worleyColumns.value) ||
@@ -1753,7 +1932,7 @@ ParseResult parsePmat(std::string_view text)
                 if (!builder.randomSeedOffset.value) {
                     return missingLayerField(lineNumber + 1, index, "random_cells.seed_offset");
                 }
-                if (hasClassicFields || structuralGroupCount != 1) {
+                if (hasClassicFields || operationGroupCount != 1) {
                     return crossOperationError();
                 }
                 if (invalidCount(*builder.randomColumns.value) ||
@@ -1782,7 +1961,7 @@ ParseResult parsePmat(std::string_view text)
                 if (!builder.lineSoftness.value) {
                     return missingLayerField(lineNumber + 1, index, "lines.softness");
                 }
-                if (hasClassicFields || structuralGroupCount != 1) {
+                if (hasClassicFields || operationGroupCount != 1) {
                     return crossOperationError();
                 }
                 if (invalidCount(*builder.lineCount.value)) {
@@ -1826,7 +2005,7 @@ ParseResult parsePmat(std::string_view text)
                 if (!builder.rectangleSoftness.value) {
                     return missingLayerField(lineNumber + 1, index, "rectangles.softness");
                 }
-                if (hasClassicFields || structuralGroupCount != 1) {
+                if (hasClassicFields || operationGroupCount != 1) {
                     return crossOperationError();
                 }
                 if (invalidCount(*builder.rectangleColumns.value) ||
@@ -1870,7 +2049,7 @@ ParseResult parsePmat(std::string_view text)
                 if (!builder.circleSoftness.value) {
                     return missingLayerField(lineNumber + 1, index, "circles.softness");
                 }
-                if (hasClassicFields || structuralGroupCount != 1) {
+                if (hasClassicFields || operationGroupCount != 1) {
                     return crossOperationError();
                 }
                 if (invalidCount(*builder.circleColumns.value) ||
@@ -1897,6 +2076,98 @@ ParseResult parsePmat(std::string_view text)
                     *builder.circleRows.value,
                     *builder.circleRadius.value,
                     *builder.circleSoftness.value,
+                };
+                break;
+            case OperationKind::surfacePattern:
+                if (!builder.surfaceKind.value) {
+                    return missingLayerField(lineNumber + 1, index, "surface.kind");
+                }
+                if (!builder.surfaceScale.value) {
+                    return missingLayerField(lineNumber + 1, index, "surface.scale");
+                }
+                if (!builder.surfaceWidth.value) {
+                    return missingLayerField(lineNumber + 1, index, "surface.width");
+                }
+                if (!builder.surfaceDetail.value) {
+                    return missingLayerField(lineNumber + 1, index, "surface.detail");
+                }
+                if (!builder.surfaceDistortion.value) {
+                    return missingLayerField(lineNumber + 1, index, "surface.distortion");
+                }
+                if (!builder.surfaceVariation.value) {
+                    return missingLayerField(lineNumber + 1, index, "surface.variation");
+                }
+                if (!builder.surfaceSeedOffset.value) {
+                    return missingLayerField(lineNumber + 1, index, "surface.seed_offset");
+                }
+                if (hasClassicFields || operationGroupCount != 1) {
+                    return crossOperationError();
+                }
+                if (invalidCount(*builder.surfaceScale.value)) {
+                    return diagnostic(
+                        builder.surfaceScale.line,
+                        builder.surfaceScale.column,
+                        "surface scale must be between 1 and 64");
+                }
+                if (outside(
+                        *builder.surfaceWidth.value,
+                        LayerLimits::minimumSurfaceWidth,
+                        LayerLimits::maximumSurfaceWidth)) {
+                    return diagnostic(
+                        builder.surfaceWidth.line,
+                        builder.surfaceWidth.column,
+                        "surface width must be finite and between 0.001 and 1");
+                }
+                if (outside(*builder.surfaceDetail.value, 0.0, 1.0) ||
+                    outside(*builder.surfaceDistortion.value, 0.0, 1.0) ||
+                    outside(*builder.surfaceVariation.value, 0.0, 1.0)) {
+                    return diagnostic(
+                        builder.surfaceDetail.line,
+                        builder.surfaceDetail.column,
+                        "surface detail, distortion, and variation must be finite and between 0 and 1");
+                }
+                layer.operation = SurfacePatternOperation{
+                    *builder.surfaceKind.value,
+                    *builder.surfaceScale.value,
+                    *builder.surfaceWidth.value,
+                    *builder.surfaceDetail.value,
+                    *builder.surfaceDistortion.value,
+                    *builder.surfaceVariation.value,
+                    *builder.surfaceSeedOffset.value,
+                };
+                break;
+            case OperationKind::surfaceFilter:
+                if (!builder.filterKind.value) {
+                    return missingLayerField(lineNumber + 1, index, "filter.kind");
+                }
+                if (!builder.filterRadius.value) {
+                    return missingLayerField(lineNumber + 1, index, "filter.radius");
+                }
+                if (!builder.filterStrength.value) {
+                    return missingLayerField(lineNumber + 1, index, "filter.strength");
+                }
+                if (hasClassicFields || operationGroupCount != 1) {
+                    return crossOperationError();
+                }
+                if (outside(
+                        *builder.filterRadius.value,
+                        LayerLimits::minimumFilterRadius,
+                        LayerLimits::maximumFilterRadius)) {
+                    return diagnostic(
+                        builder.filterRadius.line,
+                        builder.filterRadius.column,
+                        "filter radius must be finite and between 0 and 0.25");
+                }
+                if (outside(*builder.filterStrength.value, 0.0, 1.0)) {
+                    return diagnostic(
+                        builder.filterStrength.line,
+                        builder.filterStrength.column,
+                        "filter strength must be finite and between 0 and 1");
+                }
+                layer.operation = SurfaceFilterOperation{
+                    *builder.filterKind.value,
+                    *builder.filterRadius.value,
+                    *builder.filterStrength.value,
                 };
                 break;
             }
@@ -2105,6 +2376,35 @@ SerialisationResult serialisePmat(const Material& material)
             output += prefix + "circles.rows = " + std::to_string(circles->rows) + "\n";
             output += prefix + "circles.radius = " + radius + "\n";
             output += prefix + "circles.softness = " + softness + "\n";
+        } else if (const auto* surface =
+                       std::get_if<SurfacePatternOperation>(&layer.operation)) {
+            const auto width = formatDouble(surface->width);
+            const auto detail = formatDouble(surface->detail);
+            const auto distortion = formatDouble(surface->distortion);
+            const auto variation = formatDouble(surface->variation);
+            if (width.empty() || detail.empty() || distortion.empty() || variation.empty()) {
+                return SerialisationError{"could not format surface pattern parameters"};
+            }
+            output += prefix + "surface.kind = " +
+                std::string(surfacePatternKindName(surface->kind)) + "\n";
+            output += prefix + "surface.scale = " + std::to_string(surface->scale) + "\n";
+            output += prefix + "surface.width = " + width + "\n";
+            output += prefix + "surface.detail = " + detail + "\n";
+            output += prefix + "surface.distortion = " + distortion + "\n";
+            output += prefix + "surface.variation = " + variation + "\n";
+            output += prefix + "surface.seed_offset = " +
+                std::to_string(surface->seedOffset) + "\n";
+        } else if (const auto* filter =
+                       std::get_if<SurfaceFilterOperation>(&layer.operation)) {
+            const auto radius = formatDouble(filter->radius);
+            const auto strength = formatDouble(filter->strength);
+            if (radius.empty() || strength.empty()) {
+                return SerialisationError{"could not format surface filter parameters"};
+            }
+            output += prefix + "filter.kind = " +
+                std::string(surfaceFilterKindName(filter->kind)) + "\n";
+            output += prefix + "filter.radius = " + radius + "\n";
+            output += prefix + "filter.strength = " + strength + "\n";
         }
 
         const auto offsetX = formatDouble(layer.transform.offsetX);

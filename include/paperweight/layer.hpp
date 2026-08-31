@@ -179,6 +179,49 @@ struct CirclesOperation {
         const CirclesOperation&) = default;
 };
 
+enum class SurfacePatternKind : std::uint8_t {
+    ridgedNoise = 0,
+    bands = 1,
+    rings = 2,
+    scatter = 3,
+    streaks = 4,
+};
+
+struct SurfacePatternOperation {
+    SurfacePatternKind kind{SurfacePatternKind::ridgedNoise};
+    std::uint32_t scale{8};
+    double width{0.12};
+    double detail{0.5};
+    double distortion{0.25};
+    double variation{0.5};
+    std::uint64_t seedOffset{};
+
+    friend constexpr bool operator==(
+        const SurfacePatternOperation&,
+        const SurfacePatternOperation&) = default;
+};
+
+enum class SurfaceFilterKind : std::uint8_t {
+    invert = 0,
+    soften = 1,
+    expand = 2,
+    contract = 3,
+    edge = 4,
+    slope = 5,
+    cavity = 6,
+    peaks = 7,
+};
+
+struct SurfaceFilterOperation {
+    SurfaceFilterKind kind{SurfaceFilterKind::edge};
+    double radius{0.02};
+    double strength{1.0};
+
+    friend constexpr bool operator==(
+        const SurfaceFilterOperation&,
+        const SurfaceFilterOperation&) = default;
+};
+
 using LayerOperation = std::variant<
     NoiseOperation,
     SolidColourOperation,
@@ -190,7 +233,9 @@ using LayerOperation = std::variant<
     RandomCellsOperation,
     LinesOperation,
     RectanglesOperation,
-    CirclesOperation>;
+    CirclesOperation,
+    SurfacePatternOperation,
+    SurfaceFilterOperation>;
 
 struct MaterialLayer {
     bool enabled{true};
@@ -236,6 +281,12 @@ struct LayerLimits {
     static constexpr double maximumShapeSize = 1.0;
     static constexpr double minimumCircleRadius = 0.0;
     static constexpr double maximumCircleRadius = 0.5;
+    static constexpr double minimumSurfaceWidth = 0.001;
+    static constexpr double maximumSurfaceWidth = 1.0;
+    static constexpr double minimumSurfaceControl = 0.0;
+    static constexpr double maximumSurfaceControl = 1.0;
+    static constexpr double minimumFilterRadius = 0.0;
+    static constexpr double maximumFilterRadius = 0.25;
 };
 
 [[nodiscard]] constexpr MaterialLayer makeNoiseLayer(std::uint64_t seedOffset = 0)
@@ -360,6 +411,34 @@ struct LayerLimits {
         {}};
 }
 
+[[nodiscard]] constexpr MaterialLayer makeSurfacePatternLayer(
+    SurfacePatternKind kind = SurfacePatternKind::ridgedNoise)
+{
+    auto operation = SurfacePatternOperation{};
+    operation.kind = kind;
+    return MaterialLayer{
+        true,
+        1.0,
+        CompositeMode::blend,
+        operation,
+        {},
+        {}};
+}
+
+[[nodiscard]] constexpr MaterialLayer makeSurfaceFilterLayer(
+    SurfaceFilterKind kind = SurfaceFilterKind::edge)
+{
+    auto operation = SurfaceFilterOperation{};
+    operation.kind = kind;
+    return MaterialLayer{
+        true,
+        1.0,
+        CompositeMode::blend,
+        operation,
+        {},
+        {}};
+}
+
 [[nodiscard]] constexpr std::uint32_t rotationDegrees(QuarterTurn rotation)
 {
     return static_cast<std::uint32_t>(rotation) * 90U;
@@ -403,9 +482,55 @@ struct LayerLimits {
         return "rectangles";
     case 10:
         return "circles";
+    case 11:
+        return "surface_pattern";
+    case 12:
+        return "surface_filter";
     default:
         return "unknown";
     }
+}
+
+[[nodiscard]] constexpr std::string_view surfacePatternKindName(
+    SurfacePatternKind kind)
+{
+    switch (kind) {
+    case SurfacePatternKind::ridgedNoise:
+        return "ridged_noise";
+    case SurfacePatternKind::bands:
+        return "bands";
+    case SurfacePatternKind::rings:
+        return "rings";
+    case SurfacePatternKind::scatter:
+        return "scatter";
+    case SurfacePatternKind::streaks:
+        return "streaks";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view surfaceFilterKindName(
+    SurfaceFilterKind kind)
+{
+    switch (kind) {
+    case SurfaceFilterKind::invert:
+        return "invert";
+    case SurfaceFilterKind::soften:
+        return "soften";
+    case SurfaceFilterKind::expand:
+        return "expand";
+    case SurfaceFilterKind::contract:
+        return "contract";
+    case SurfaceFilterKind::edge:
+        return "edge";
+    case SurfaceFilterKind::slope:
+        return "slope";
+    case SurfaceFilterKind::cavity:
+        return "cavity";
+    case SurfaceFilterKind::peaks:
+        return "peaks";
+    }
+    return "unknown";
 }
 
 [[nodiscard]] constexpr std::string_view lineDirectionName(LineDirection direction)

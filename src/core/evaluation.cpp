@@ -3,6 +3,7 @@
 #include <paperweight/hash.hpp>
 #include <paperweight/noise.hpp>
 #include <paperweight/structural.hpp>
+#include <paperweight/surface.hpp>
 
 #include "graph_evaluator.hpp"
 
@@ -263,6 +264,36 @@ EvaluatedSample evaluateOperation(
                 return sampleFromScalar(
                     context.material,
                     evaluateCircles(circles, context.u, context.v));
+            },
+            [&context](const SurfacePatternOperation& surface) {
+                return sampleFromScalar(
+                    context.material,
+                    evaluateSurfacePattern(
+                        surface,
+                        context.material,
+                        context.u,
+                        context.v));
+            },
+            [&input](const SurfaceFilterOperation& filter) {
+                const SurfaceNeighbourhood scalar{
+                    input.scalar, input.scalar, input.scalar,
+                    input.scalar, input.scalar, input.scalar,
+                    input.scalar, input.scalar, input.scalar,
+                };
+                const auto apply = [&filter](double value) {
+                    const SurfaceNeighbourhood neighbourhood{
+                        value, value, value, value, value,
+                        value, value, value, value,
+                    };
+                    return evaluateSurfaceFilter(filter, neighbourhood);
+                };
+                return EvaluatedSample{
+                    evaluateSurfaceFilter(filter, scalar),
+                    apply(input.red),
+                    apply(input.green),
+                    apply(input.blue),
+                    input.alpha,
+                };
             },
         },
         operation);

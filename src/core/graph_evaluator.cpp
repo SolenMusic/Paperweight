@@ -1,5 +1,7 @@
 #include "graph_evaluator.hpp"
 
+#include <paperweight/surface.hpp>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -66,7 +68,7 @@ public:
             ++currentStamp_;
         }
         const EvaluationContext context{material_, u, v};
-        return evaluateNode(outputSources_[materialOutputIndex(output)], context);
+        return evaluateNode(outputSources_[materialOutputIndex(output)], context, true);
     }
 
     std::size_t nodeCount() const noexcept
@@ -75,9 +77,12 @@ public:
     }
 
 private:
-    EvaluatedSample evaluateNode(std::size_t index, const EvaluationContext& context)
+    EvaluatedSample evaluateNode(
+        std::size_t index,
+        const EvaluationContext& context,
+        bool cacheResult)
     {
-        if (sampleStamps_[index] == currentStamp_) {
+        if (cacheResult && sampleStamps_[index] == currentStamp_) {
             return samples_[index];
         }
         const auto result = std::visit(
@@ -94,42 +99,113 @@ private:
                         transformed,
                         {});
                 },
-                [this, &context](const ProcessingNode& processing) {
+                [this, &context, cacheResult](const ProcessingNode& processing) {
                     return std::visit(
                         Overloaded{
-                            [this, &context](const LevelsProcessing& levels) {
+                            [this, &context, cacheResult](const LevelsProcessing& levels) {
                                 const auto input = evaluateNode(
                                     nodeIndices_.at(levels.input),
-                                    context);
+                                    context,
+                                    cacheResult);
                                 return evaluateOperation(
                                     LayerOperation{levels.parameters},
                                     context,
                                     input);
                             },
-                            [this, &context](const ThresholdProcessing& threshold) {
+                            [this, &context, cacheResult](const ThresholdProcessing& threshold) {
                                 const auto input = evaluateNode(
                                     nodeIndices_.at(threshold.input),
-                                    context);
+                                    context,
+                                    cacheResult);
                                 return evaluateOperation(
                                     LayerOperation{threshold.parameters},
                                     context,
                                     input);
                             },
-                            [this, &context](const CompositeProcessing& composite) {
+                            [this, &context, cacheResult](const CompositeProcessing& composite) {
                                 const auto background = evaluateNode(
                                     nodeIndices_.at(composite.background),
-                                    context);
+                                    context,
+                                    cacheResult);
                                 const auto source = evaluateNode(
                                     nodeIndices_.at(composite.source),
-                                    context);
+                                    context,
+                                    cacheResult);
                                 const double mask = composite.mask
-                                    ? evaluateNode(nodeIndices_.at(*composite.mask), context).scalar
+                                    ? evaluateNode(
+                                          nodeIndices_.at(*composite.mask),
+                                          context,
+                                          cacheResult).scalar
                                     : 1.0;
                                 return compositeSamples(
                                     background,
                                     source,
                                     composite.mode,
                                     composite.opacity * mask);
+                            },
+                            [this, &context, cacheResult](
+                                const SurfaceFilterProcessing& filter) {
+                                const auto inputIndex = nodeIndices_.at(filter.input);
+                                const auto centre = evaluateNode(
+                                    inputIndex,
+                                    context,
+                                    cacheResult);
+                                std::array<EvaluatedSample, 9> samples{};
+                                samples[0] = centre;
+                                if (filter.parameters.kind == SurfaceFilterKind::invert ||
+                                    filter.parameters.radius == 0.0) {
+                                    std::fill(samples.begin() + 1, samples.end(), centre);
+                                } else {
+                                    const double radius = filter.parameters.radius;
+                                    const std::array<std::pair<double, double>, 8> offsets{
+                                        std::pair{-radius, 0.0},
+                                        std::pair{radius, 0.0},
+                                        std::pair{0.0, -radius},
+                                        std::pair{0.0, radius},
+                                        std::pair{-radius, -radius},
+                                        std::pair{radius, -radius},
+                                        std::pair{-radius, radius},
+                                        std::pair{radius, radius},
+                                    };
+                                    for (std::size_t sampleIndex = 0;
+                                         sampleIndex < offsets.size();
+                                         ++sampleIndex) {
+                                        const auto [offsetU, offsetV] = offsets[sampleIndex];
+                                        const EvaluationContext neighbour{
+                                            context.material,
+                                            context.u + offsetU,
+                                            context.v + offsetV,
+                                        };
+                                        samples[sampleIndex + 1] = evaluateNode(
+                                            inputIndex,
+                                            neighbour,
+                                            false);
+                                    }
+                                }
+                                const auto channel = [&filter, &samples](
+                                    double EvaluatedSample::* member) {
+                                    const SurfaceNeighbourhood neighbourhood{
+                                        samples[0].*member,
+                                        samples[1].*member,
+                                        samples[2].*member,
+                                        samples[3].*member,
+                                        samples[4].*member,
+                                        samples[5].*member,
+                                        samples[6].*member,
+                                        samples[7].*member,
+                                        samples[8].*member,
+                                    };
+                                    return evaluateSurfaceFilter(
+                                        filter.parameters,
+                                        neighbourhood);
+                                };
+                                return EvaluatedSample{
+                                    channel(&EvaluatedSample::scalar),
+                                    channel(&EvaluatedSample::red),
+                                    channel(&EvaluatedSample::green),
+                                    channel(&EvaluatedSample::blue),
+                                    centre.alpha,
+                                };
                             },
                         },
                         processing.operation);
@@ -144,13 +220,18 @@ private:
                     const double value = evaluateLayerMask(mask.mask, transformed);
                     return EvaluatedSample{value, value, value, value, 1.0};
                 },
-                [this, &context](const OutputNode& output) {
-                    return evaluateNode(nodeIndices_.at(output.input), context);
+                [this, &context, cacheResult](const OutputNode& output) {
+                    return evaluateNode(
+                        nodeIndices_.at(output.input),
+                        context,
+                        cacheResult);
                 },
             },
             graph_.nodes[index]);
-        samples_[index] = result;
-        sampleStamps_[index] = currentStamp_;
+        if (cacheResult) {
+            samples_[index] = result;
+            sampleStamps_[index] = currentStamp_;
+        }
         return result;
     }
 

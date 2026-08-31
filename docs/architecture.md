@@ -35,7 +35,8 @@ over one mathematical period. Normal-map finite differences wrap both axes; no
 output copies or repairs image edges.
 
 The operation variants are noise, solid colour, levels, threshold, brick grid,
-tile grid, Worley cells, random cells, lines, rectangles, and circles.
+tile grid, Worley cells, random cells, lines, rectangles, circles, surface
+patterns, and surface filters.
 Every `MaterialLayer` also owns an enabled flag, opacity, and blend, add, or
 multiply composite mode. Levels and threshold process the accumulated input;
 noise, solid colour, and structural operations generate new samples. These
@@ -102,6 +103,21 @@ divide the material repeat into 1 to 64 whole bricks. Mortar distance and edge
 softness are evaluated in metre space, giving one real horizontal/vertical
 width even on non-square repeats.
 
+In v0.0.8, five periodic `SurfacePatternOperation` modes provide ridged noise,
+bands, rings, scatter, and streaks through one shared parameter vocabulary.
+They are generator nodes and use domain-separated hashing plus periodic noise,
+so seeds remain deterministic and a unit-coordinate shift remains an exact
+repeat. Named surfaces such as cracked stone, wood, or marble are recipes built
+from these reusable operations rather than permanent special cases in the core.
+
+`SurfaceFilterOperation` adds invert, soften, expand, contract, edge, slope,
+cavity, and peaks as graph processors. Neighbourhood-aware modes evaluate their
+input node at a wrapped 3x3 set of material-space positions. Recursive neighbour
+evaluation deliberately bypasses the root-coordinate memoisation cache, while
+ordinary graph sharing at the requested sample remains cached. A radius is
+therefore independent of output pixels, giving stable features at matching
+physical positions across resolutions.
+
 The prepared graph evaluator resolves identifiers once per generation request
 and memoises shared nodes once per sample. It walks only the branch selected by
 `GenerationRequest::output`. An optional `GenerationRequest::graph` lets a
@@ -151,7 +167,7 @@ do not alter the cancellation contract.
 `.pmat` is a human-readable, versioned text format. Parsing and serialisation live in the portable core. Round trips should be stable and errors should identify useful source locations.
 
 The format version is deliberately independent of the application version.
-Paperweight v0.0.7 reads `.pmat` format versions 1 through 6 and writes version 6.
+Paperweight v0.0.8 reads `.pmat` format versions 1 through 7 and writes version 7.
 Unknown keys and unsupported format versions fail explicitly instead of being
 silently ignored. Version 1 maps to the original implicit FBM source; adding an
 explicit base noise layer produces byte-identical output. Version-2 layers map
@@ -162,7 +178,8 @@ or texture-space brick mortar; older bricks migrate to cell space without pixel
 changes. Format version 6 adds metre-suffixed material repeat dimensions and the
 optional physical brick parameter group. Versions 1 through 5 acquire a 1m by
 1m repeat, so default one-repeat generation remains byte-identical. The layer
-recipe still compiles to a graph only in memory.
+recipe still compiles to a graph only in memory. Format version 7 adds the
+surface-pattern and surface-filter groups; versions 1 through 6 remain unchanged.
 Direct-graph text persistence is deferred until a node-authoring workflow can
 round-trip it without discarding information.
 See [pmat-format.md](pmat-format.md).
@@ -194,4 +211,4 @@ See [pmat-format.md](pmat-format.md).
 
 Visual node-canvas authoring, graph-specific text persistence, WebAssembly
 bindings, game-engine adapters, complete PBR authoring, arbitrary-angle
-rotation, and GPU backends remain outside v0.0.7.
+rotation, and GPU backends remain outside v0.0.8.

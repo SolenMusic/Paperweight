@@ -27,7 +27,8 @@ using GeneratorOperation = std::variant<
     RandomCellsOperation,
     LinesOperation,
     RectanglesOperation,
-    CirclesOperation>;
+    CirclesOperation,
+    SurfacePatternOperation>;
 
 struct GeneratorNode {
     GraphNodeId id{invalidGraphNodeId};
@@ -68,10 +69,20 @@ struct CompositeProcessing {
         const CompositeProcessing&) = default;
 };
 
+struct SurfaceFilterProcessing {
+    GraphNodeId input{invalidGraphNodeId};
+    SurfaceFilterOperation parameters;
+
+    friend constexpr bool operator==(
+        const SurfaceFilterProcessing&,
+        const SurfaceFilterProcessing&) = default;
+};
+
 using ProcessingOperation = std::variant<
     LevelsProcessing,
     ThresholdProcessing,
-    CompositeProcessing>;
+    CompositeProcessing,
+    SurfaceFilterProcessing>;
 
 struct ProcessingNode {
     GraphNodeId id{invalidGraphNodeId};

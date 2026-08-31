@@ -201,6 +201,12 @@
 @property(nonatomic, strong) NSTextField* patternValueThreeLabel;
 @property(nonatomic, strong) NSSlider* patternValueThreeSlider;
 @property(nonatomic, strong) NSTextField* patternValueThreeValue;
+@property(nonatomic, strong) NSStackView* patternValueFourRow;
+@property(nonatomic, strong) NSTextField* patternValueFourLabel;
+@property(nonatomic, strong) NSSlider* patternValueFourSlider;
+@property(nonatomic, strong) NSTextField* patternValueFourValue;
+@property(nonatomic, strong) NSStackView* surfaceKindRow;
+@property(nonatomic, strong) NSPopUpButton* surfaceKindPopup;
 @property(nonatomic, strong) NSButton* equalMortarWidthCheckbox;
 @property(nonatomic, strong) NSButton* physicalBrickCheckbox;
 @property(nonatomic, strong) NSStackView* physicalBrickWidthRow;
@@ -456,6 +462,44 @@ NSString* operationDisplayName(const paperweight::LayerOperation& operation)
         return @"Rectangles";
     case 10:
         return @"Circles";
+    case 11: {
+        const auto kind = std::get<paperweight::SurfacePatternOperation>(operation).kind;
+        switch (kind) {
+        case paperweight::SurfacePatternKind::ridgedNoise:
+            return @"Ridged Noise";
+        case paperweight::SurfacePatternKind::bands:
+            return @"Bands";
+        case paperweight::SurfacePatternKind::rings:
+            return @"Rings";
+        case paperweight::SurfacePatternKind::scatter:
+            return @"Scatter";
+        case paperweight::SurfacePatternKind::streaks:
+            return @"Streaks";
+        }
+        return @"Surface Pattern";
+    }
+    case 12: {
+        const auto kind = std::get<paperweight::SurfaceFilterOperation>(operation).kind;
+        switch (kind) {
+        case paperweight::SurfaceFilterKind::invert:
+            return @"Invert Filter";
+        case paperweight::SurfaceFilterKind::soften:
+            return @"Soften Filter";
+        case paperweight::SurfaceFilterKind::expand:
+            return @"Expand Filter";
+        case paperweight::SurfaceFilterKind::contract:
+            return @"Contract Filter";
+        case paperweight::SurfaceFilterKind::edge:
+            return @"Edge Filter";
+        case paperweight::SurfaceFilterKind::slope:
+            return @"Slope Filter";
+        case paperweight::SurfaceFilterKind::cavity:
+            return @"Cavity Filter";
+        case paperweight::SurfaceFilterKind::peaks:
+            return @"Peaks Filter";
+        }
+        return @"Surface Filter";
+    }
     default:
         return @"Unknown";
     }
@@ -584,6 +628,27 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     [mainMenu addItem:fileMenuItem];
     auto* fileMenu = [[NSMenu alloc] initWithTitle:@"File"];
     [fileMenu addItemWithTitle:@"Open…" action:@selector(openMaterial:) keyEquivalent:@"o"];
+    auto* showcaseItem = [[NSMenuItem alloc] initWithTitle:@"New from Showcase"
+                                                    action:nil
+                                             keyEquivalent:@""];
+    auto* showcaseMenu = [[NSMenu alloc] initWithTitle:@"New from Showcase"];
+    const NSArray<NSArray<NSString*>*>* showcases = @[
+        @[ @"Cracked Stone", @"cracked-stone" ],
+        @[ @"Weathered Metal", @"weathered-metal" ],
+        @[ @"Mossy Pebbles", @"mossy-pebbles" ],
+        @[ @"Knotty Wood", @"knotty-wood" ],
+        @[ @"Marble Veins", @"marble-veins" ],
+        @[ @"Eroded Terrain", @"eroded-terrain" ],
+    ];
+    for (NSArray<NSString*>* showcase in showcases) {
+        auto* item = [showcaseMenu addItemWithTitle:showcase[0]
+                                            action:@selector(openShowcase:)
+                                     keyEquivalent:@""];
+        item.target = self;
+        item.representedObject = showcase[1];
+    }
+    showcaseItem.submenu = showcaseMenu;
+    [fileMenu addItem:showcaseItem];
     [fileMenu addItemWithTitle:@"Save" action:@selector(saveMaterial:) keyEquivalent:@"s"];
     auto* saveAsItem = [fileMenu addItemWithTitle:@"Save As…"
                                           action:@selector(saveMaterialAs:)
@@ -972,6 +1037,12 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @"Lines",
         @"Rectangles",
         @"Circles",
+        @"Ridged Noise",
+        @"Bands",
+        @"Rings",
+        @"Scatter",
+        @"Streaks",
+        @"Surface Filter",
     ]];
     auto* addLayerButton = [NSButton buttonWithTitle:@"Add"
                                               target:self
@@ -1088,6 +1159,25 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.patternValueThreeValue = static_cast<NSTextField*>(self.patternValueThreeRow.views[2]);
     self.patternValueThreeSlider.action = @selector(structuralParameterChanged:);
 
+    self.patternValueFourRow = makeLayerSliderRow(@"Value", 0.0, 1.0, 0.5, self);
+    self.patternValueFourLabel = static_cast<NSTextField*>(self.patternValueFourRow.views[0]);
+    self.patternValueFourSlider = static_cast<NSSlider*>(self.patternValueFourRow.views[1]);
+    self.patternValueFourValue = static_cast<NSTextField*>(self.patternValueFourRow.views[2]);
+    self.patternValueFourSlider.action = @selector(structuralParameterChanged:);
+
+    auto* surfaceKindLabel = makeLabel(@"Kind");
+    [surfaceKindLabel.widthAnchor constraintEqualToConstant:72.0].active = YES;
+    self.surfaceKindPopup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+    self.surfaceKindPopup.target = self;
+    self.surfaceKindPopup.action = @selector(structuralParameterChanged:);
+    self.surfaceKindRow = [NSStackView stackViewWithViews:@[
+        surfaceKindLabel,
+        self.surfaceKindPopup,
+    ]];
+    self.surfaceKindRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    self.surfaceKindRow.alignment = NSLayoutAttributeCenterY;
+    self.surfaceKindRow.spacing = 8.0;
+
     self.equalMortarWidthCheckbox = [NSButton
         checkboxWithTitle:@"Equal horizontal/vertical mortar"
                    target:self
@@ -1152,7 +1242,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.patternDirectionRow.alignment = NSLayoutAttributeCenterY;
     self.patternDirectionRow.spacing = 8.0;
 
-    auto* patternSeedLabel = makeLabel(@"Cell seed");
+    auto* patternSeedLabel = makeLabel(@"Seed offset");
     [patternSeedLabel.widthAnchor constraintEqualToConstant:72.0].active = YES;
     self.patternSeedOffsetField = [[NSTextField alloc] initWithFrame:NSZeroRect];
     self.patternSeedOffsetField.target = self;
@@ -1192,9 +1282,11 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.patternCountXRow,
         self.patternCountYRow,
         self.physicalBrickSummary,
+        self.surfaceKindRow,
         self.patternValueOneRow,
         self.patternValueTwoRow,
         self.patternValueThreeRow,
+        self.patternValueFourRow,
         self.equalMortarWidthCheckbox,
         self.patternDirectionRow,
         self.patternSeedRow,
@@ -1380,6 +1472,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         [self.patternValueOneRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.patternValueTwoRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.patternValueThreeRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.patternValueFourRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.surfaceKindRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.surfaceKindPopup.trailingAnchor constraintEqualToAnchor:self.surfaceKindRow.trailingAnchor],
         [self.patternDirectionRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.patternSeedRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.patternDirectionControl.trailingAnchor
@@ -1469,6 +1564,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         stringWithFormat:@"%.2f", self.patternValueTwoSlider.doubleValue];
     self.patternValueThreeValue.stringValue = [NSString
         stringWithFormat:@"%.2f", self.patternValueThreeSlider.doubleValue];
+    self.patternValueFourValue.stringValue = [NSString
+        stringWithFormat:@"%.2f", self.patternValueFourSlider.doubleValue];
 
     self.transformScaleXValue.stringValue = [NSString
         stringWithFormat:@"%.0f", self.transformScaleXSlider.doubleValue];
@@ -1523,6 +1620,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.patternValueOneRow.hidden = YES;
         self.patternValueTwoRow.hidden = YES;
         self.patternValueThreeRow.hidden = YES;
+        self.patternValueFourRow.hidden = YES;
+        self.surfaceKindRow.hidden = YES;
         self.equalMortarWidthCheckbox.hidden = YES;
         self.physicalBrickCheckbox.hidden = YES;
         self.physicalBrickWidthRow.hidden = YES;
@@ -1565,6 +1664,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     const auto* lines = std::get_if<paperweight::LinesOperation>(&layer->operation);
     const auto* rectangles = std::get_if<paperweight::RectanglesOperation>(&layer->operation);
     const auto* circles = std::get_if<paperweight::CirclesOperation>(&layer->operation);
+    const auto* surface = std::get_if<paperweight::SurfacePatternOperation>(&layer->operation);
+    const auto* filter = std::get_if<paperweight::SurfaceFilterOperation>(&layer->operation);
     self.noiseSeedRow.hidden = noise == nullptr;
     self.solidColourRow.hidden = solid == nullptr;
     self.levelsLowRow.hidden = levels == nullptr;
@@ -1576,6 +1677,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.patternValueOneRow.hidden = YES;
     self.patternValueTwoRow.hidden = YES;
     self.patternValueThreeRow.hidden = YES;
+    self.patternValueFourRow.hidden = YES;
+    self.surfaceKindRow.hidden = YES;
     self.equalMortarWidthCheckbox.hidden = YES;
     self.physicalBrickCheckbox.hidden = brick == nullptr;
     self.physicalBrickWidthRow.hidden = YES;
@@ -1766,6 +1869,54 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         showValue(self.patternValueThreeRow, self.patternValueThreeLabel,
                   self.patternValueThreeSlider, self.patternValueThreeValue,
                   @"Softness", 0.0, 0.25, circles->softness);
+    } else if (surface != nullptr) {
+        self.surfaceKindRow.hidden = NO;
+        [self.surfaceKindPopup removeAllItems];
+        [self.surfaceKindPopup addItemsWithTitles:@[
+            @"Ridged Noise",
+            @"Bands",
+            @"Rings",
+            @"Scatter",
+            @"Streaks",
+        ]];
+        [self.surfaceKindPopup selectItemAtIndex:static_cast<NSInteger>(surface->kind)];
+        showCount(self.patternCountXRow, self.patternCountXLabel,
+                  self.patternCountXSlider, self.patternCountXValue, @"Scale", surface->scale);
+        showValue(self.patternValueOneRow, self.patternValueOneLabel,
+                  self.patternValueOneSlider, self.patternValueOneValue,
+                  @"Width", 0.001, 1.0, surface->width);
+        showValue(self.patternValueTwoRow, self.patternValueTwoLabel,
+                  self.patternValueTwoSlider, self.patternValueTwoValue,
+                  @"Detail", 0.0, 1.0, surface->detail);
+        showValue(self.patternValueThreeRow, self.patternValueThreeLabel,
+                  self.patternValueThreeSlider, self.patternValueThreeValue,
+                  @"Distortion", 0.0, 1.0, surface->distortion);
+        showValue(self.patternValueFourRow, self.patternValueFourLabel,
+                  self.patternValueFourSlider, self.patternValueFourValue,
+                  @"Variation", 0.0, 1.0, surface->variation);
+        self.patternSeedRow.hidden = NO;
+        self.patternSeedOffsetField.stringValue = [NSString
+            stringWithFormat:@"%llu", surface->seedOffset];
+    } else if (filter != nullptr) {
+        self.surfaceKindRow.hidden = NO;
+        [self.surfaceKindPopup removeAllItems];
+        [self.surfaceKindPopup addItemsWithTitles:@[
+            @"Invert",
+            @"Soften",
+            @"Expand",
+            @"Contract",
+            @"Edge",
+            @"Slope",
+            @"Cavity",
+            @"Peaks",
+        ]];
+        [self.surfaceKindPopup selectItemAtIndex:static_cast<NSInteger>(filter->kind)];
+        showValue(self.patternValueOneRow, self.patternValueOneLabel,
+                  self.patternValueOneSlider, self.patternValueOneValue,
+                  @"Radius", 0.0, 0.25, filter->radius);
+        showValue(self.patternValueTwoRow, self.patternValueTwoLabel,
+                  self.patternValueTwoSlider, self.patternValueTwoValue,
+                  @"Strength", 0.0, 1.0, filter->strength);
     }
 
     const auto& transform = layer->transform;
@@ -1899,6 +2050,29 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         break;
     case 10:
         material_.layers.push_back(paperweight::makeCirclesLayer());
+        break;
+    case 11:
+        material_.layers.push_back(paperweight::makeSurfacePatternLayer(
+            paperweight::SurfacePatternKind::ridgedNoise));
+        break;
+    case 12:
+        material_.layers.push_back(paperweight::makeSurfacePatternLayer(
+            paperweight::SurfacePatternKind::bands));
+        break;
+    case 13:
+        material_.layers.push_back(paperweight::makeSurfacePatternLayer(
+            paperweight::SurfacePatternKind::rings));
+        break;
+    case 14:
+        material_.layers.push_back(paperweight::makeSurfacePatternLayer(
+            paperweight::SurfacePatternKind::scatter));
+        break;
+    case 15:
+        material_.layers.push_back(paperweight::makeSurfacePatternLayer(
+            paperweight::SurfacePatternKind::streaks));
+        break;
+    case 16:
+        material_.layers.push_back(paperweight::makeSurfaceFilterLayer());
         break;
     default:
         return;
@@ -2091,7 +2265,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         std::uint64_t parsed = 0;
         const auto result = std::from_chars(text.data(), text.data() + text.size(), parsed, 10);
         if (text.empty() || result.ec != std::errc{} || result.ptr != text.data() + text.size()) {
-            self.statusLabel.stringValue = @"A structural seed offset must be a non-negative integer.";
+            self.statusLabel.stringValue = @"A seed offset must be a non-negative integer.";
             self.statusLabel.textColor = NSColor.systemRedColor;
             return;
         }
@@ -2268,11 +2442,38 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         circles->rows = countY;
         circles->radius = self.patternValueOneSlider.doubleValue;
         circles->softness = self.patternValueThreeSlider.doubleValue;
+    } else if (auto* surface =
+                   std::get_if<paperweight::SurfacePatternOperation>(&layer->operation)) {
+        if (sender == self.surfaceKindPopup) {
+            surface->kind = static_cast<paperweight::SurfacePatternKind>(
+                self.surfaceKindPopup.indexOfSelectedItem);
+        }
+        surface->scale = countX;
+        surface->width = self.patternValueOneSlider.doubleValue;
+        surface->detail = self.patternValueTwoSlider.doubleValue;
+        surface->distortion = self.patternValueThreeSlider.doubleValue;
+        surface->variation = self.patternValueFourSlider.doubleValue;
+        if (parsedSeed) {
+            surface->seedOffset = *parsedSeed;
+        }
+    } else if (auto* filter =
+                   std::get_if<paperweight::SurfaceFilterOperation>(&layer->operation)) {
+        if (sender == self.surfaceKindPopup) {
+            filter->kind = static_cast<paperweight::SurfaceFilterKind>(
+                self.surfaceKindPopup.indexOfSelectedItem);
+        }
+        filter->radius = self.patternValueOneSlider.doubleValue;
+        filter->strength = self.patternValueTwoSlider.doubleValue;
     } else {
         return;
     }
 
     [self updateLayerInspectorLiveValueLabels];
+    if (sender == self.surfaceKindPopup) {
+        self.layerTypeLabel.stringValue = [NSString
+            stringWithFormat:@"%ld. %@", selectedLayer_ + 1, operationDisplayName(layer->operation)];
+        [self rebuildLayerList];
+    }
     [self regeneratePreview];
     [self markDirty];
 }
@@ -2754,20 +2955,44 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         return;
     }
 
+    [self openMaterialAtURL:panel.URL asShowcase:NO];
+}
+
+- (void)openShowcase:(NSMenuItem*)sender
+{
+    NSString* name = [sender.representedObject isKindOfClass:NSString.class]
+        ? static_cast<NSString*>(sender.representedObject)
+        : nil;
+    NSURL* url = name == nil
+        ? nil
+        : [NSBundle.mainBundle URLForResource:name
+                                withExtension:@"pmat"
+                                 subdirectory:@"Showcases"];
+    if (url == nil) {
+        [self showErrorWithTitle:@"The showcase could not be opened"
+                         message:@"Its bundled material definition is missing."];
+        return;
+    }
+    [self openMaterialAtURL:url asShowcase:YES];
+}
+
+- (BOOL)openMaterialAtURL:(NSURL*)url asShowcase:(BOOL)asShowcase
+{
+
     NSError* readError = nil;
-    auto* contents = [NSString stringWithContentsOfURL:panel.URL
+    auto* contents = [NSString stringWithContentsOfURL:url
                                               encoding:NSUTF8StringEncoding
                                                  error:&readError];
     if (contents == nil) {
         [self showErrorWithTitle:@"The material could not be opened"
                          message:readError.localizedDescription];
-        return;
+        return NO;
     }
     const char* utf8 = contents.UTF8String;
     if (utf8 == nullptr) {
         [self showErrorWithTitle:@"The material could not be opened"
                          message:@"The file is not valid UTF-8 text."];
-        return;
+        return NO;
     }
     const auto parsed = paperweight::parsePmat(utf8);
     if (const auto* diagnostic = std::get_if<paperweight::ParseDiagnostic>(&parsed)) {
@@ -2776,18 +3001,25 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
                                                    diagnostic->column,
                                                    diagnostic->message.c_str()];
         [self showErrorWithTitle:@"This is not a valid .pmat file" message:message];
-        return;
+        return NO;
     }
     if (![self confirmDiscardIfNeeded]) {
-        return;
+        return NO;
     }
 
     material_ = std::get<paperweight::Material>(parsed);
-    self.currentFileURL = panel.URL;
-    dirty_ = false;
+    selectedLayer_ = 0;
+    self.currentFileURL = asShowcase ? nil : url;
+    dirty_ = asShowcase;
     [self applyMaterialToControls];
     [self updateWindowTitle];
-    [NSDocumentController.sharedDocumentController noteNewRecentDocumentURL:panel.URL];
+    if (!asShowcase) {
+        [NSDocumentController.sharedDocumentController noteNewRecentDocumentURL:url];
+    } else {
+        self.statusLabel.stringValue = @"Showcase loaded as a new editable material";
+        self.statusLabel.textColor = NSColor.secondaryLabelColor;
+    }
+    return YES;
 }
 
 - (void)exportPng:(id)sender

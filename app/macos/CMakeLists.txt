@@ -1,8 +1,21 @@
 find_library(APPKIT_FRAMEWORK AppKit REQUIRED)
 
+set(PAPERWEIGHT_SHOWCASE_MATERIALS
+    "${PROJECT_SOURCE_DIR}/examples/materials/cracked-stone.pmat"
+    "${PROJECT_SOURCE_DIR}/examples/materials/weathered-metal.pmat"
+    "${PROJECT_SOURCE_DIR}/examples/materials/mossy-pebbles.pmat"
+    "${PROJECT_SOURCE_DIR}/examples/materials/knotty-wood.pmat"
+    "${PROJECT_SOURCE_DIR}/examples/materials/marble-veins.pmat"
+    "${PROJECT_SOURCE_DIR}/examples/materials/eroded-terrain.pmat"
+)
+set_source_files_properties(${PAPERWEIGHT_SHOWCASE_MATERIALS} PROPERTIES
+    MACOSX_PACKAGE_LOCATION "Resources/Showcases"
+)
+
 add_executable(Paperweight MACOSX_BUNDLE
     ImageBridge.mm
     main.mm
+    ${PAPERWEIGHT_SHOWCASE_MATERIALS}
 )
 
 target_link_libraries(Paperweight PRIVATE
