@@ -1233,6 +1233,49 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
     }
 }
 
+- (void)updateLayerInspectorLiveValueLabels
+{
+    self.layerOpacityValue.stringValue = [NSString
+        stringWithFormat:@"%.2f", self.layerOpacitySlider.doubleValue];
+    self.levelsLowValue.stringValue = [NSString
+        stringWithFormat:@"%.2f", self.levelsLowSlider.doubleValue];
+    self.levelsHighValue.stringValue = [NSString
+        stringWithFormat:@"%.2f", self.levelsHighSlider.doubleValue];
+    self.levelsGammaValue.stringValue = [NSString
+        stringWithFormat:@"%.2f", self.levelsGammaSlider.doubleValue];
+    self.thresholdValue.stringValue = [NSString
+        stringWithFormat:@"%.2f", self.thresholdSlider.doubleValue];
+
+    self.patternCountXValue.stringValue = [NSString
+        stringWithFormat:@"%.0f", self.patternCountXSlider.doubleValue];
+    self.patternCountYValue.stringValue = [NSString
+        stringWithFormat:@"%.0f", self.patternCountYSlider.doubleValue];
+    self.patternValueOneValue.stringValue = [NSString
+        stringWithFormat:@"%.2f", self.patternValueOneSlider.doubleValue];
+    self.patternValueTwoValue.stringValue = [NSString
+        stringWithFormat:@"%.2f", self.patternValueTwoSlider.doubleValue];
+    self.patternValueThreeValue.stringValue = [NSString
+        stringWithFormat:@"%.2f", self.patternValueThreeSlider.doubleValue];
+
+    self.transformScaleXValue.stringValue = [NSString
+        stringWithFormat:@"%.0f", self.transformScaleXSlider.doubleValue];
+    self.transformScaleYValue.stringValue = [NSString
+        stringWithFormat:@"%.0f", self.transformScaleYSlider.doubleValue];
+    self.transformOffsetXValue.stringValue = [NSString
+        stringWithFormat:@"%.2f", self.transformOffsetXSlider.doubleValue];
+    self.transformOffsetYValue.stringValue = [NSString
+        stringWithFormat:@"%.2f", self.transformOffsetYSlider.doubleValue];
+    self.warpStrengthValue.stringValue = [NSString
+        stringWithFormat:@"%.2f", self.warpStrengthSlider.doubleValue];
+    self.warpFrequencyValue.stringValue = [NSString
+        stringWithFormat:@"%.0f", self.warpFrequencySlider.doubleValue];
+
+    self.maskLowValue.stringValue = [NSString
+        stringWithFormat:@"%.2f", self.maskLowSlider.doubleValue];
+    self.maskHighValue.stringValue = [NSString
+        stringWithFormat:@"%.2f", self.maskHighSlider.doubleValue];
+}
+
 - (void)refreshLayerInspector
 {
     auto* layer = layerAt(material_, selectedLayer_);
@@ -1705,7 +1748,7 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
         threshold->threshold = self.thresholdSlider.doubleValue;
     }
 
-    [self refreshLayerInspector];
+    [self updateLayerInspectorLiveValueLabels];
     [self regeneratePreview];
     [self markDirty];
 }
@@ -1743,7 +1786,12 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
         transform.warpSeedOffset = parsed;
     }
 
-    [self refreshLayerInspector];
+    [self updateLayerInspectorLiveValueLabels];
+    if (sender == self.warpEnabledCheckbox) {
+        self.warpStrengthSlider.enabled = transform.warpEnabled;
+        self.warpFrequencySlider.enabled = transform.warpEnabled;
+        self.warpSeedOffsetField.enabled = transform.warpEnabled;
+    }
     [self regeneratePreview];
     [self markDirty];
 }
@@ -1823,7 +1871,7 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
         return;
     }
 
-    [self refreshLayerInspector];
+    [self updateLayerInspectorLiveValueLabels];
     [self regeneratePreview];
     [self markDirty];
 }
@@ -1866,7 +1914,13 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
     mask.inputLow = low;
     mask.inputHigh = high;
 
-    [self refreshLayerInspector];
+    [self updateLayerInspectorLiveValueLabels];
+    if (sender == self.maskEnabledCheckbox) {
+        self.maskInvertedCheckbox.enabled = mask.enabled;
+        self.maskSeedOffsetField.enabled = mask.enabled;
+        self.maskLowSlider.enabled = mask.enabled;
+        self.maskHighSlider.enabled = mask.enabled;
+    }
     [self regeneratePreview];
     [self markDirty];
 }
