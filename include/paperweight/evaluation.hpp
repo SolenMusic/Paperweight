@@ -1,7 +1,9 @@
 #pragma once
 
+#include <paperweight/graph.hpp>
 #include <paperweight/layer.hpp>
 #include <paperweight/material.hpp>
+#include <paperweight/output.hpp>
 
 namespace paperweight {
 
@@ -51,6 +53,13 @@ struct EvaluatedCoordinates {
 
 [[nodiscard]] EvaluatedSample evaluateMaterialSample(
     const Material& material,
+    double u,
+    double v);
+
+[[nodiscard]] EvaluatedSample evaluateMaterialGraphSample(
+    const Material& material,
+    const MaterialGraph& graph,
+    MaterialOutput output,
     double u,
     double v);
 

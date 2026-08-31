@@ -2076,14 +2076,22 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
     }
     pendingPreviewBlock_ = nil;
 
-    const paperweight::GenerationRequest request{material_, 512, 512, selectedOutput_};
+    const paperweight::GenerationRequest request{
+        material_, 512, 512, selectedOutput_, std::nullopt};
     auto cancellation = std::make_shared<std::atomic_bool>(false);
     previewCancellation_ = cancellation;
     __weak AppDelegate* weakSelf = self;
     dispatch_async(previewQueue_, ^{
+        auto graphRequest = request;
+        std::size_t graphNodeCount = 0;
+        auto compilation = paperweight::compileMaterialGraph(request.material);
+        if (auto* graph = std::get_if<paperweight::MaterialGraph>(&compilation)) {
+            graphNodeCount = graph->nodes.size();
+            graphRequest.graph = std::move(*graph);
+        }
         auto result = std::make_shared<paperweight::GenerationResult>(
             paperweight::generate(
-                request,
+                graphRequest,
                 [cancellation]() {
                     return cancellation->load(std::memory_order_relaxed);
                 }));
@@ -2101,8 +2109,9 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
                 strongSelf->generatedImage_ = *image;
                 strongSelf.exportMenuItem.enabled = YES;
                 strongSelf.statusLabel.stringValue = [NSString
-                    stringWithFormat:@"512 × 512 %@ RGBA8 — mathematically seamless",
-                                     outputName(strongSelf->selectedOutput_)];
+                    stringWithFormat:@"512 × 512 %@ RGBA8 — %zu-node graph — mathematically seamless",
+                                     outputName(strongSelf->selectedOutput_),
+                                     graphNodeCount];
                 strongSelf.statusLabel.textColor = NSColor.secondaryLabelColor;
                 return;
             }

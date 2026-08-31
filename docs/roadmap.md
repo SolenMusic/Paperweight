@@ -41,8 +41,12 @@ practical here.
 
 ## v0.0.6 - Material Graph
 
-Replace or augment the simple layer model with generator, processing, mask, and
-output nodes. The editor may continue exposing a simpler layer-oriented view.
+Compile the simple layer model into explicit generator, mask, output, and
+processing nodes, with composites represented as processing operations.
+Validate identifiers, connections, output routes, and acyclic topology before
+evaluation. Portable callers may provide a direct branched graph, while the
+editor continues exposing its simpler layer-oriented view. A visual node canvas
+and graph-specific file syntax are later work.
 
 ## v0.0.7 - Physical Scale
 

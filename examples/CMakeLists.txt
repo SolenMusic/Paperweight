@@ -6,3 +6,12 @@ target_link_libraries(paperweight_generate_example PRIVATE Paperweight::Core)
 target_compile_features(paperweight_generate_example PRIVATE cxx_std_20)
 set_target_properties(paperweight_generate_example PROPERTIES CXX_EXTENSIONS OFF)
 paperweight_enable_project_warnings(paperweight_generate_example)
+
+add_executable(paperweight_graph_example
+    generate_graph.cpp
+)
+
+target_link_libraries(paperweight_graph_example PRIVATE Paperweight::Core)
+target_compile_features(paperweight_graph_example PRIVATE cxx_std_20)
+set_target_properties(paperweight_graph_example PROPERTIES CXX_EXTENSIONS OFF)
+paperweight_enable_project_warnings(paperweight_graph_example)

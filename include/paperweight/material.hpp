@@ -113,5 +113,9 @@ inline constexpr std::array<ColourParameterMetadata, 2> colourParameterMetadata{
 }
 
 [[nodiscard]] std::optional<std::string> validateMaterial(const Material& material);
+[[nodiscard]] std::optional<std::string> validateMaterialSettings(const Material& material);
+[[nodiscard]] std::optional<std::string> validateMaterialLayer(
+    const MaterialLayer& layer,
+    std::string_view prefix = {});
 
 } // namespace paperweight

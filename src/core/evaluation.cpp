@@ -4,6 +4,8 @@
 #include <paperweight/noise.hpp>
 #include <paperweight/structural.hpp>
 
+#include "graph_evaluator.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -280,34 +282,30 @@ EvaluatedSample compositeSamples(
 
 EvaluatedSample evaluateMaterialSample(const Material& material, double u, double v)
 {
-    if (const auto error = validateMaterial(material)) {
+    const auto compiled = compileMaterialGraph(material);
+    if (const auto* error = std::get_if<GraphError>(&compiled)) {
+        throw std::invalid_argument(error->message);
+    }
+    return evaluateMaterialGraphSample(
+        material,
+        std::get<MaterialGraph>(compiled),
+        MaterialOutput::colour,
+        u,
+        v);
+}
+
+EvaluatedSample evaluateMaterialGraphSample(
+    const Material& material,
+    const MaterialGraph& graph,
+    MaterialOutput output,
+    double u,
+    double v)
+{
+    if (const auto error = validateMaterialSettings(material)) {
         throw std::invalid_argument(*error);
     }
-    if (!std::isfinite(u) || !std::isfinite(v)) {
-        throw std::invalid_argument("evaluation coordinates must be finite");
-    }
-
-    const EvaluationContext context{material, u, v};
-    if (material.layers.empty()) {
-        return noiseSample(context, 0);
-    }
-
-    EvaluatedSample accumulated;
-    for (const auto& layer : material.layers) {
-        if (!layer.enabled) {
-            continue;
-        }
-        const auto transformed = transformCoordinates(layer.transform, context);
-        const EvaluationContext layerContext{material, transformed.u, transformed.v};
-        const auto source = evaluateOperation(layer.operation, layerContext, accumulated);
-        const double effectiveOpacity = layer.opacity * evaluateLayerMask(layer.mask, layerContext);
-        accumulated = compositeSamples(
-            accumulated,
-            source,
-            layer.compositeMode,
-            effectiveOpacity);
-    }
-    return accumulated;
+    detail::GraphEvaluator evaluator(material, graph);
+    return evaluator.evaluate(output, u, v);
 }
 
 } // namespace paperweight

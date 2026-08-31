@@ -2,31 +2,29 @@
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include <variant>
 
+#include <paperweight/graph.hpp>
 #include <paperweight/image.hpp>
 #include <paperweight/material.hpp>
+#include <paperweight/output.hpp>
 
 namespace paperweight {
-
-enum class MaterialOutput {
-    colour,
-    height,
-    normal,
-    roughness,
-};
 
 struct GenerationRequest {
     Material material;
     std::uint32_t width{512};
     std::uint32_t height{512};
     MaterialOutput output{MaterialOutput::colour};
+    std::optional<MaterialGraph> graph;
 };
 
 enum class GenerationErrorCode {
     invalidDimensions,
     invalidMaterial,
+    invalidGraph,
     invalidOutput,
     allocationFailure,
     cancelled,

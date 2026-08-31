@@ -13,11 +13,11 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-v0.0.5 is the current Structural Generators release. Layers can now generate
-brick and tile grids, seeded Worley and random cells, lines, rectangles, and
-circles. Each generator remains deterministic and mathematically periodic, and
-works with the existing transforms, warp, masks, composites, and four material
-outputs.
+v0.0.6 is the current Material Graph release. The friendly layer stack now
+compiles into a validated portable graph containing generator, mask, output,
+and processing nodes (including composites). The same C++ API can also accept a
+direct graph whose colour, height, normal, and roughness outputs follow
+independent branches. Existing material files retain their v0.0.5 pixels exactly.
 
 The staged work is tracked in [GitHub Issues](https://github.com/SolenMusic/Paperweight/issues).
 
@@ -26,8 +26,8 @@ The staged work is tracked in [GitHub Issues](https://github.com/SolenMusic/Pape
 ```text
 Portable C++20 core
   image buffers, deterministic primitives, periodic noise,
-  structural generators, layer transforms, masks and evaluation, generator API,
-  .pmat parsing/serialisation
+  structural generators, layer-to-graph compiler, graph validation/evaluation,
+  transforms, masks, generator API, .pmat parsing/serialisation
              |
              +-- Native builds and game embedding
              +-- Future WebAssembly build
@@ -40,20 +40,21 @@ See [docs/architecture.md](docs/architecture.md) and [docs/roadmap.md](docs/road
 
 ## Current scope
 
-The native editor offers all eleven layer operations in its Layer inspector.
-Structural dimensions, gaps, staggering, softness, direction, jitter, and seed
-offsets regenerate the preview live. Preview work runs away from AppKit's event
-thread: rapid edits are coalesced, an obsolete render is cancelled, and a
-loading indicator remains visible until the newest result is ready. Scale,
-offset, rotation, warp, masks, and the 1x1/3x3 preview remain available for
-every structural layer. Included brick wall and cobblestone materials
-demonstrate useful starting points.
+The native editor intentionally retains its approachable layer interface. Each
+edit compiles the stack into a fresh graph and renders only the requested output
+branch; the preview status shows the resulting node count. Structural controls,
+transforms, warp, masks, output selection, 1x1/3x3 tiling, open/save, and PNG
+export behave as before. Preview work remains cancellable and off AppKit's event
+thread, and continuous sliders retain direct mouse tracking.
 
 Format-version-1, version-2, and version-3 `.pmat` files still open with their
-historical output intact; saving migrates them to format version 4.
+historical output intact; saving migrates them to canonical format version 4.
+v0.0.6 does not invent a redundant graph syntax for the existing layer recipe:
+direct graph construction is currently a portable C++ API, while visual graph
+authoring and graph-specific persistence remain later editor work.
 
-A material graph, physical scale, advanced surface tools, performance work,
-and the stable game library follow in the documented roadmap.
+Physical scale, advanced surface tools, performance work, and the stable game
+library follow in the documented roadmap.
 
 ## Repository layout
 
@@ -118,6 +119,11 @@ ctest --test-dir build-universal --output-on-failure
 The project currently uses a tiny in-repository test harness and has no
 third-party dependencies. See [CONTRIBUTING.md](CONTRIBUTING.md) for repository
 conventions.
+
+`examples/generate_graph.cpp` demonstrates a direct branched graph in which the
+four material outputs deliberately select different sources. Layer-oriented
+callers can continue using `GenerationRequest` exactly as before; the core
+compiles their material once per request.
 
 ## Licence
 
