@@ -42,9 +42,12 @@ See [docs/architecture.md](docs/architecture.md) and [docs/roadmap.md](docs/road
 
 The native editor offers all eleven layer operations in its Layer inspector.
 Structural dimensions, gaps, staggering, softness, direction, jitter, and seed
-offsets regenerate the preview live. Scale, offset, rotation, warp, masks, and
-the 1x1/3x3 preview remain available for every structural layer. Included brick
-wall and cobblestone materials demonstrate useful starting points.
+offsets regenerate the preview live. Preview work runs away from AppKit's event
+thread: rapid edits are coalesced, an obsolete render is cancelled, and a
+loading indicator remains visible until the newest result is ready. Scale,
+offset, rotation, warp, masks, and the 1x1/3x3 preview remain available for
+every structural layer. Included brick wall and cobblestone materials
+demonstrate useful starting points.
 
 Format-version-1, version-2, and version-3 `.pmat` files still open with their
 historical output intact; saving migrates them to format version 4.

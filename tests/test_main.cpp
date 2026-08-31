@@ -868,6 +868,25 @@ void testGenerator()
                std::get<paperweight::GenerationError>(invalidOutput).code ==
                    paperweight::GenerationErrorCode::invalidOutput,
            "unknown material outputs return a structured error");
+
+    std::size_t cancellationChecks = 0;
+    const auto cancelled = paperweight::generate(
+        paperweight::GenerationRequest{paperweight::Material{}, 128, 128},
+        [&cancellationChecks]() { return ++cancellationChecks >= 4; });
+    expect(std::holds_alternative<paperweight::GenerationError>(cancelled) &&
+               std::get<paperweight::GenerationError>(cancelled).code ==
+                   paperweight::GenerationErrorCode::cancelled &&
+               cancellationChecks == 4,
+           "cooperative cancellation stops an in-progress colour generation");
+
+    const auto cancelledBeforeStart = paperweight::generate(
+        paperweight::GenerationRequest{
+            paperweight::Material{}, 128, 128, paperweight::MaterialOutput::normal},
+        []() { return true; });
+    expect(std::holds_alternative<paperweight::GenerationError>(cancelledBeforeStart) &&
+               std::get<paperweight::GenerationError>(cancelledBeforeStart).code ==
+                   paperweight::GenerationErrorCode::cancelled,
+           "normal generation honours cancellation before allocating its height field");
 }
 
 void testPmat()

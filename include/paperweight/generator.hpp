@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <variant>
 
@@ -28,6 +29,7 @@ enum class GenerationErrorCode {
     invalidMaterial,
     invalidOutput,
     allocationFailure,
+    cancelled,
 };
 
 struct GenerationError {
@@ -36,7 +38,11 @@ struct GenerationError {
 };
 
 using GenerationResult = std::variant<Image, GenerationError>;
+using GenerationCancellationCheck = std::function<bool()>;
 
 [[nodiscard]] GenerationResult generate(const GenerationRequest& request);
+[[nodiscard]] GenerationResult generate(
+    const GenerationRequest& request,
+    const GenerationCancellationCheck& isCancelled);
 
 } // namespace paperweight
