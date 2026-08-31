@@ -68,10 +68,12 @@ recipes - and later seedless templates - composed from these operations.
 
 ## v0.0.9 - Performance
 
-Profile before optimising. Candidate improvements include multithreaded CPU
-generation, SIMD, tile-based evaluation, cached intermediate nodes, incremental
-preview regeneration, and later GPU investigation. GPU choices must not dictate
-the core material model.
+Profile before optimising, then improve the CPU path under a byte-identical
+output requirement. Candidate improvements include multithreaded CPU generation,
+SIMD where exact, tile-based evaluation, cached intermediate nodes, and
+incremental preview regeneration. Optional Vulkan and MoltenVK research is
+tracked for a later release; GPU choices must not dictate the core material
+model or add dependencies to a CPU-only library build.
 
 ## v0.0.10 - 3D Material Preview
 

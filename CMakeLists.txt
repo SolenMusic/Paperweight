@@ -11,6 +11,7 @@ project(Paperweight VERSION 0.0.8 LANGUAGES CXX)
 option(PAPERWEIGHT_BUILD_TESTS "Build the Paperweight test suite" ON)
 option(PAPERWEIGHT_BUILD_MACOS_APP "Build the native macOS application" ${APPLE})
 option(PAPERWEIGHT_BUILD_EXAMPLES "Build Paperweight core examples" ON)
+option(PAPERWEIGHT_BUILD_BENCHMARKS "Build the Paperweight performance benchmarks" OFF)
 
 function(paperweight_enable_project_warnings target)
     if(MSVC)
@@ -61,6 +62,10 @@ endif()
 
 if(PAPERWEIGHT_BUILD_EXAMPLES)
     add_subdirectory(examples)
+endif()
+
+if(PAPERWEIGHT_BUILD_BENCHMARKS)
+    add_subdirectory(benchmarks)
 endif()
 
 if(PAPERWEIGHT_BUILD_MACOS_APP)

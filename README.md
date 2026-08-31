@@ -38,6 +38,8 @@ Native macOS AppKit frontend
 ```
 
 See [docs/architecture.md](docs/architecture.md) and [docs/roadmap.md](docs/roadmap.md).
+Performance methodology and reproducible baseline measurements live in
+[docs/performance.md](docs/performance.md).
 
 ## Current scope
 

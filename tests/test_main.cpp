@@ -77,6 +77,22 @@ std::uint64_t checksum(std::span<const paperweight::Rgba8> pixels)
     return hash;
 }
 
+void expectChecksum(
+    const paperweight::Image* image,
+    std::uint64_t expected,
+    std::string_view description)
+{
+    if (image == nullptr) {
+        expect(false, description);
+        return;
+    }
+    const auto actual = checksum(image->pixels());
+    if (actual != expected) {
+        std::cerr << "Expected checksum " << expected << ", got " << actual << '\n';
+    }
+    expect(actual == expected, description);
+}
+
 paperweight::Material materialWithNoiseParameters(
     std::uint64_t seed,
     std::uint32_t frequency,
@@ -1661,38 +1677,62 @@ void testPmat()
     const auto cobblestoneExample = paperweight::parsePmat(readExample("cobblestone.pmat"));
     const auto* brickMaterial = std::get_if<paperweight::Material>(&brickExample);
     const auto* cobblestoneMaterial = std::get_if<paperweight::Material>(&cobblestoneExample);
-    for (const auto* showcase : {
-             "cracked-stone.pmat",
-             "weathered-metal.pmat",
-             "mossy-pebbles.pmat",
-             "knotty-wood.pmat",
-             "marble-veins.pmat",
-             "eroded-terrain.pmat",
-         }) {
-        const auto parsedShowcase = paperweight::parsePmat(readExample(showcase));
+    struct ShowcaseGolden {
+        const char* path;
+        std::array<std::uint64_t, 4> checksums;
+    };
+    const std::array showcaseGoldens{
+        ShowcaseGolden{
+            "cracked-stone.pmat",
+            {453475275262207741ULL, 6649105402743347056ULL,
+             15147693073214695067ULL, 9368147851651855704ULL}},
+        ShowcaseGolden{
+            "weathered-metal.pmat",
+            {13463650236222189030ULL, 9329744494422625172ULL,
+             2788820147528998608ULL, 15949878050082813124ULL}},
+        ShowcaseGolden{
+            "mossy-pebbles.pmat",
+            {8080888395645452509ULL, 16597892231079792016ULL,
+             3236852364673261450ULL, 1390090805517284749ULL}},
+        ShowcaseGolden{
+            "knotty-wood.pmat",
+            {6841059652416222609ULL, 12398796720431777282ULL,
+             5991626458110427586ULL, 5389682451365612905ULL}},
+        ShowcaseGolden{
+            "marble-veins.pmat",
+            {13633835698441808217ULL, 14785178712321867342ULL,
+             17786982241078725417ULL, 15280871892137859466ULL}},
+        ShowcaseGolden{
+            "eroded-terrain.pmat",
+            {2672928488154530846ULL, 11242585904416509996ULL,
+             693934066486834851ULL, 17089152962988358180ULL}},
+    };
+    constexpr std::array outputs{
+        paperweight::MaterialOutput::colour,
+        paperweight::MaterialOutput::height,
+        paperweight::MaterialOutput::normal,
+        paperweight::MaterialOutput::roughness,
+    };
+    for (const auto& showcase : showcaseGoldens) {
+        const auto parsedShowcase = paperweight::parsePmat(readExample(showcase.path));
         const auto* showcaseMaterial = std::get_if<paperweight::Material>(&parsedShowcase);
         expect(showcaseMaterial != nullptr,
                "checked-in advanced surface showcase parses");
         if (showcaseMaterial != nullptr) {
-            const auto first = paperweight::generate(
-                {*showcaseMaterial,
-                 48,
-                 48,
-                 paperweight::MaterialOutput::colour,
-                 std::nullopt,
-                 std::nullopt});
-            const auto second = paperweight::generate(
-                {*showcaseMaterial,
-                 48,
-                 48,
-                 paperweight::MaterialOutput::colour,
-                 std::nullopt,
-                 std::nullopt});
-            const auto* firstImage = std::get_if<paperweight::Image>(&first);
-            const auto* secondImage = std::get_if<paperweight::Image>(&second);
-            expect(firstImage != nullptr && secondImage != nullptr &&
-                       checksum(firstImage->pixels()) == checksum(secondImage->pixels()),
-                   "checked-in advanced surface showcase generates deterministically");
+            for (std::size_t outputIndex = 0; outputIndex < outputs.size(); ++outputIndex) {
+                const auto generated = paperweight::generate(
+                    {*showcaseMaterial,
+                     32,
+                     32,
+                     outputs[outputIndex],
+                     std::nullopt,
+                     std::nullopt});
+                const auto* image = std::get_if<paperweight::Image>(&generated);
+                expectChecksum(
+                    image,
+                    showcase.checksums[outputIndex],
+                    "showcase output matches its byte-exact golden checksum");
+            }
         }
     }
     expect(brickMaterial != nullptr && !brickMaterial->layers.empty() &&
