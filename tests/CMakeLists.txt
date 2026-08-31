@@ -22,6 +22,20 @@ configure_file(
     "${CMAKE_CURRENT_BINARY_DIR}/cobblestone.pmat"
     COPYONLY
 )
+foreach(showcase IN ITEMS
+    cracked-stone
+    weathered-metal
+    mossy-pebbles
+    knotty-wood
+    marble-veins
+    eroded-terrain
+)
+    configure_file(
+        "${PROJECT_SOURCE_DIR}/examples/materials/${showcase}.pmat"
+        "${CMAKE_CURRENT_BINARY_DIR}/${showcase}.pmat"
+        COPYONLY
+    )
+endforeach()
 
 target_link_libraries(paperweight_tests PRIVATE Paperweight::Core)
 target_compile_features(paperweight_tests PRIVATE cxx_std_20)

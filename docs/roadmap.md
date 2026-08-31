@@ -58,9 +58,13 @@ may be authored directly in metres.
 
 ## v0.0.8 - Advanced Surface Tools
 
-Potential additions include cracks, erosion, edge wear, pitting, scratches,
-dirt, moss, rust, wood grain and knots, marble veins, pebbles, and terrain
-erosion.
+Add a compact reusable vocabulary rather than one bespoke generator per named
+material: periodic ridged noise, bands, rings, scatter, and streak patterns,
+plus invert, soften, expand, contract, edge, slope, cavity, and peaks filters.
+Filters evaluate their graph input over a seamless material-space
+neighbourhood. Cracks, erosion, pitting, scratches, dirt, moss, rust, wood grain
+and knots, marble veins, pebbles, and terrain erosion become editable showcase
+recipes - and later seedless templates - composed from these operations.
 
 ## v0.0.9 - Performance
 
@@ -68,6 +72,13 @@ Profile before optimising. Candidate improvements include multithreaded CPU
 generation, SIMD, tile-based evaluation, cached intermediate nodes, incremental
 preview regeneration, and later GPU investigation. GPU choices must not dictate
 the core material model.
+
+## v0.0.10 - 3D Material Preview
+
+Add a lit 3D preview that can select a simple shape, configure lighting, and
+animate either automatically at a chosen speed or manually one step at a time.
+It should inspect colour, height-derived normals, and roughness together without
+moving procedural evaluation into the platform renderer.
 
 ## v0.1.0 - Game Library
 
@@ -79,5 +90,12 @@ launch, load time, or during development-time asset processing.
 
 ## Unscheduled future work
 
-An Emscripten/WebAssembly portability proof remains planned but intentionally
-does not displace the numbered roadmap above.
+- Working-folder material libraries with stable IDs, friendly names, and
+  seedless templates built from ordinary recipe properties.
+- A measured packed-library export for games, while readable `.pmat` files
+  remain the source of truth.
+- Optional Git assistance layered over a working folder.
+- An Emscripten/WebAssembly portability proof.
+
+These remain planned but intentionally do not displace the numbered roadmap
+above.

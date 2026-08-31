@@ -309,6 +309,72 @@ std::optional<std::string> validateMaterial(const Material& material)
                     if (!validSoftness(operation.softness)) {
                         return prefix + "circle softness must be finite and between 0 and 0.25";
                     }
+                } else if constexpr (
+                    std::is_same_v<Operation, SurfacePatternOperation>) {
+                    switch (operation.kind) {
+                    case SurfacePatternKind::ridgedNoise:
+                    case SurfacePatternKind::bands:
+                    case SurfacePatternKind::rings:
+                    case SurfacePatternKind::scatter:
+                    case SurfacePatternKind::streaks:
+                        break;
+                    default:
+                        return prefix + "surface pattern kind is not supported";
+                    }
+                    if (!validPatternCount(operation.scale)) {
+                        return prefix + "surface pattern scale must be between 1 and 64";
+                    }
+                    if (!validRange(
+                            operation.width,
+                            LayerLimits::minimumSurfaceWidth,
+                            LayerLimits::maximumSurfaceWidth)) {
+                        return prefix +
+                            "surface pattern width must be finite and between 0.001 and 1";
+                    }
+                    if (!validRange(
+                            operation.detail,
+                            LayerLimits::minimumSurfaceControl,
+                            LayerLimits::maximumSurfaceControl) ||
+                        !validRange(
+                            operation.distortion,
+                            LayerLimits::minimumSurfaceControl,
+                            LayerLimits::maximumSurfaceControl) ||
+                        !validRange(
+                            operation.variation,
+                            LayerLimits::minimumSurfaceControl,
+                            LayerLimits::maximumSurfaceControl)) {
+                        return prefix +
+                            "surface pattern detail, distortion, and variation must be finite and between 0 and 1";
+                    }
+                } else if constexpr (
+                    std::is_same_v<Operation, SurfaceFilterOperation>) {
+                    switch (operation.kind) {
+                    case SurfaceFilterKind::invert:
+                    case SurfaceFilterKind::soften:
+                    case SurfaceFilterKind::expand:
+                    case SurfaceFilterKind::contract:
+                    case SurfaceFilterKind::edge:
+                    case SurfaceFilterKind::slope:
+                    case SurfaceFilterKind::cavity:
+                    case SurfaceFilterKind::peaks:
+                        break;
+                    default:
+                        return prefix + "surface filter kind is not supported";
+                    }
+                    if (!validRange(
+                            operation.radius,
+                            LayerLimits::minimumFilterRadius,
+                            LayerLimits::maximumFilterRadius)) {
+                        return prefix +
+                            "surface filter radius must be finite and between 0 and 0.25";
+                    }
+                    if (!validRange(
+                            operation.strength,
+                            LayerLimits::minimumSurfaceControl,
+                            LayerLimits::maximumSurfaceControl)) {
+                        return prefix +
+                            "surface filter strength must be finite and between 0 and 1";
+                    }
                 }
                 return std::nullopt;
             },

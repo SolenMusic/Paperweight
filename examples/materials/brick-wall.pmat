@@ -1,5 +1,5 @@
 # Paperweight procedural material
-pmat.version = 6
+pmat.version = 7
 material.type = fbm
 material.seed = 481516
 material.width = 1.92m

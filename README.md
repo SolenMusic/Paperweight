@@ -13,11 +13,11 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-v0.0.7 is the current Physical Scale release. A material declares the real-world
-width and height of one seamless repeat, and callers may request any coverage
-containing whole repeats. Feature placement is therefore independent of output
-resolution. Brick layers may optionally use explicit width, height, and mortar
-width in metres, including equal physical mortar on both axes.
+v0.0.8 is the current Advanced Surface Tools release. It adds five reusable,
+periodic pattern families (ridged noise, bands, rings, scatter, and streaks) and
+eight input-aware filters (invert, soften, expand, contract, edge, slope, cavity,
+and peaks). Named surfaces are composed as ordinary editable recipes instead of
+being baked into one-off generators.
 
 The staged work is tracked in [GitHub Issues](https://github.com/SolenMusic/Paperweight/issues).
 
@@ -26,7 +26,8 @@ The staged work is tracked in [GitHub Issues](https://github.com/SolenMusic/Pape
 ```text
 Portable C++20 core
   image buffers, deterministic primitives, periodic noise,
-  structural generators, layer-to-graph compiler, graph validation/evaluation,
+  structural and surface generators, neighbourhood filters,
+  layer-to-graph compiler, graph validation/evaluation,
   transforms, masks, generator API, .pmat parsing/serialisation
              |
              +-- Native builds and game embedding
@@ -51,17 +52,19 @@ controls use metres, while brick layers can switch between relative sizing and
 friendly metre fields. In physical brick mode, the editor exposes columns and
 rows alongside brick dimensions and calculates the seamless repeat size as
 `brick size × count`; authors never need to guess which dimensions divide an
-existing repeat.
+existing repeat. File > New from Showcase loads editable cracked stone,
+weathered metal, mossy pebble, knotty wood, marble, and eroded-terrain recipes.
+These are the practical forerunners of the planned seedless template library.
 
-Format-version-1 through version-5 `.pmat` files still open with their
-historical output intact; saving migrates them to canonical format version 6.
-Version 6 adds material repeat dimensions and optional physical brick sizing.
+Format-version-1 through version-6 `.pmat` files still open with their
+historical output intact; saving migrates them to canonical format version 7.
+Version 7 adds explicit surface-pattern and surface-filter parameter groups.
 The editor does not invent a redundant graph syntax for the existing layer recipe:
 direct graph construction is currently a portable C++ API, while visual graph
 authoring and graph-specific persistence remain later editor work.
 
-Advanced surface tools, performance work, and the stable game library follow in
-the documented roadmap.
+Performance work, the 3D material preview, and the stable game library follow
+in the documented roadmap.
 
 ## Repository layout
 
@@ -105,7 +108,8 @@ Open it in Finder or run:
 open build/app/macos/Paperweight.app
 ```
 
-In the app, use File > Open to load a `.pmat` definition, File > Save or Save As
+In the app, use File > Open to load a `.pmat` definition, File > New from
+Showcase to start from an advanced editable recipe, File > Save or Save As
 to store one, build a stack in the Layer Stack panel, choose a material output,
 and use File > Export PNG to write that 512x512 RGBA8 tile. Select a layer and
 use the Layer, Transform, and Mask tabs to shape it. Structural operations show

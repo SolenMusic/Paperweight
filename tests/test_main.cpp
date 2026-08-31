@@ -8,6 +8,7 @@
 #include <paperweight/noise.hpp>
 #include <paperweight/pmat.hpp>
 #include <paperweight/structural.hpp>
+#include <paperweight/surface.hpp>
 #include <paperweight/version.hpp>
 
 #include <algorithm>
@@ -94,9 +95,9 @@ paperweight::Material materialWithNoiseParameters(
 
 void testVersion()
 {
-    constexpr paperweight::Version expected{0, 0, 7};
+    constexpr paperweight::Version expected{0, 0, 8};
     static_assert(paperweight::currentVersion == expected);
-    expect(paperweight::versionString() == "0.0.7", "version string is 0.0.7");
+    expect(paperweight::versionString() == "0.0.8", "version string is 0.0.8");
 }
 
 void testImage()
@@ -680,6 +681,201 @@ void testStructuralGenerators()
     std::get<paperweight::CirclesOperation>(invalid.layers.front().operation).radius = 0.6;
     expect(paperweight::validateMaterial(invalid).has_value(),
            "invalid circle radii are diagnosed");
+}
+
+void testAdvancedSurfaceOperations()
+{
+    auto material = paperweight::Material{};
+    material.seed = 4815162342ULL;
+    for (const auto kind : std::array{
+             paperweight::SurfacePatternKind::ridgedNoise,
+             paperweight::SurfacePatternKind::bands,
+             paperweight::SurfacePatternKind::rings,
+             paperweight::SurfacePatternKind::scatter,
+             paperweight::SurfacePatternKind::streaks,
+         }) {
+        paperweight::SurfacePatternOperation operation;
+        operation.kind = kind;
+        operation.scale = 7;
+        operation.width = 0.18;
+        operation.detail = 0.72;
+        operation.distortion = 0.31;
+        operation.variation = 0.64;
+        operation.seedOffset = 91;
+        const double value = paperweight::evaluateSurfacePattern(
+            operation, material, -0.271, 0.683);
+        expect(value >= 0.0 && value <= 1.0,
+               "advanced surface patterns stay normalised");
+        expect(value == paperweight::evaluateSurfacePattern(
+                            operation, material, -0.271, 0.683),
+               "advanced surface patterns are deterministic");
+        expectNear(
+            value,
+            paperweight::evaluateSurfacePattern(operation, material, 0.729, 0.683),
+            1.0e-12,
+            "advanced surface patterns repeat exactly on x");
+        expectNear(
+            value,
+            paperweight::evaluateSurfacePattern(operation, material, -0.271, 1.683),
+            1.0e-12,
+            "advanced surface patterns repeat exactly on y");
+    }
+
+    auto seeded = paperweight::SurfacePatternOperation{};
+    seeded.kind = paperweight::SurfacePatternKind::ridgedNoise;
+    const double firstSeed = paperweight::evaluateSurfacePattern(
+        seeded, material, 0.37, 0.19);
+    ++seeded.seedOffset;
+    expect(firstSeed != paperweight::evaluateSurfacePattern(seeded, material, 0.37, 0.19),
+           "surface seed offsets select distinct deterministic patterns");
+
+    const paperweight::SurfaceNeighbourhood neighbourhood{
+        0.25,
+        0.0,
+        0.5,
+        0.125,
+        0.875,
+        0.0,
+        1.0,
+        0.375,
+        0.625,
+    };
+    const auto filtered = [&neighbourhood](paperweight::SurfaceFilterKind kind) {
+        return paperweight::evaluateSurfaceFilter(
+            paperweight::SurfaceFilterOperation{kind, 0.02, 1.0},
+            neighbourhood);
+    };
+    expectNear(filtered(paperweight::SurfaceFilterKind::invert), 0.75, 1.0e-12,
+               "invert complements the source");
+    expectNear(filtered(paperweight::SurfaceFilterKind::soften), 3.75 / 9.0, 1.0e-12,
+               "soften averages the periodic neighbourhood");
+    expectNear(filtered(paperweight::SurfaceFilterKind::expand), 1.0, 1.0e-12,
+               "expand selects the neighbourhood maximum");
+    expectNear(filtered(paperweight::SurfaceFilterKind::contract), 0.0, 1.0e-12,
+               "contract selects the neighbourhood minimum");
+    expectNear(filtered(paperweight::SurfaceFilterKind::edge), 1.0, 1.0e-12,
+               "edge measures local range");
+    for (const auto kind : std::array{
+             paperweight::SurfaceFilterKind::slope,
+             paperweight::SurfaceFilterKind::cavity,
+             paperweight::SurfaceFilterKind::peaks,
+         }) {
+        const double value = filtered(kind);
+        expect(value >= 0.0 && value <= 1.0,
+               "neighbourhood-derived surface filters stay normalised");
+    }
+    expectNear(
+        paperweight::evaluateSurfaceFilter(
+            paperweight::SurfaceFilterOperation{
+                paperweight::SurfaceFilterKind::invert, 0.02, 0.0},
+            neighbourhood),
+        neighbourhood.centre,
+        1.0e-12,
+        "zero-strength surface filters are exact no-ops");
+
+    auto patternLayer = paperweight::makeSurfacePatternLayer(
+        paperweight::SurfacePatternKind::ridgedNoise);
+    auto& pattern = std::get<paperweight::SurfacePatternOperation>(patternLayer.operation);
+    pattern.scale = 11;
+    pattern.width = 0.14;
+    pattern.detail = 0.8;
+    pattern.distortion = 0.42;
+    pattern.variation = 0.7;
+    pattern.seedOffset = 17;
+    auto filterLayer = paperweight::makeSurfaceFilterLayer(
+        paperweight::SurfaceFilterKind::edge);
+    auto& filter = std::get<paperweight::SurfaceFilterOperation>(filterLayer.operation);
+    filter.radius = 0.013;
+    filter.strength = 0.85;
+    material.layers = {patternLayer, filterLayer};
+
+    const auto compilation = paperweight::compileMaterialGraph(material);
+    const auto* graph = std::get_if<paperweight::MaterialGraph>(&compilation);
+    expect(graph != nullptr, "advanced surface layers compile into a material graph");
+    bool foundPattern = false;
+    bool foundFilter = false;
+    if (graph != nullptr) {
+        for (const auto& node : graph->nodes) {
+            if (const auto* generator = std::get_if<paperweight::GeneratorNode>(&node)) {
+                foundPattern = foundPattern ||
+                    std::holds_alternative<paperweight::SurfacePatternOperation>(
+                        generator->operation);
+            } else if (const auto* processing =
+                           std::get_if<paperweight::ProcessingNode>(&node)) {
+                foundFilter = foundFilter ||
+                    std::holds_alternative<paperweight::SurfaceFilterProcessing>(
+                        processing->operation);
+            }
+        }
+        const auto sample = paperweight::evaluateMaterialGraphSample(
+            material,
+            *graph,
+            paperweight::MaterialOutput::height,
+            -0.113,
+            0.779);
+        const auto repeat = paperweight::evaluateMaterialGraphSample(
+            material,
+            *graph,
+            paperweight::MaterialOutput::height,
+            0.887,
+            1.779);
+        expectNear(sample.scalar, repeat.scalar, 1.0e-12,
+                   "neighbourhood filters remain seamless through the graph evaluator");
+    }
+    expect(foundPattern && foundFilter,
+           "surface patterns compile as generators and filters compile as processors");
+
+    const auto lowResult = paperweight::generate(
+        {material, 24, 20, paperweight::MaterialOutput::height, std::nullopt, std::nullopt});
+    const auto highResult = paperweight::generate(
+        {material, 72, 60, paperweight::MaterialOutput::height, std::nullopt, std::nullopt});
+    const auto* low = std::get_if<paperweight::Image>(&lowResult);
+    const auto* high = std::get_if<paperweight::Image>(&highResult);
+    bool matchingSamples = low != nullptr && high != nullptr;
+    if (matchingSamples) {
+        for (std::uint32_t y = 0; y < low->height() && matchingSamples; ++y) {
+            for (std::uint32_t x = 0; x < low->width(); ++x) {
+                if (low->row(y)[x] != high->row(y * 3 + 1)[x * 3 + 1]) {
+                    matchingSamples = false;
+                    break;
+                }
+            }
+        }
+    }
+    expect(matchingSamples,
+           "advanced surface recipes preserve matching samples across output resolutions");
+
+    const auto serialised = paperweight::serialisePmat(material);
+    const auto* text = std::get_if<std::string>(&serialised);
+    expect(text != nullptr && text->find("surface.kind = ridged_noise") != std::string::npos &&
+               text->find("filter.kind = edge") != std::string::npos,
+           "format version 7 stores surface patterns and filters explicitly");
+    if (text != nullptr) {
+        const auto reparsed = paperweight::parsePmat(*text);
+        expect(std::holds_alternative<paperweight::Material>(reparsed) &&
+                   std::get<paperweight::Material>(reparsed) == material,
+               "advanced surface recipes round-trip through .pmat version 7 exactly");
+        auto premature = *text;
+        const auto marker = premature.find("pmat.version = 7");
+        if (marker != std::string::npos) {
+            premature.replace(marker, std::string("pmat.version = 7").size(),
+                              "pmat.version = 6");
+        }
+        const auto prematureResult = paperweight::parsePmat(premature);
+        expect(std::holds_alternative<paperweight::ParseDiagnostic>(prematureResult) &&
+                   std::get<paperweight::ParseDiagnostic>(prematureResult).message.find(
+                       "require .pmat version 7") != std::string::npos,
+               "older .pmat versions reject advanced surface fields explicitly");
+    }
+
+    auto invalid = material;
+    std::get<paperweight::SurfacePatternOperation>(invalid.layers.front().operation).scale = 0;
+    expect(paperweight::validateMaterial(invalid).has_value(),
+           "invalid advanced surface scale is diagnosed");
+    invalid = material;
+    std::get<paperweight::SurfaceFilterOperation>(invalid.layers.back().operation).radius = 0.5;
+    expect(paperweight::validateMaterial(invalid).has_value(),
+           "invalid surface filter radius is diagnosed");
 }
 
 void testMaterialGraph()
@@ -1372,7 +1568,7 @@ void testPmat()
 {
     constexpr std::string_view canonical =
         "# Paperweight procedural material\n"
-        "pmat.version = 6\n"
+        "pmat.version = 7\n"
         "material.type = fbm\n"
         "material.seed = 18431\n"
         "material.width = 1m\n"
@@ -1465,6 +1661,40 @@ void testPmat()
     const auto cobblestoneExample = paperweight::parsePmat(readExample("cobblestone.pmat"));
     const auto* brickMaterial = std::get_if<paperweight::Material>(&brickExample);
     const auto* cobblestoneMaterial = std::get_if<paperweight::Material>(&cobblestoneExample);
+    for (const auto* showcase : {
+             "cracked-stone.pmat",
+             "weathered-metal.pmat",
+             "mossy-pebbles.pmat",
+             "knotty-wood.pmat",
+             "marble-veins.pmat",
+             "eroded-terrain.pmat",
+         }) {
+        const auto parsedShowcase = paperweight::parsePmat(readExample(showcase));
+        const auto* showcaseMaterial = std::get_if<paperweight::Material>(&parsedShowcase);
+        expect(showcaseMaterial != nullptr,
+               "checked-in advanced surface showcase parses");
+        if (showcaseMaterial != nullptr) {
+            const auto first = paperweight::generate(
+                {*showcaseMaterial,
+                 48,
+                 48,
+                 paperweight::MaterialOutput::colour,
+                 std::nullopt,
+                 std::nullopt});
+            const auto second = paperweight::generate(
+                {*showcaseMaterial,
+                 48,
+                 48,
+                 paperweight::MaterialOutput::colour,
+                 std::nullopt,
+                 std::nullopt});
+            const auto* firstImage = std::get_if<paperweight::Image>(&first);
+            const auto* secondImage = std::get_if<paperweight::Image>(&second);
+            expect(firstImage != nullptr && secondImage != nullptr &&
+                       checksum(firstImage->pixels()) == checksum(secondImage->pixels()),
+                   "checked-in advanced surface showcase generates deterministically");
+        }
+    }
     expect(brickMaterial != nullptr && !brickMaterial->layers.empty() &&
                std::holds_alternative<paperweight::BrickGridOperation>(
                    brickMaterial->layers.front().operation),
@@ -1484,13 +1714,13 @@ void testPmat()
         legacyBrickMaterial.layers = {paperweight::makeBrickGridLayer()};
         auto versionFourBrick = std::get<std::string>(
             paperweight::serialisePmat(legacyBrickMaterial));
-        const auto versionMarkerPosition = versionFourBrick.find("pmat.version = 6");
+        const auto versionMarkerPosition = versionFourBrick.find("pmat.version = 7");
         expect(versionMarkerPosition != std::string::npos,
-               "current brick fixture declares format version 6");
+               "current brick fixture declares format version 7");
         if (versionMarkerPosition != std::string::npos) {
             versionFourBrick.replace(
                 versionMarkerPosition,
-                std::string("pmat.version = 6").size(),
+                std::string("pmat.version = 7").size(),
                 "pmat.version = 4");
         }
         for (const auto& field : {
@@ -1813,7 +2043,7 @@ void testPmat()
         }
     };
 
-    expectDiagnostic("pmat.version = 7\n", 1, "unsupported");
+    expectDiagnostic("pmat.version = 8\n", 1, "unsupported");
     expectDiagnostic("unknown.key = 1\n", 1, "unknown key");
     expectDiagnostic("pmat.version = 1\npmat.version = 1\n", 2, "duplicate");
     expectDiagnostic("pmat.version = nope\n", 1, "integer");
@@ -1930,6 +2160,7 @@ int main()
     testLayerEvaluation();
     testMasksAndWarping();
     testStructuralGenerators();
+    testAdvancedSurfaceOperations();
     testMaterialGraph();
     testGenerator();
     testPhysicalScale();

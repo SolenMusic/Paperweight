@@ -48,7 +48,8 @@ std::optional<GeneratorOperation> generatorOperation(const LayerOperation& opera
         [](const auto& value) -> std::optional<GeneratorOperation> {
             using Operation = std::decay_t<decltype(value)>;
             if constexpr (std::is_same_v<Operation, LevelsOperation> ||
-                          std::is_same_v<Operation, ThresholdOperation>) {
+                          std::is_same_v<Operation, ThresholdOperation> ||
+                          std::is_same_v<Operation, SurfaceFilterOperation>) {
                 return std::nullopt;
             } else {
                 return GeneratorOperation{value};
@@ -87,6 +88,9 @@ std::optional<std::string> validateProcessingNode(const ProcessingNode& node)
             [&layer](const CompositeProcessing& composite) {
                 layer.compositeMode = composite.mode;
                 layer.opacity = composite.opacity;
+            },
+            [&layer](const SurfaceFilterProcessing& filter) {
+                layer.operation = filter.parameters;
             },
         },
         node.operation);
@@ -134,6 +138,9 @@ std::vector<GraphNodeId> dependencies(const GraphNode& node)
                                 result.push_back(*composite.mask);
                             }
                             return result;
+                        },
+                        [](const SurfaceFilterProcessing& filter) {
+                            return std::vector<GraphNodeId>{filter.input};
                         },
                     },
                     processing.operation);
@@ -302,6 +309,11 @@ std::optional<GraphError> validateMaterialGraph(const MaterialGraph& graph)
                                 }
                                 return std::nullopt;
                             },
+                            [&checkInput](const SurfaceFilterProcessing& filter) {
+                                return checkInput(
+                                    filter.input,
+                                    GraphNodeCategory::generator);
+                            },
                         },
                         processing.operation);
                 },
@@ -424,6 +436,11 @@ GraphCompilationResult compileMaterialGraph(const Material& material)
                            std::get_if<ThresholdOperation>(&layer.operation)) {
                 source = addProcessing(
                     ThresholdProcessing{accumulated, *threshold},
+                    layerIndex);
+            } else if (const auto* filter =
+                           std::get_if<SurfaceFilterOperation>(&layer.operation)) {
+                source = addProcessing(
+                    SurfaceFilterProcessing{accumulated, *filter},
                     layerIndex);
             } else {
                 const auto operation = generatorOperation(layer.operation);

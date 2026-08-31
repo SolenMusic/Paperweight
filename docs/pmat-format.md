@@ -1,4 +1,4 @@
-# `.pmat` format version 6
+# `.pmat` format version 7
 
 Paperweight material files are UTF-8 text. They are intended to be readable,
 diffable, and small enough to embed alongside game assets.
@@ -7,7 +7,7 @@ diffable, and small enough to embed alongside game assets.
 
 ```text
 # Paperweight procedural material
-pmat.version = 6
+pmat.version = 7
 material.type = fbm
 material.seed = 18431
 material.width = 1m
@@ -68,7 +68,7 @@ no material; it never returns a partially accepted definition.
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
-| `pmat.version` | File-format version | `6` |
+| `pmat.version` | File-format version | `7` |
 | `material.type` | Generator model | `fbm` |
 | `material.seed` | Deterministic seed | Unsigned 64-bit integer |
 | `material.width` | Width of one seamless material repeat | Metre value from `0.000001m` to `1000000m` |
@@ -144,6 +144,16 @@ The operation selects exactly one parameter group:
 | `circles` | `layer.N.circles.columns`, `rows` | Integers from 1 to 64 |
 | `circles` | `layer.N.circles.radius` | Decimal from 0 to 0.5 |
 | `circles` | `layer.N.circles.softness` | Decimal from 0 to 0.25 |
+| `surface_pattern` | `layer.N.surface.kind` | `ridged_noise`, `bands`, `rings`, `scatter`, or `streaks` |
+| `surface_pattern` | `layer.N.surface.scale` | Integer from 1 to 64 |
+| `surface_pattern` | `layer.N.surface.width` | Decimal from 0.001 to 1 |
+| `surface_pattern` | `layer.N.surface.detail` | Decimal from 0 to 1 |
+| `surface_pattern` | `layer.N.surface.distortion` | Decimal from 0 to 1 |
+| `surface_pattern` | `layer.N.surface.variation` | Decimal from 0 to 1 |
+| `surface_pattern` | `layer.N.surface.seed_offset` | Unsigned 64-bit integer |
+| `surface_filter` | `layer.N.filter.kind` | `invert`, `soften`, `expand`, `contract`, `edge`, `slope`, `cavity`, or `peaks` |
+| `surface_filter` | `layer.N.filter.radius` | Material-space distance from 0 to 0.25 tile units |
+| `surface_filter` | `layer.N.filter.strength` | Decimal from 0 to 1 |
 
 Brick and tile values are one inside each unit and zero in mortar or grout.
 With relative brick `mortar_space = cell`, mortar is a fraction of each repeated cell,
@@ -155,6 +165,21 @@ and approach zero at cell boundaries; `edge_width` controls that transition.
 Random cells assign one deterministic value per cell. Shape sizes are fractions
 of a repeated cell, and softness controls a smooth coverage transition around
 an edge.
+
+Advanced surface patterns are deterministic generators in the same scalar and
+colour pipeline as noise and structural shapes. `scale` controls repetitions or
+feature density; the four normalised controls deliberately have shared names so
+recipes can be edited consistently while each pattern interprets them in its
+own geometric way. All coordinate displacement remains periodic.
+
+Surface filters process the complete accumulated graph input rather than
+creating a fresh source. Except for invert, they sample a wrapped 3x3
+neighbourhood at `radius`; zero radius therefore becomes a centre-only sample.
+Soften averages, expand and contract select extrema, edge measures local range,
+slope measures a finite-difference gradient, and cavity/peaks isolate local
+depressions or protrusions. `strength` blends the processed result with its
+input. Because radius is a material-space distance, matching physical points
+produce matching results at different export resolutions.
 
 Physical brick sizing replaces `columns`, `rows`, `mortar`, and
 `mortar_space` with explicit dimensions. For example:
@@ -174,7 +199,7 @@ The native editor presents those derived column and row counts explicitly. When
 an author changes the brick size or count, it recalculates `material.width` and
 `material.height` automatically so the saved definition remains seamless.
 
-Every layer in versions 3 through 6 also has this coordinate-transform group:
+Every layer in versions 3 through 7 also has this coordinate-transform group:
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
@@ -193,7 +218,7 @@ Offsets are continuous and wrap naturally. When enabled, warp uses two
 independent periodic FBM channels to displace the transformed coordinates.
 Disabling warp, or setting its strength to zero, is exactly the identity path.
 
-Every layer in versions 3 through 6 also declares its optional mask:
+Every layer in versions 3 through 7 also declares its optional mask:
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
@@ -207,7 +232,7 @@ The mask samples an independent periodic FBM field in the layer's transformed
 coordinates. Its remapped value multiplies the layer opacity, allowing smooth,
 threshold-like, or inverted spatial control without changing the operation.
 Disabled masks evaluate to exactly one. Transform, warp, and mask fields remain
-required in versions 3 through 6 even when their optional features are disabled; this
+required in versions 3 through 7 even when their optional features are disabled; this
 keeps canonical files explicit and round trips unambiguous.
 
 Noise seed offset zero reproduces the original material seed exactly. Other
@@ -223,12 +248,12 @@ formula is applied to scalar, red, green, blue, and alpha channels.
 
 ## Graph compilation
 
-Paperweight v0.0.7 retains the layer syntax, now at version 6, as the compact,
+Paperweight v0.0.8 retains the layer syntax, now at version 7, as the compact,
 human-editable authoring projection. Before generation, the portable core
 compiles it into a directed acyclic material graph:
 
 - source operations become generator nodes;
-- levels and threshold become unary processing nodes;
+- levels, threshold, and surface filters become unary processing nodes;
 - enabled procedural masks become mask nodes;
 - layer blend, add, or multiply behaviour becomes composite processing nodes;
 - colour, height, normal, and roughness receive explicit output nodes.
@@ -240,12 +265,12 @@ Portable C++ callers may instead provide a direct graph with independent output
 branches through `GenerationRequest::graph`.
 
 Graph-specific text syntax is intentionally deferred until Paperweight has a
-graph authoring workflow that can round-trip it honestly. Format version 6 adds
-physical authoring data; it does not serialise the internal graph representation.
+graph authoring workflow that can round-trip it honestly. Format version 7 adds
+advanced surface recipes; it does not serialise the internal graph representation.
 
 ## Material outputs
 
-Every layer-authored v0.0.7 output derives from the same final graph sample at
+Every layer-authored v0.0.8 output derives from the same final graph sample at
 the same pixel centre:
 
 - Colour encodes the final RGBA channels.
@@ -263,7 +288,7 @@ generation wrap mathematically across both tile axes.
 ## Compatibility policy
 
 The `.pmat` format version and Paperweight application version are separate.
-Paperweight v0.0.7 reads versions 1 through 6 and writes version 6. A reader
+Paperweight v0.0.8 reads versions 1 through 7 and writes version 7. A reader
 rejects unsupported versions and unknown fields so that it cannot quietly
 reinterpret a future material.
 
@@ -276,8 +301,9 @@ pixel. Version 3 remains the exact Masks and Warping representation. Structural
 operations require version 4. Version 5 adds `brick.mortar_space`; version-4
 bricks migrate to `cell` and retain their exact pixels. Version 6 adds the
 physical repeat and brick fields. Versions 1 through 5 migrate to a 1m by 1m
-repeat and retain their exact default-coverage pixels. Saving any older format
-performs the explicit migration to version 6.
+repeat and retain their exact default-coverage pixels. Version 7 adds advanced
+surface patterns and filters without changing older evaluations. Saving any
+older format performs the explicit migration to version 7.
 
 The portable entry points are `paperweight::parsePmat` and
 `paperweight::serialisePmat` in `include/paperweight/pmat.hpp`.
