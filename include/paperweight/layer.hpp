@@ -78,11 +78,102 @@ struct ThresholdOperation {
         const ThresholdOperation&) = default;
 };
 
+struct BrickGridOperation {
+    std::uint32_t columns{6};
+    std::uint32_t rows{8};
+    double mortar{0.08};
+    double stagger{0.5};
+    double softness{0.02};
+
+    friend constexpr bool operator==(
+        const BrickGridOperation&,
+        const BrickGridOperation&) = default;
+};
+
+struct TileGridOperation {
+    std::uint32_t columns{6};
+    std::uint32_t rows{6};
+    double grout{0.08};
+    double softness{0.02};
+
+    friend constexpr bool operator==(
+        const TileGridOperation&,
+        const TileGridOperation&) = default;
+};
+
+struct WorleyCellsOperation {
+    std::uint32_t columns{6};
+    std::uint32_t rows{6};
+    double jitter{0.75};
+    double edgeWidth{0.18};
+    std::uint64_t seedOffset{};
+
+    friend constexpr bool operator==(
+        const WorleyCellsOperation&,
+        const WorleyCellsOperation&) = default;
+};
+
+struct RandomCellsOperation {
+    std::uint32_t columns{8};
+    std::uint32_t rows{8};
+    std::uint64_t seedOffset{};
+
+    friend constexpr bool operator==(
+        const RandomCellsOperation&,
+        const RandomCellsOperation&) = default;
+};
+
+enum class LineDirection : std::uint8_t {
+    vertical = 0,
+    horizontal = 1,
+};
+
+struct LinesOperation {
+    LineDirection direction{LineDirection::vertical};
+    std::uint32_t count{8};
+    double width{0.12};
+    double softness{0.02};
+
+    friend constexpr bool operator==(
+        const LinesOperation&,
+        const LinesOperation&) = default;
+};
+
+struct RectanglesOperation {
+    std::uint32_t columns{4};
+    std::uint32_t rows{4};
+    double width{0.7};
+    double height{0.7};
+    double softness{0.02};
+
+    friend constexpr bool operator==(
+        const RectanglesOperation&,
+        const RectanglesOperation&) = default;
+};
+
+struct CirclesOperation {
+    std::uint32_t columns{6};
+    std::uint32_t rows{6};
+    double radius{0.35};
+    double softness{0.02};
+
+    friend constexpr bool operator==(
+        const CirclesOperation&,
+        const CirclesOperation&) = default;
+};
+
 using LayerOperation = std::variant<
     NoiseOperation,
     SolidColourOperation,
     LevelsOperation,
-    ThresholdOperation>;
+    ThresholdOperation,
+    BrickGridOperation,
+    TileGridOperation,
+    WorleyCellsOperation,
+    RandomCellsOperation,
+    LinesOperation,
+    RectanglesOperation,
+    CirclesOperation>;
 
 struct MaterialLayer {
     bool enabled{true};
@@ -112,6 +203,22 @@ struct LayerLimits {
     static constexpr double maximumWarpStrength = 1.0;
     static constexpr std::uint32_t minimumWarpFrequency = 1;
     static constexpr std::uint32_t maximumWarpFrequency = 16;
+    static constexpr std::uint32_t minimumPatternCount = 1;
+    static constexpr std::uint32_t maximumPatternCount = 64;
+    static constexpr double minimumGap = 0.0;
+    static constexpr double maximumGap = 0.95;
+    static constexpr double minimumStagger = 0.0;
+    static constexpr double maximumStagger = 1.0;
+    static constexpr double minimumSoftness = 0.0;
+    static constexpr double maximumSoftness = 0.25;
+    static constexpr double minimumJitter = 0.0;
+    static constexpr double maximumJitter = 1.0;
+    static constexpr double minimumCellEdgeWidth = 0.01;
+    static constexpr double maximumCellEdgeWidth = 2.0;
+    static constexpr double minimumShapeSize = 0.0;
+    static constexpr double maximumShapeSize = 1.0;
+    static constexpr double minimumCircleRadius = 0.0;
+    static constexpr double maximumCircleRadius = 0.5;
 };
 
 [[nodiscard]] constexpr MaterialLayer makeNoiseLayer(std::uint64_t seedOffset = 0)
@@ -159,6 +266,83 @@ struct LayerLimits {
         {}};
 }
 
+[[nodiscard]] constexpr MaterialLayer makeBrickGridLayer()
+{
+    return MaterialLayer{
+        true,
+        1.0,
+        CompositeMode::blend,
+        BrickGridOperation{},
+        {},
+        {}};
+}
+
+[[nodiscard]] constexpr MaterialLayer makeTileGridLayer()
+{
+    return MaterialLayer{
+        true,
+        1.0,
+        CompositeMode::blend,
+        TileGridOperation{},
+        {},
+        {}};
+}
+
+[[nodiscard]] constexpr MaterialLayer makeWorleyCellsLayer()
+{
+    return MaterialLayer{
+        true,
+        1.0,
+        CompositeMode::blend,
+        WorleyCellsOperation{},
+        {},
+        {}};
+}
+
+[[nodiscard]] constexpr MaterialLayer makeRandomCellsLayer()
+{
+    return MaterialLayer{
+        true,
+        1.0,
+        CompositeMode::blend,
+        RandomCellsOperation{},
+        {},
+        {}};
+}
+
+[[nodiscard]] constexpr MaterialLayer makeLinesLayer()
+{
+    return MaterialLayer{
+        true,
+        1.0,
+        CompositeMode::blend,
+        LinesOperation{},
+        {},
+        {}};
+}
+
+[[nodiscard]] constexpr MaterialLayer makeRectanglesLayer()
+{
+    return MaterialLayer{
+        true,
+        1.0,
+        CompositeMode::blend,
+        RectanglesOperation{},
+        {},
+        {}};
+}
+
+[[nodiscard]] constexpr MaterialLayer makeCirclesLayer()
+{
+    return MaterialLayer{
+        true,
+        1.0,
+        CompositeMode::blend,
+        CirclesOperation{},
+        {},
+        {}};
+}
+
 [[nodiscard]] constexpr std::uint32_t rotationDegrees(QuarterTurn rotation)
 {
     return static_cast<std::uint32_t>(rotation) * 90U;
@@ -188,9 +372,34 @@ struct LayerLimits {
         return "levels";
     case 3:
         return "threshold";
+    case 4:
+        return "brick_grid";
+    case 5:
+        return "tile_grid";
+    case 6:
+        return "worley_cells";
+    case 7:
+        return "random_cells";
+    case 8:
+        return "lines";
+    case 9:
+        return "rectangles";
+    case 10:
+        return "circles";
     default:
         return "unknown";
     }
+}
+
+[[nodiscard]] constexpr std::string_view lineDirectionName(LineDirection direction)
+{
+    switch (direction) {
+    case LineDirection::vertical:
+        return "vertical";
+    case LineDirection::horizontal:
+        return "horizontal";
+    }
+    return "unknown";
 }
 
 } // namespace paperweight

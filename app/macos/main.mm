@@ -168,6 +168,30 @@
 @property(nonatomic, strong) NSStackView* thresholdRow;
 @property(nonatomic, strong) NSSlider* thresholdSlider;
 @property(nonatomic, strong) NSTextField* thresholdValue;
+@property(nonatomic, strong) NSStackView* patternCountXRow;
+@property(nonatomic, strong) NSTextField* patternCountXLabel;
+@property(nonatomic, strong) NSSlider* patternCountXSlider;
+@property(nonatomic, strong) NSTextField* patternCountXValue;
+@property(nonatomic, strong) NSStackView* patternCountYRow;
+@property(nonatomic, strong) NSTextField* patternCountYLabel;
+@property(nonatomic, strong) NSSlider* patternCountYSlider;
+@property(nonatomic, strong) NSTextField* patternCountYValue;
+@property(nonatomic, strong) NSStackView* patternValueOneRow;
+@property(nonatomic, strong) NSTextField* patternValueOneLabel;
+@property(nonatomic, strong) NSSlider* patternValueOneSlider;
+@property(nonatomic, strong) NSTextField* patternValueOneValue;
+@property(nonatomic, strong) NSStackView* patternValueTwoRow;
+@property(nonatomic, strong) NSTextField* patternValueTwoLabel;
+@property(nonatomic, strong) NSSlider* patternValueTwoSlider;
+@property(nonatomic, strong) NSTextField* patternValueTwoValue;
+@property(nonatomic, strong) NSStackView* patternValueThreeRow;
+@property(nonatomic, strong) NSTextField* patternValueThreeLabel;
+@property(nonatomic, strong) NSSlider* patternValueThreeSlider;
+@property(nonatomic, strong) NSTextField* patternValueThreeValue;
+@property(nonatomic, strong) NSStackView* patternDirectionRow;
+@property(nonatomic, strong) NSSegmentedControl* patternDirectionControl;
+@property(nonatomic, strong) NSStackView* patternSeedRow;
+@property(nonatomic, strong) NSTextField* patternSeedOffsetField;
 @property(nonatomic, strong) NSSlider* transformScaleXSlider;
 @property(nonatomic, strong) NSTextField* transformScaleXValue;
 @property(nonatomic, strong) NSSlider* transformScaleYSlider;
@@ -347,6 +371,20 @@ NSString* operationDisplayName(const paperweight::LayerOperation& operation)
         return @"Levels";
     case 3:
         return @"Threshold";
+    case 4:
+        return @"Brick Grid";
+    case 5:
+        return @"Tile Grid";
+    case 6:
+        return @"Worley Cells";
+    case 7:
+        return @"Random Cells";
+    case 8:
+        return @"Lines";
+    case 9:
+        return @"Rectangles";
+    case 10:
+        return @"Circles";
     default:
         return @"Unknown";
     }
@@ -703,7 +741,19 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
     [layerScrollView.heightAnchor constraintEqualToConstant:210.0].active = YES;
 
     self.addOperationPopup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
-    [self.addOperationPopup addItemsWithTitles:@[ @"Noise", @"Solid Colour", @"Levels", @"Threshold" ]];
+    [self.addOperationPopup addItemsWithTitles:@[
+        @"Noise",
+        @"Solid Colour",
+        @"Levels",
+        @"Threshold",
+        @"Brick Grid",
+        @"Tile Grid",
+        @"Worley Cells",
+        @"Random Cells",
+        @"Lines",
+        @"Rectangles",
+        @"Circles",
+    ]];
     auto* addLayerButton = [NSButton buttonWithTitle:@"Add"
                                               target:self
                                               action:@selector(addLayer:)];
@@ -787,6 +837,68 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
     self.thresholdSlider = static_cast<NSSlider*>(self.thresholdRow.views[1]);
     self.thresholdValue = static_cast<NSTextField*>(self.thresholdRow.views[2]);
 
+    self.patternCountXRow = makeLayerSliderRow(
+        @"Columns", 1.0, 64.0, 6.0, self);
+    self.patternCountXLabel = static_cast<NSTextField*>(self.patternCountXRow.views[0]);
+    self.patternCountXSlider = static_cast<NSSlider*>(self.patternCountXRow.views[1]);
+    self.patternCountXValue = static_cast<NSTextField*>(self.patternCountXRow.views[2]);
+    self.patternCountXSlider.action = @selector(structuralParameterChanged:);
+
+    self.patternCountYRow = makeLayerSliderRow(
+        @"Rows", 1.0, 64.0, 6.0, self);
+    self.patternCountYLabel = static_cast<NSTextField*>(self.patternCountYRow.views[0]);
+    self.patternCountYSlider = static_cast<NSSlider*>(self.patternCountYRow.views[1]);
+    self.patternCountYValue = static_cast<NSTextField*>(self.patternCountYRow.views[2]);
+    self.patternCountYSlider.action = @selector(structuralParameterChanged:);
+
+    self.patternValueOneRow = makeLayerSliderRow(@"Value", 0.0, 1.0, 0.5, self);
+    self.patternValueOneLabel = static_cast<NSTextField*>(self.patternValueOneRow.views[0]);
+    self.patternValueOneSlider = static_cast<NSSlider*>(self.patternValueOneRow.views[1]);
+    self.patternValueOneValue = static_cast<NSTextField*>(self.patternValueOneRow.views[2]);
+    self.patternValueOneSlider.action = @selector(structuralParameterChanged:);
+
+    self.patternValueTwoRow = makeLayerSliderRow(@"Value", 0.0, 1.0, 0.5, self);
+    self.patternValueTwoLabel = static_cast<NSTextField*>(self.patternValueTwoRow.views[0]);
+    self.patternValueTwoSlider = static_cast<NSSlider*>(self.patternValueTwoRow.views[1]);
+    self.patternValueTwoValue = static_cast<NSTextField*>(self.patternValueTwoRow.views[2]);
+    self.patternValueTwoSlider.action = @selector(structuralParameterChanged:);
+
+    self.patternValueThreeRow = makeLayerSliderRow(@"Softness", 0.0, 0.25, 0.02, self);
+    self.patternValueThreeLabel = static_cast<NSTextField*>(self.patternValueThreeRow.views[0]);
+    self.patternValueThreeSlider = static_cast<NSSlider*>(self.patternValueThreeRow.views[1]);
+    self.patternValueThreeValue = static_cast<NSTextField*>(self.patternValueThreeRow.views[2]);
+    self.patternValueThreeSlider.action = @selector(structuralParameterChanged:);
+
+    auto* directionLabel = makeLabel(@"Direction");
+    [directionLabel.widthAnchor constraintEqualToConstant:72.0].active = YES;
+    self.patternDirectionControl = [[NSSegmentedControl alloc] initWithFrame:NSZeroRect];
+    self.patternDirectionControl.segmentCount = 2;
+    [self.patternDirectionControl setLabel:@"Vertical" forSegment:0];
+    [self.patternDirectionControl setLabel:@"Horizontal" forSegment:1];
+    self.patternDirectionControl.selectedSegment = 0;
+    self.patternDirectionControl.target = self;
+    self.patternDirectionControl.action = @selector(structuralParameterChanged:);
+    self.patternDirectionRow = [NSStackView stackViewWithViews:@[
+        directionLabel,
+        self.patternDirectionControl,
+    ]];
+    self.patternDirectionRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    self.patternDirectionRow.alignment = NSLayoutAttributeCenterY;
+    self.patternDirectionRow.spacing = 8.0;
+
+    auto* patternSeedLabel = makeLabel(@"Cell seed");
+    [patternSeedLabel.widthAnchor constraintEqualToConstant:72.0].active = YES;
+    self.patternSeedOffsetField = [[NSTextField alloc] initWithFrame:NSZeroRect];
+    self.patternSeedOffsetField.target = self;
+    self.patternSeedOffsetField.action = @selector(structuralParameterChanged:);
+    self.patternSeedRow = [NSStackView stackViewWithViews:@[
+        patternSeedLabel,
+        self.patternSeedOffsetField,
+    ]];
+    self.patternSeedRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    self.patternSeedRow.alignment = NSLayoutAttributeCenterY;
+    self.patternSeedRow.spacing = 8.0;
+
     self.layerInspectorTabs = [[NSSegmentedControl alloc] initWithFrame:NSZeroRect];
     self.layerInspectorTabs.segmentCount = 3;
     [self.layerInspectorTabs setLabel:@"Layer" forSegment:0];
@@ -807,6 +919,13 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
         self.levelsHighRow,
         self.levelsGammaRow,
         self.thresholdRow,
+        self.patternCountXRow,
+        self.patternCountYRow,
+        self.patternValueOneRow,
+        self.patternValueTwoRow,
+        self.patternValueThreeRow,
+        self.patternDirectionRow,
+        self.patternSeedRow,
     ]];
     self.layerSettingsGroup.orientation = NSUserInterfaceLayoutOrientationVertical;
     self.layerSettingsGroup.alignment = NSLayoutAttributeLeading;
@@ -980,6 +1099,15 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
         [self.transformSettingsGroup.widthAnchor constraintEqualToAnchor:layerStack.widthAnchor],
         [self.maskSettingsGroup.widthAnchor constraintEqualToAnchor:layerStack.widthAnchor],
         [self.layerCompositeControl.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.patternCountXRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.patternCountYRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.patternValueOneRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.patternValueTwoRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.patternValueThreeRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.patternDirectionRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.patternSeedRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.patternDirectionControl.trailingAnchor
+            constraintEqualToAnchor:self.patternDirectionRow.trailingAnchor],
         [scaleXRow.widthAnchor constraintEqualToAnchor:self.transformSettingsGroup.widthAnchor],
         [scaleYRow.widthAnchor constraintEqualToAnchor:self.transformSettingsGroup.widthAnchor],
         [offsetXRow.widthAnchor constraintEqualToAnchor:self.transformSettingsGroup.widthAnchor],
@@ -1059,6 +1187,13 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
         self.levelsHighRow.hidden = YES;
         self.levelsGammaRow.hidden = YES;
         self.thresholdRow.hidden = YES;
+        self.patternCountXRow.hidden = YES;
+        self.patternCountYRow.hidden = YES;
+        self.patternValueOneRow.hidden = YES;
+        self.patternValueTwoRow.hidden = YES;
+        self.patternValueThreeRow.hidden = YES;
+        self.patternDirectionRow.hidden = YES;
+        self.patternSeedRow.hidden = YES;
         [self updateLayerInspectorTabVisibility];
         return;
     }
@@ -1086,12 +1221,26 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
     const auto* solid = std::get_if<paperweight::SolidColourOperation>(&layer->operation);
     const auto* levels = std::get_if<paperweight::LevelsOperation>(&layer->operation);
     const auto* threshold = std::get_if<paperweight::ThresholdOperation>(&layer->operation);
+    const auto* brick = std::get_if<paperweight::BrickGridOperation>(&layer->operation);
+    const auto* tile = std::get_if<paperweight::TileGridOperation>(&layer->operation);
+    const auto* worley = std::get_if<paperweight::WorleyCellsOperation>(&layer->operation);
+    const auto* randomCells = std::get_if<paperweight::RandomCellsOperation>(&layer->operation);
+    const auto* lines = std::get_if<paperweight::LinesOperation>(&layer->operation);
+    const auto* rectangles = std::get_if<paperweight::RectanglesOperation>(&layer->operation);
+    const auto* circles = std::get_if<paperweight::CirclesOperation>(&layer->operation);
     self.noiseSeedRow.hidden = noise == nullptr;
     self.solidColourRow.hidden = solid == nullptr;
     self.levelsLowRow.hidden = levels == nullptr;
     self.levelsHighRow.hidden = levels == nullptr;
     self.levelsGammaRow.hidden = levels == nullptr;
     self.thresholdRow.hidden = threshold == nullptr;
+    self.patternCountXRow.hidden = YES;
+    self.patternCountYRow.hidden = YES;
+    self.patternValueOneRow.hidden = YES;
+    self.patternValueTwoRow.hidden = YES;
+    self.patternValueThreeRow.hidden = YES;
+    self.patternDirectionRow.hidden = YES;
+    self.patternSeedRow.hidden = YES;
 
     if (noise != nullptr) {
         self.noiseSeedOffsetField.stringValue = [NSString
@@ -1112,6 +1261,120 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
         self.thresholdSlider.doubleValue = threshold->threshold;
         self.thresholdValue.stringValue = [NSString
             stringWithFormat:@"%.2f", threshold->threshold];
+    }
+
+    const auto showCount = [](NSStackView* row,
+                              NSTextField* label,
+                              NSSlider* slider,
+                              NSTextField* valueLabel,
+                              NSString* title,
+                              std::uint32_t value) {
+        row.hidden = NO;
+        label.stringValue = title;
+        slider.minValue = paperweight::LayerLimits::minimumPatternCount;
+        slider.maxValue = paperweight::LayerLimits::maximumPatternCount;
+        slider.doubleValue = value;
+        valueLabel.stringValue = [NSString stringWithFormat:@"%u", value];
+    };
+    const auto showValue = [](NSStackView* row,
+                              NSTextField* label,
+                              NSSlider* slider,
+                              NSTextField* valueLabel,
+                              NSString* title,
+                              double minimum,
+                              double maximum,
+                              double value) {
+        row.hidden = NO;
+        label.stringValue = title;
+        slider.minValue = minimum;
+        slider.maxValue = maximum;
+        slider.doubleValue = value;
+        valueLabel.stringValue = [NSString stringWithFormat:@"%.2f", value];
+    };
+    if (brick != nullptr) {
+        showCount(self.patternCountXRow, self.patternCountXLabel,
+                  self.patternCountXSlider, self.patternCountXValue, @"Columns", brick->columns);
+        showCount(self.patternCountYRow, self.patternCountYLabel,
+                  self.patternCountYSlider, self.patternCountYValue, @"Rows", brick->rows);
+        showValue(self.patternValueOneRow, self.patternValueOneLabel,
+                  self.patternValueOneSlider, self.patternValueOneValue,
+                  @"Mortar", 0.0, 0.95, brick->mortar);
+        showValue(self.patternValueTwoRow, self.patternValueTwoLabel,
+                  self.patternValueTwoSlider, self.patternValueTwoValue,
+                  @"Stagger", 0.0, 1.0, brick->stagger);
+        showValue(self.patternValueThreeRow, self.patternValueThreeLabel,
+                  self.patternValueThreeSlider, self.patternValueThreeValue,
+                  @"Softness", 0.0, 0.25, brick->softness);
+    } else if (tile != nullptr) {
+        showCount(self.patternCountXRow, self.patternCountXLabel,
+                  self.patternCountXSlider, self.patternCountXValue, @"Columns", tile->columns);
+        showCount(self.patternCountYRow, self.patternCountYLabel,
+                  self.patternCountYSlider, self.patternCountYValue, @"Rows", tile->rows);
+        showValue(self.patternValueOneRow, self.patternValueOneLabel,
+                  self.patternValueOneSlider, self.patternValueOneValue,
+                  @"Grout", 0.0, 0.95, tile->grout);
+        showValue(self.patternValueThreeRow, self.patternValueThreeLabel,
+                  self.patternValueThreeSlider, self.patternValueThreeValue,
+                  @"Softness", 0.0, 0.25, tile->softness);
+    } else if (worley != nullptr) {
+        showCount(self.patternCountXRow, self.patternCountXLabel,
+                  self.patternCountXSlider, self.patternCountXValue, @"Columns", worley->columns);
+        showCount(self.patternCountYRow, self.patternCountYLabel,
+                  self.patternCountYSlider, self.patternCountYValue, @"Rows", worley->rows);
+        showValue(self.patternValueOneRow, self.patternValueOneLabel,
+                  self.patternValueOneSlider, self.patternValueOneValue,
+                  @"Jitter", 0.0, 1.0, worley->jitter);
+        showValue(self.patternValueTwoRow, self.patternValueTwoLabel,
+                  self.patternValueTwoSlider, self.patternValueTwoValue,
+                  @"Edge", 0.01, 2.0, worley->edgeWidth);
+        self.patternSeedRow.hidden = NO;
+        self.patternSeedOffsetField.stringValue = [NSString
+            stringWithFormat:@"%llu", worley->seedOffset];
+    } else if (randomCells != nullptr) {
+        showCount(self.patternCountXRow, self.patternCountXLabel,
+                  self.patternCountXSlider, self.patternCountXValue, @"Columns", randomCells->columns);
+        showCount(self.patternCountYRow, self.patternCountYLabel,
+                  self.patternCountYSlider, self.patternCountYValue, @"Rows", randomCells->rows);
+        self.patternSeedRow.hidden = NO;
+        self.patternSeedOffsetField.stringValue = [NSString
+            stringWithFormat:@"%llu", randomCells->seedOffset];
+    } else if (lines != nullptr) {
+        showCount(self.patternCountXRow, self.patternCountXLabel,
+                  self.patternCountXSlider, self.patternCountXValue, @"Count", lines->count);
+        showValue(self.patternValueOneRow, self.patternValueOneLabel,
+                  self.patternValueOneSlider, self.patternValueOneValue,
+                  @"Width", 0.0, 1.0, lines->width);
+        showValue(self.patternValueThreeRow, self.patternValueThreeLabel,
+                  self.patternValueThreeSlider, self.patternValueThreeValue,
+                  @"Softness", 0.0, 0.25, lines->softness);
+        self.patternDirectionRow.hidden = NO;
+        self.patternDirectionControl.selectedSegment =
+            lines->direction == paperweight::LineDirection::horizontal ? 1 : 0;
+    } else if (rectangles != nullptr) {
+        showCount(self.patternCountXRow, self.patternCountXLabel,
+                  self.patternCountXSlider, self.patternCountXValue, @"Columns", rectangles->columns);
+        showCount(self.patternCountYRow, self.patternCountYLabel,
+                  self.patternCountYSlider, self.patternCountYValue, @"Rows", rectangles->rows);
+        showValue(self.patternValueOneRow, self.patternValueOneLabel,
+                  self.patternValueOneSlider, self.patternValueOneValue,
+                  @"Width", 0.0, 1.0, rectangles->width);
+        showValue(self.patternValueTwoRow, self.patternValueTwoLabel,
+                  self.patternValueTwoSlider, self.patternValueTwoValue,
+                  @"Height", 0.0, 1.0, rectangles->height);
+        showValue(self.patternValueThreeRow, self.patternValueThreeLabel,
+                  self.patternValueThreeSlider, self.patternValueThreeValue,
+                  @"Softness", 0.0, 0.25, rectangles->softness);
+    } else if (circles != nullptr) {
+        showCount(self.patternCountXRow, self.patternCountXLabel,
+                  self.patternCountXSlider, self.patternCountXValue, @"Columns", circles->columns);
+        showCount(self.patternCountYRow, self.patternCountYLabel,
+                  self.patternCountYSlider, self.patternCountYValue, @"Rows", circles->rows);
+        showValue(self.patternValueOneRow, self.patternValueOneLabel,
+                  self.patternValueOneSlider, self.patternValueOneValue,
+                  @"Radius", 0.0, 0.5, circles->radius);
+        showValue(self.patternValueThreeRow, self.patternValueThreeLabel,
+                  self.patternValueThreeSlider, self.patternValueThreeValue,
+                  @"Softness", 0.0, 0.25, circles->softness);
     }
 
     const auto& transform = layer->transform;
@@ -1224,6 +1487,27 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
         break;
     case 3:
         material_.layers.push_back(paperweight::makeThresholdLayer());
+        break;
+    case 4:
+        material_.layers.push_back(paperweight::makeBrickGridLayer());
+        break;
+    case 5:
+        material_.layers.push_back(paperweight::makeTileGridLayer());
+        break;
+    case 6:
+        material_.layers.push_back(paperweight::makeWorleyCellsLayer());
+        break;
+    case 7:
+        material_.layers.push_back(paperweight::makeRandomCellsLayer());
+        break;
+    case 8:
+        material_.layers.push_back(paperweight::makeLinesLayer());
+        break;
+    case 9:
+        material_.layers.push_back(paperweight::makeRectanglesLayer());
+        break;
+    case 10:
+        material_.layers.push_back(paperweight::makeCirclesLayer());
         break;
     default:
         return;
@@ -1391,6 +1675,86 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
             return;
         }
         transform.warpSeedOffset = parsed;
+    }
+
+    [self refreshLayerInspector];
+    [self regeneratePreview];
+    [self markDirty];
+}
+
+- (void)structuralParameterChanged:(id)sender
+{
+    auto* layer = layerAt(material_, selectedLayer_);
+    if (layer == nullptr) {
+        return;
+    }
+
+    std::optional<std::uint64_t> parsedSeed;
+    if (sender == self.patternSeedOffsetField) {
+        const std::string text = self.patternSeedOffsetField.stringValue.UTF8String;
+        std::uint64_t parsed = 0;
+        const auto result = std::from_chars(text.data(), text.data() + text.size(), parsed, 10);
+        if (text.empty() || result.ec != std::errc{} || result.ptr != text.data() + text.size()) {
+            self.statusLabel.stringValue = @"A structural seed offset must be a non-negative integer.";
+            self.statusLabel.textColor = NSColor.systemRedColor;
+            return;
+        }
+        parsedSeed = parsed;
+    }
+
+    const auto countX = static_cast<std::uint32_t>(
+        std::llround(self.patternCountXSlider.doubleValue));
+    const auto countY = static_cast<std::uint32_t>(
+        std::llround(self.patternCountYSlider.doubleValue));
+    if (auto* brick = std::get_if<paperweight::BrickGridOperation>(&layer->operation)) {
+        brick->columns = countX;
+        brick->rows = countY;
+        brick->mortar = self.patternValueOneSlider.doubleValue;
+        brick->stagger = self.patternValueTwoSlider.doubleValue;
+        brick->softness = self.patternValueThreeSlider.doubleValue;
+    } else if (auto* tile = std::get_if<paperweight::TileGridOperation>(&layer->operation)) {
+        tile->columns = countX;
+        tile->rows = countY;
+        tile->grout = self.patternValueOneSlider.doubleValue;
+        tile->softness = self.patternValueThreeSlider.doubleValue;
+    } else if (auto* worley =
+                   std::get_if<paperweight::WorleyCellsOperation>(&layer->operation)) {
+        worley->columns = countX;
+        worley->rows = countY;
+        worley->jitter = self.patternValueOneSlider.doubleValue;
+        worley->edgeWidth = self.patternValueTwoSlider.doubleValue;
+        if (parsedSeed) {
+            worley->seedOffset = *parsedSeed;
+        }
+    } else if (auto* cells =
+                   std::get_if<paperweight::RandomCellsOperation>(&layer->operation)) {
+        cells->columns = countX;
+        cells->rows = countY;
+        if (parsedSeed) {
+            cells->seedOffset = *parsedSeed;
+        }
+    } else if (auto* lines = std::get_if<paperweight::LinesOperation>(&layer->operation)) {
+        lines->direction = self.patternDirectionControl.selectedSegment == 1
+            ? paperweight::LineDirection::horizontal
+            : paperweight::LineDirection::vertical;
+        lines->count = countX;
+        lines->width = self.patternValueOneSlider.doubleValue;
+        lines->softness = self.patternValueThreeSlider.doubleValue;
+    } else if (auto* rectangles =
+                   std::get_if<paperweight::RectanglesOperation>(&layer->operation)) {
+        rectangles->columns = countX;
+        rectangles->rows = countY;
+        rectangles->width = self.patternValueOneSlider.doubleValue;
+        rectangles->height = self.patternValueTwoSlider.doubleValue;
+        rectangles->softness = self.patternValueThreeSlider.doubleValue;
+    } else if (auto* circles =
+                   std::get_if<paperweight::CirclesOperation>(&layer->operation)) {
+        circles->columns = countX;
+        circles->rows = countY;
+        circles->radius = self.patternValueOneSlider.doubleValue;
+        circles->softness = self.patternValueThreeSlider.doubleValue;
+    } else {
+        return;
     }
 
     [self refreshLayerInspector];
@@ -1802,7 +2166,8 @@ int main(int argc, const char* argv[])
     @autoreleasepool {
         auto* application = [NSApplication sharedApplication];
         application.activationPolicy = NSApplicationActivationPolicyRegular;
-        auto* delegate = [[AppDelegate alloc] init];
+        __attribute__((objc_precise_lifetime)) AppDelegate* delegate =
+            [[AppDelegate alloc] init];
         application.delegate = delegate;
         [application run];
     }

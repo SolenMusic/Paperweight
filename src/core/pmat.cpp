@@ -54,6 +54,13 @@ enum class OperationKind {
     solidColour,
     levels,
     threshold,
+    brickGrid,
+    tileGrid,
+    worleyCells,
+    randomCells,
+    lines,
+    rectangles,
+    circles,
 };
 
 template<typename Value>
@@ -88,6 +95,36 @@ struct LayerBuilder {
     ParsedValue<std::uint64_t> maskSeedOffset;
     ParsedValue<double> maskLow;
     ParsedValue<double> maskHigh;
+    ParsedValue<std::uint32_t> brickColumns;
+    ParsedValue<std::uint32_t> brickRows;
+    ParsedValue<double> brickMortar;
+    ParsedValue<double> brickStagger;
+    ParsedValue<double> brickSoftness;
+    ParsedValue<std::uint32_t> tileColumns;
+    ParsedValue<std::uint32_t> tileRows;
+    ParsedValue<double> tileGrout;
+    ParsedValue<double> tileSoftness;
+    ParsedValue<std::uint32_t> worleyColumns;
+    ParsedValue<std::uint32_t> worleyRows;
+    ParsedValue<double> worleyJitter;
+    ParsedValue<double> worleyEdgeWidth;
+    ParsedValue<std::uint64_t> worleySeedOffset;
+    ParsedValue<std::uint32_t> randomColumns;
+    ParsedValue<std::uint32_t> randomRows;
+    ParsedValue<std::uint64_t> randomSeedOffset;
+    ParsedValue<LineDirection> lineDirection;
+    ParsedValue<std::uint32_t> lineCount;
+    ParsedValue<double> lineWidth;
+    ParsedValue<double> lineSoftness;
+    ParsedValue<std::uint32_t> rectangleColumns;
+    ParsedValue<std::uint32_t> rectangleRows;
+    ParsedValue<double> rectangleWidth;
+    ParsedValue<double> rectangleHeight;
+    ParsedValue<double> rectangleSoftness;
+    ParsedValue<std::uint32_t> circleColumns;
+    ParsedValue<std::uint32_t> circleRows;
+    ParsedValue<double> circleRadius;
+    ParsedValue<double> circleSoftness;
 };
 
 std::string_view trim(std::string_view value)
@@ -245,6 +282,38 @@ std::optional<OperationKind> parseOperationKind(std::string_view value)
     if (value == "threshold") {
         return OperationKind::threshold;
     }
+    if (value == "brick_grid") {
+        return OperationKind::brickGrid;
+    }
+    if (value == "tile_grid") {
+        return OperationKind::tileGrid;
+    }
+    if (value == "worley_cells") {
+        return OperationKind::worleyCells;
+    }
+    if (value == "random_cells") {
+        return OperationKind::randomCells;
+    }
+    if (value == "lines") {
+        return OperationKind::lines;
+    }
+    if (value == "rectangles") {
+        return OperationKind::rectangles;
+    }
+    if (value == "circles") {
+        return OperationKind::circles;
+    }
+    return std::nullopt;
+}
+
+std::optional<LineDirection> parseLineDirection(std::string_view value)
+{
+    if (value == "vertical") {
+        return LineDirection::vertical;
+    }
+    if (value == "horizontal") {
+        return LineDirection::horizontal;
+    }
     return std::nullopt;
 }
 
@@ -276,6 +345,36 @@ bool hasVersionThreeFields(const LayerBuilder& builder)
         builder.warpSeedOffset.value || builder.maskEnabled.value ||
         builder.maskInverted.value || builder.maskSeedOffset.value ||
         builder.maskLow.value || builder.maskHigh.value;
+}
+
+bool isStructuralOperation(OperationKind operation)
+{
+    return operation == OperationKind::brickGrid ||
+        operation == OperationKind::tileGrid ||
+        operation == OperationKind::worleyCells ||
+        operation == OperationKind::randomCells ||
+        operation == OperationKind::lines ||
+        operation == OperationKind::rectangles ||
+        operation == OperationKind::circles;
+}
+
+bool hasVersionFourFields(const LayerBuilder& builder)
+{
+    return builder.brickColumns.value || builder.brickRows.value ||
+        builder.brickMortar.value || builder.brickStagger.value ||
+        builder.brickSoftness.value || builder.tileColumns.value ||
+        builder.tileRows.value || builder.tileGrout.value ||
+        builder.tileSoftness.value || builder.worleyColumns.value ||
+        builder.worleyRows.value || builder.worleyJitter.value ||
+        builder.worleyEdgeWidth.value || builder.worleySeedOffset.value ||
+        builder.randomColumns.value || builder.randomRows.value ||
+        builder.randomSeedOffset.value || builder.lineDirection.value ||
+        builder.lineCount.value || builder.lineWidth.value ||
+        builder.lineSoftness.value || builder.rectangleColumns.value ||
+        builder.rectangleRows.value || builder.rectangleWidth.value ||
+        builder.rectangleHeight.value || builder.rectangleSoftness.value ||
+        builder.circleColumns.value || builder.circleRows.value ||
+        builder.circleRadius.value || builder.circleSoftness.value;
 }
 
 template<typename Value>
@@ -522,7 +621,7 @@ ParseResult parsePmat(std::string_view text)
                         return diagnostic(
                             lineNumber,
                             valueColumn,
-                            "layer operation must be 'noise', 'solid_colour', 'levels', or 'threshold'");
+                            "layer operation is not supported");
                     }
                     if (!storeValue(builder.operation, *parsed, lineNumber, valueColumn)) {
                         return duplicate();
@@ -579,6 +678,246 @@ ParseResult parsePmat(std::string_view text)
                         return diagnostic(lineNumber, valueColumn, "threshold must be a decimal number");
                     }
                     if (!storeValue(builder.threshold, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "brick.columns") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "brick columns must be an integer");
+                    }
+                    if (!storeValue(builder.brickColumns, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "brick.rows") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "brick rows must be an integer");
+                    }
+                    if (!storeValue(builder.brickRows, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "brick.mortar") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "brick mortar must be a decimal number");
+                    }
+                    if (!storeValue(builder.brickMortar, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "brick.stagger") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "brick stagger must be a decimal number");
+                    }
+                    if (!storeValue(builder.brickStagger, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "brick.softness") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "brick softness must be a decimal number");
+                    }
+                    if (!storeValue(builder.brickSoftness, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "tile.columns") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "tile columns must be an integer");
+                    }
+                    if (!storeValue(builder.tileColumns, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "tile.rows") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "tile rows must be an integer");
+                    }
+                    if (!storeValue(builder.tileRows, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "tile.grout") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "tile grout must be a decimal number");
+                    }
+                    if (!storeValue(builder.tileGrout, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "tile.softness") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "tile softness must be a decimal number");
+                    }
+                    if (!storeValue(builder.tileSoftness, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "worley.columns") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "Worley columns must be an integer");
+                    }
+                    if (!storeValue(builder.worleyColumns, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "worley.rows") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "Worley rows must be an integer");
+                    }
+                    if (!storeValue(builder.worleyRows, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "worley.jitter") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "Worley jitter must be a decimal number");
+                    }
+                    if (!storeValue(builder.worleyJitter, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "worley.edge_width") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "Worley edge width must be a decimal number");
+                    }
+                    if (!storeValue(builder.worleyEdgeWidth, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "worley.seed_offset") {
+                    std::uint64_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "Worley seed offset must be an unsigned integer");
+                    }
+                    if (!storeValue(builder.worleySeedOffset, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "random_cells.columns") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "random-cell columns must be an integer");
+                    }
+                    if (!storeValue(builder.randomColumns, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "random_cells.rows") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "random-cell rows must be an integer");
+                    }
+                    if (!storeValue(builder.randomRows, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "random_cells.seed_offset") {
+                    std::uint64_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "random-cell seed offset must be an unsigned integer");
+                    }
+                    if (!storeValue(builder.randomSeedOffset, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "lines.direction") {
+                    const auto parsed = parseLineDirection(value);
+                    if (!parsed) {
+                        return diagnostic(lineNumber, valueColumn, "line direction must be 'vertical' or 'horizontal'");
+                    }
+                    if (!storeValue(builder.lineDirection, *parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "lines.count") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "line count must be an integer");
+                    }
+                    if (!storeValue(builder.lineCount, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "lines.width") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "line width must be a decimal number");
+                    }
+                    if (!storeValue(builder.lineWidth, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "lines.softness") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "line softness must be a decimal number");
+                    }
+                    if (!storeValue(builder.lineSoftness, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "rectangles.columns") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "rectangle columns must be an integer");
+                    }
+                    if (!storeValue(builder.rectangleColumns, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "rectangles.rows") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "rectangle rows must be an integer");
+                    }
+                    if (!storeValue(builder.rectangleRows, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "rectangles.width") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "rectangle width must be a decimal number");
+                    }
+                    if (!storeValue(builder.rectangleWidth, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "rectangles.height") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "rectangle height must be a decimal number");
+                    }
+                    if (!storeValue(builder.rectangleHeight, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "rectangles.softness") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "rectangle softness must be a decimal number");
+                    }
+                    if (!storeValue(builder.rectangleSoftness, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "circles.columns") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "circle columns must be an integer");
+                    }
+                    if (!storeValue(builder.circleColumns, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "circles.rows") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "circle rows must be an integer");
+                    }
+                    if (!storeValue(builder.circleRows, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "circles.radius") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "circle radius must be a decimal number");
+                    }
+                    if (!storeValue(builder.circleRadius, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "circles.softness") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "circle softness must be a decimal number");
+                    }
+                    if (!storeValue(builder.circleSoftness, parsed, lineNumber, valueColumn)) {
                         return duplicate();
                     }
                 } else if (property == "transform.scale_x") {
@@ -759,6 +1098,15 @@ ParseResult parsePmat(std::string_view text)
                     "layer opacity must be finite and between 0 and 1");
             }
 
+            if (formatVersion < 4 &&
+                (hasVersionFourFields(builder) ||
+                 isStructuralOperation(*builder.operation.value))) {
+                return diagnostic(
+                    lineNumber + 1,
+                    1,
+                    "structural generators require .pmat version 4");
+            }
+
             if (formatVersion < 3 && hasVersionThreeFields(builder)) {
                 return diagnostic(
                     lineNumber + 1,
@@ -892,6 +1240,44 @@ ParseResult parsePmat(std::string_view text)
                     *builder.maskHigh.value,
                 };
             }
+            const bool hasBrickFields = builder.brickColumns.value || builder.brickRows.value ||
+                builder.brickMortar.value || builder.brickStagger.value ||
+                builder.brickSoftness.value;
+            const bool hasTileFields = builder.tileColumns.value || builder.tileRows.value ||
+                builder.tileGrout.value || builder.tileSoftness.value;
+            const bool hasWorleyFields = builder.worleyColumns.value || builder.worleyRows.value ||
+                builder.worleyJitter.value || builder.worleyEdgeWidth.value ||
+                builder.worleySeedOffset.value;
+            const bool hasRandomFields = builder.randomColumns.value || builder.randomRows.value ||
+                builder.randomSeedOffset.value;
+            const bool hasLineFields = builder.lineDirection.value || builder.lineCount.value ||
+                builder.lineWidth.value || builder.lineSoftness.value;
+            const bool hasRectangleFields = builder.rectangleColumns.value ||
+                builder.rectangleRows.value || builder.rectangleWidth.value ||
+                builder.rectangleHeight.value || builder.rectangleSoftness.value;
+            const bool hasCircleFields = builder.circleColumns.value || builder.circleRows.value ||
+                builder.circleRadius.value || builder.circleSoftness.value;
+            const int structuralGroupCount = static_cast<int>(hasBrickFields) +
+                static_cast<int>(hasTileFields) + static_cast<int>(hasWorleyFields) +
+                static_cast<int>(hasRandomFields) + static_cast<int>(hasLineFields) +
+                static_cast<int>(hasRectangleFields) + static_cast<int>(hasCircleFields);
+            const bool hasClassicFields = builder.seedOffset.value || builder.solidColour.value ||
+                builder.levelsLow.value || builder.levelsHigh.value ||
+                builder.levelsGamma.value || builder.threshold.value;
+            const auto invalidCount = [](std::uint32_t value) {
+                return value < LayerLimits::minimumPatternCount ||
+                    value > LayerLimits::maximumPatternCount;
+            };
+            const auto outside = [](double value, double minimum, double maximum) {
+                return !std::isfinite(value) || value < minimum || value > maximum;
+            };
+            const auto crossOperationError = [&] {
+                return diagnostic(
+                    lineNumber + 1,
+                    1,
+                    "layer contains parameters for another operation");
+            };
+
             switch (*builder.operation.value) {
             case OperationKind::noise:
                 if (!builder.seedOffset.value) {
@@ -902,7 +1288,8 @@ ParseResult parsePmat(std::string_view text)
                     return *error;
                 }
                 if (builder.levelsLow.value || builder.levelsHigh.value ||
-                    builder.levelsGamma.value || builder.threshold.value) {
+                    builder.levelsGamma.value || builder.threshold.value ||
+                    hasVersionFourFields(builder)) {
                     return diagnostic(lineNumber + 1, 1, "noise layer contains parameters for another operation");
                 }
                 layer.operation = NoiseOperation{*builder.seedOffset.value};
@@ -912,7 +1299,8 @@ ParseResult parsePmat(std::string_view text)
                     return missingLayerField(lineNumber + 1, index, "solid.colour");
                 }
                 if (builder.seedOffset.value || builder.levelsLow.value || builder.levelsHigh.value ||
-                    builder.levelsGamma.value || builder.threshold.value) {
+                    builder.levelsGamma.value || builder.threshold.value ||
+                    hasVersionFourFields(builder)) {
                     return diagnostic(
                         lineNumber + 1,
                         1,
@@ -930,7 +1318,8 @@ ParseResult parsePmat(std::string_view text)
                 if (!builder.levelsGamma.value) {
                     return missingLayerField(lineNumber + 1, index, "levels.gamma");
                 }
-                if (builder.seedOffset.value || builder.solidColour.value || builder.threshold.value) {
+                if (builder.seedOffset.value || builder.solidColour.value ||
+                    builder.threshold.value || hasVersionFourFields(builder)) {
                     return diagnostic(lineNumber + 1, 1, "levels layer contains parameters for another operation");
                 }
                 if (!std::isfinite(*builder.levelsLow.value) ||
@@ -974,7 +1363,8 @@ ParseResult parsePmat(std::string_view text)
                     return missingLayerField(lineNumber + 1, index, "threshold.value");
                 }
                 if (builder.seedOffset.value || builder.solidColour.value || builder.levelsLow.value ||
-                    builder.levelsHigh.value || builder.levelsGamma.value) {
+                    builder.levelsHigh.value || builder.levelsGamma.value ||
+                    hasVersionFourFields(builder)) {
                     return diagnostic(lineNumber + 1, 1, "threshold layer contains parameters for another operation");
                 }
                 if (!std::isfinite(*builder.threshold.value) ||
@@ -986,6 +1376,302 @@ ParseResult parsePmat(std::string_view text)
                         "threshold must be finite and between 0 and 1");
                 }
                 layer.operation = ThresholdOperation{*builder.threshold.value};
+                break;
+            case OperationKind::brickGrid:
+                if (!builder.brickColumns.value) {
+                    return missingLayerField(lineNumber + 1, index, "brick.columns");
+                }
+                if (!builder.brickRows.value) {
+                    return missingLayerField(lineNumber + 1, index, "brick.rows");
+                }
+                if (!builder.brickMortar.value) {
+                    return missingLayerField(lineNumber + 1, index, "brick.mortar");
+                }
+                if (!builder.brickStagger.value) {
+                    return missingLayerField(lineNumber + 1, index, "brick.stagger");
+                }
+                if (!builder.brickSoftness.value) {
+                    return missingLayerField(lineNumber + 1, index, "brick.softness");
+                }
+                if (hasClassicFields || structuralGroupCount != 1) {
+                    return crossOperationError();
+                }
+                if (invalidCount(*builder.brickColumns.value) ||
+                    invalidCount(*builder.brickRows.value)) {
+                    return diagnostic(
+                        builder.brickColumns.line,
+                        builder.brickColumns.column,
+                        "brick columns and rows must be between 1 and 64");
+                }
+                if (outside(*builder.brickMortar.value, 0.0, 0.95)) {
+                    return diagnostic(
+                        builder.brickMortar.line,
+                        builder.brickMortar.column,
+                        "brick mortar must be finite and between 0 and 0.95");
+                }
+                if (outside(*builder.brickStagger.value, 0.0, 1.0)) {
+                    return diagnostic(
+                        builder.brickStagger.line,
+                        builder.brickStagger.column,
+                        "brick stagger must be finite and between 0 and 1");
+                }
+                if (outside(*builder.brickSoftness.value, 0.0, 0.25)) {
+                    return diagnostic(
+                        builder.brickSoftness.line,
+                        builder.brickSoftness.column,
+                        "brick softness must be finite and between 0 and 0.25");
+                }
+                layer.operation = BrickGridOperation{
+                    *builder.brickColumns.value,
+                    *builder.brickRows.value,
+                    *builder.brickMortar.value,
+                    *builder.brickStagger.value,
+                    *builder.brickSoftness.value,
+                };
+                break;
+            case OperationKind::tileGrid:
+                if (!builder.tileColumns.value) {
+                    return missingLayerField(lineNumber + 1, index, "tile.columns");
+                }
+                if (!builder.tileRows.value) {
+                    return missingLayerField(lineNumber + 1, index, "tile.rows");
+                }
+                if (!builder.tileGrout.value) {
+                    return missingLayerField(lineNumber + 1, index, "tile.grout");
+                }
+                if (!builder.tileSoftness.value) {
+                    return missingLayerField(lineNumber + 1, index, "tile.softness");
+                }
+                if (hasClassicFields || structuralGroupCount != 1) {
+                    return crossOperationError();
+                }
+                if (invalidCount(*builder.tileColumns.value) ||
+                    invalidCount(*builder.tileRows.value)) {
+                    return diagnostic(
+                        builder.tileColumns.line,
+                        builder.tileColumns.column,
+                        "tile columns and rows must be between 1 and 64");
+                }
+                if (outside(*builder.tileGrout.value, 0.0, 0.95)) {
+                    return diagnostic(
+                        builder.tileGrout.line,
+                        builder.tileGrout.column,
+                        "tile grout must be finite and between 0 and 0.95");
+                }
+                if (outside(*builder.tileSoftness.value, 0.0, 0.25)) {
+                    return diagnostic(
+                        builder.tileSoftness.line,
+                        builder.tileSoftness.column,
+                        "tile softness must be finite and between 0 and 0.25");
+                }
+                layer.operation = TileGridOperation{
+                    *builder.tileColumns.value,
+                    *builder.tileRows.value,
+                    *builder.tileGrout.value,
+                    *builder.tileSoftness.value,
+                };
+                break;
+            case OperationKind::worleyCells:
+                if (!builder.worleyColumns.value) {
+                    return missingLayerField(lineNumber + 1, index, "worley.columns");
+                }
+                if (!builder.worleyRows.value) {
+                    return missingLayerField(lineNumber + 1, index, "worley.rows");
+                }
+                if (!builder.worleyJitter.value) {
+                    return missingLayerField(lineNumber + 1, index, "worley.jitter");
+                }
+                if (!builder.worleyEdgeWidth.value) {
+                    return missingLayerField(lineNumber + 1, index, "worley.edge_width");
+                }
+                if (!builder.worleySeedOffset.value) {
+                    return missingLayerField(lineNumber + 1, index, "worley.seed_offset");
+                }
+                if (hasClassicFields || structuralGroupCount != 1) {
+                    return crossOperationError();
+                }
+                if (invalidCount(*builder.worleyColumns.value) ||
+                    invalidCount(*builder.worleyRows.value)) {
+                    return diagnostic(
+                        builder.worleyColumns.line,
+                        builder.worleyColumns.column,
+                        "Worley columns and rows must be between 1 and 64");
+                }
+                if (outside(*builder.worleyJitter.value, 0.0, 1.0)) {
+                    return diagnostic(
+                        builder.worleyJitter.line,
+                        builder.worleyJitter.column,
+                        "Worley jitter must be finite and between 0 and 1");
+                }
+                if (outside(*builder.worleyEdgeWidth.value, 0.01, 2.0)) {
+                    return diagnostic(
+                        builder.worleyEdgeWidth.line,
+                        builder.worleyEdgeWidth.column,
+                        "Worley edge width must be finite and between 0.01 and 2");
+                }
+                layer.operation = WorleyCellsOperation{
+                    *builder.worleyColumns.value,
+                    *builder.worleyRows.value,
+                    *builder.worleyJitter.value,
+                    *builder.worleyEdgeWidth.value,
+                    *builder.worleySeedOffset.value,
+                };
+                break;
+            case OperationKind::randomCells:
+                if (!builder.randomColumns.value) {
+                    return missingLayerField(lineNumber + 1, index, "random_cells.columns");
+                }
+                if (!builder.randomRows.value) {
+                    return missingLayerField(lineNumber + 1, index, "random_cells.rows");
+                }
+                if (!builder.randomSeedOffset.value) {
+                    return missingLayerField(lineNumber + 1, index, "random_cells.seed_offset");
+                }
+                if (hasClassicFields || structuralGroupCount != 1) {
+                    return crossOperationError();
+                }
+                if (invalidCount(*builder.randomColumns.value) ||
+                    invalidCount(*builder.randomRows.value)) {
+                    return diagnostic(
+                        builder.randomColumns.line,
+                        builder.randomColumns.column,
+                        "random-cell columns and rows must be between 1 and 64");
+                }
+                layer.operation = RandomCellsOperation{
+                    *builder.randomColumns.value,
+                    *builder.randomRows.value,
+                    *builder.randomSeedOffset.value,
+                };
+                break;
+            case OperationKind::lines:
+                if (!builder.lineDirection.value) {
+                    return missingLayerField(lineNumber + 1, index, "lines.direction");
+                }
+                if (!builder.lineCount.value) {
+                    return missingLayerField(lineNumber + 1, index, "lines.count");
+                }
+                if (!builder.lineWidth.value) {
+                    return missingLayerField(lineNumber + 1, index, "lines.width");
+                }
+                if (!builder.lineSoftness.value) {
+                    return missingLayerField(lineNumber + 1, index, "lines.softness");
+                }
+                if (hasClassicFields || structuralGroupCount != 1) {
+                    return crossOperationError();
+                }
+                if (invalidCount(*builder.lineCount.value)) {
+                    return diagnostic(
+                        builder.lineCount.line,
+                        builder.lineCount.column,
+                        "line count must be between 1 and 64");
+                }
+                if (outside(*builder.lineWidth.value, 0.0, 1.0)) {
+                    return diagnostic(
+                        builder.lineWidth.line,
+                        builder.lineWidth.column,
+                        "line width must be finite and between 0 and 1");
+                }
+                if (outside(*builder.lineSoftness.value, 0.0, 0.25)) {
+                    return diagnostic(
+                        builder.lineSoftness.line,
+                        builder.lineSoftness.column,
+                        "line softness must be finite and between 0 and 0.25");
+                }
+                layer.operation = LinesOperation{
+                    *builder.lineDirection.value,
+                    *builder.lineCount.value,
+                    *builder.lineWidth.value,
+                    *builder.lineSoftness.value,
+                };
+                break;
+            case OperationKind::rectangles:
+                if (!builder.rectangleColumns.value) {
+                    return missingLayerField(lineNumber + 1, index, "rectangles.columns");
+                }
+                if (!builder.rectangleRows.value) {
+                    return missingLayerField(lineNumber + 1, index, "rectangles.rows");
+                }
+                if (!builder.rectangleWidth.value) {
+                    return missingLayerField(lineNumber + 1, index, "rectangles.width");
+                }
+                if (!builder.rectangleHeight.value) {
+                    return missingLayerField(lineNumber + 1, index, "rectangles.height");
+                }
+                if (!builder.rectangleSoftness.value) {
+                    return missingLayerField(lineNumber + 1, index, "rectangles.softness");
+                }
+                if (hasClassicFields || structuralGroupCount != 1) {
+                    return crossOperationError();
+                }
+                if (invalidCount(*builder.rectangleColumns.value) ||
+                    invalidCount(*builder.rectangleRows.value)) {
+                    return diagnostic(
+                        builder.rectangleColumns.line,
+                        builder.rectangleColumns.column,
+                        "rectangle columns and rows must be between 1 and 64");
+                }
+                if (outside(*builder.rectangleWidth.value, 0.0, 1.0) ||
+                    outside(*builder.rectangleHeight.value, 0.0, 1.0)) {
+                    return diagnostic(
+                        builder.rectangleWidth.line,
+                        builder.rectangleWidth.column,
+                        "rectangle width and height must be finite and between 0 and 1");
+                }
+                if (outside(*builder.rectangleSoftness.value, 0.0, 0.25)) {
+                    return diagnostic(
+                        builder.rectangleSoftness.line,
+                        builder.rectangleSoftness.column,
+                        "rectangle softness must be finite and between 0 and 0.25");
+                }
+                layer.operation = RectanglesOperation{
+                    *builder.rectangleColumns.value,
+                    *builder.rectangleRows.value,
+                    *builder.rectangleWidth.value,
+                    *builder.rectangleHeight.value,
+                    *builder.rectangleSoftness.value,
+                };
+                break;
+            case OperationKind::circles:
+                if (!builder.circleColumns.value) {
+                    return missingLayerField(lineNumber + 1, index, "circles.columns");
+                }
+                if (!builder.circleRows.value) {
+                    return missingLayerField(lineNumber + 1, index, "circles.rows");
+                }
+                if (!builder.circleRadius.value) {
+                    return missingLayerField(lineNumber + 1, index, "circles.radius");
+                }
+                if (!builder.circleSoftness.value) {
+                    return missingLayerField(lineNumber + 1, index, "circles.softness");
+                }
+                if (hasClassicFields || structuralGroupCount != 1) {
+                    return crossOperationError();
+                }
+                if (invalidCount(*builder.circleColumns.value) ||
+                    invalidCount(*builder.circleRows.value)) {
+                    return diagnostic(
+                        builder.circleColumns.line,
+                        builder.circleColumns.column,
+                        "circle columns and rows must be between 1 and 64");
+                }
+                if (outside(*builder.circleRadius.value, 0.0, 0.5)) {
+                    return diagnostic(
+                        builder.circleRadius.line,
+                        builder.circleRadius.column,
+                        "circle radius must be finite and between 0 and 0.5");
+                }
+                if (outside(*builder.circleSoftness.value, 0.0, 0.25)) {
+                    return diagnostic(
+                        builder.circleSoftness.line,
+                        builder.circleSoftness.column,
+                        "circle softness must be finite and between 0 and 0.25");
+                }
+                layer.operation = CirclesOperation{
+                    *builder.circleColumns.value,
+                    *builder.circleRows.value,
+                    *builder.circleRadius.value,
+                    *builder.circleSoftness.value,
+                };
                 break;
             }
             material.layers.push_back(std::move(layer));
@@ -1040,7 +1726,7 @@ SerialisationResult serialisePmat(const Material& material)
     }
 
     std::string output;
-    output.reserve(320 + material.layers.size() * 640);
+    output.reserve(320 + material.layers.size() * 800);
     output += "# Paperweight procedural material\n";
     output += "pmat.version = " + std::to_string(currentPmatVersion) + "\n";
     output += "material.type = fbm\n";
@@ -1087,6 +1773,84 @@ SerialisationResult serialisePmat(const Material& material)
                 return SerialisationError{"could not format threshold"};
             }
             output += prefix + "threshold.value = " + value + "\n";
+        } else if (const auto* brick = std::get_if<BrickGridOperation>(&layer.operation)) {
+            const auto mortar = formatDouble(brick->mortar);
+            const auto stagger = formatDouble(brick->stagger);
+            const auto softness = formatDouble(brick->softness);
+            if (mortar.empty() || stagger.empty() || softness.empty()) {
+                return SerialisationError{"could not format brick parameters"};
+            }
+            output += prefix + "brick.columns = " + std::to_string(brick->columns) + "\n";
+            output += prefix + "brick.rows = " + std::to_string(brick->rows) + "\n";
+            output += prefix + "brick.mortar = " + mortar + "\n";
+            output += prefix + "brick.stagger = " + stagger + "\n";
+            output += prefix + "brick.softness = " + softness + "\n";
+        } else if (const auto* tile = std::get_if<TileGridOperation>(&layer.operation)) {
+            const auto grout = formatDouble(tile->grout);
+            const auto softness = formatDouble(tile->softness);
+            if (grout.empty() || softness.empty()) {
+                return SerialisationError{"could not format tile parameters"};
+            }
+            output += prefix + "tile.columns = " + std::to_string(tile->columns) + "\n";
+            output += prefix + "tile.rows = " + std::to_string(tile->rows) + "\n";
+            output += prefix + "tile.grout = " + grout + "\n";
+            output += prefix + "tile.softness = " + softness + "\n";
+        } else if (const auto* worley = std::get_if<WorleyCellsOperation>(&layer.operation)) {
+            const auto jitter = formatDouble(worley->jitter);
+            const auto edgeWidth = formatDouble(worley->edgeWidth);
+            if (jitter.empty() || edgeWidth.empty()) {
+                return SerialisationError{"could not format Worley parameters"};
+            }
+            output += prefix + "worley.columns = " + std::to_string(worley->columns) + "\n";
+            output += prefix + "worley.rows = " + std::to_string(worley->rows) + "\n";
+            output += prefix + "worley.jitter = " + jitter + "\n";
+            output += prefix + "worley.edge_width = " + edgeWidth + "\n";
+            output += prefix + "worley.seed_offset = " +
+                std::to_string(worley->seedOffset) + "\n";
+        } else if (const auto* cells = std::get_if<RandomCellsOperation>(&layer.operation)) {
+            output += prefix + "random_cells.columns = " +
+                std::to_string(cells->columns) + "\n";
+            output += prefix + "random_cells.rows = " +
+                std::to_string(cells->rows) + "\n";
+            output += prefix + "random_cells.seed_offset = " +
+                std::to_string(cells->seedOffset) + "\n";
+        } else if (const auto* lines = std::get_if<LinesOperation>(&layer.operation)) {
+            const auto width = formatDouble(lines->width);
+            const auto softness = formatDouble(lines->softness);
+            if (width.empty() || softness.empty()) {
+                return SerialisationError{"could not format line parameters"};
+            }
+            output += prefix + "lines.direction = " +
+                std::string(lineDirectionName(lines->direction)) + "\n";
+            output += prefix + "lines.count = " + std::to_string(lines->count) + "\n";
+            output += prefix + "lines.width = " + width + "\n";
+            output += prefix + "lines.softness = " + softness + "\n";
+        } else if (const auto* rectangles =
+                       std::get_if<RectanglesOperation>(&layer.operation)) {
+            const auto width = formatDouble(rectangles->width);
+            const auto height = formatDouble(rectangles->height);
+            const auto softness = formatDouble(rectangles->softness);
+            if (width.empty() || height.empty() || softness.empty()) {
+                return SerialisationError{"could not format rectangle parameters"};
+            }
+            output += prefix + "rectangles.columns = " +
+                std::to_string(rectangles->columns) + "\n";
+            output += prefix + "rectangles.rows = " +
+                std::to_string(rectangles->rows) + "\n";
+            output += prefix + "rectangles.width = " + width + "\n";
+            output += prefix + "rectangles.height = " + height + "\n";
+            output += prefix + "rectangles.softness = " + softness + "\n";
+        } else if (const auto* circles = std::get_if<CirclesOperation>(&layer.operation)) {
+            const auto radius = formatDouble(circles->radius);
+            const auto softness = formatDouble(circles->softness);
+            if (radius.empty() || softness.empty()) {
+                return SerialisationError{"could not format circle parameters"};
+            }
+            output += prefix + "circles.columns = " +
+                std::to_string(circles->columns) + "\n";
+            output += prefix + "circles.rows = " + std::to_string(circles->rows) + "\n";
+            output += prefix + "circles.radius = " + radius + "\n";
+            output += prefix + "circles.softness = " + softness + "\n";
         }
 
         const auto offsetX = formatDouble(layer.transform.offsetX);
