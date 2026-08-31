@@ -78,12 +78,18 @@ struct ThresholdOperation {
         const ThresholdOperation&) = default;
 };
 
+enum class BrickMortarSpace : std::uint8_t {
+    cell = 0,
+    texture = 1,
+};
+
 struct BrickGridOperation {
     std::uint32_t columns{6};
     std::uint32_t rows{8};
     double mortar{0.08};
     double stagger{0.5};
     double softness{0.02};
+    BrickMortarSpace mortarSpace{BrickMortarSpace::cell};
 
     friend constexpr bool operator==(
         const BrickGridOperation&,

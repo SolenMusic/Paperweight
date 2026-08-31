@@ -523,6 +523,44 @@ void testStructuralGenerators()
                    unstaggeredBrick, 0.5 / brick.columns, 1.5 / brick.rows),
            "brick staggering shifts alternating rows");
 
+    const paperweight::BrickGridOperation unequalLegacyMortar{
+        4, 8, 0.08, 0.0, 0.0};
+    expect(paperweight::evaluateBrickGrid(
+               unequalLegacyMortar, 0.007, 0.5 / unequalLegacyMortar.rows) == 0.0 &&
+               paperweight::evaluateBrickGrid(
+                   unequalLegacyMortar, 0.5 / unequalLegacyMortar.columns, 0.007) == 1.0,
+           "legacy brick mortar remains relative to each cell dimension");
+
+    paperweight::BrickGridOperation equalMortar{
+        4,
+        8,
+        0.02,
+        0.0,
+        0.0,
+        paperweight::BrickMortarSpace::texture,
+    };
+    const auto hasEqualMortarWidth = [](const paperweight::BrickGridOperation& operation) {
+        return paperweight::evaluateBrickGrid(
+                   operation, 0.009, 0.5 / operation.rows) == 0.0 &&
+            paperweight::evaluateBrickGrid(
+                operation, 0.011, 0.5 / operation.rows) == 1.0 &&
+            paperweight::evaluateBrickGrid(
+                operation, 0.5 / operation.columns, 0.009) == 0.0 &&
+            paperweight::evaluateBrickGrid(
+                operation, 0.5 / operation.columns, 0.011) == 1.0;
+    };
+    expect(hasEqualMortarWidth(equalMortar),
+           "texture-space brick mortar has equal horizontal and vertical width");
+    equalMortar.columns = 10;
+    equalMortar.rows = 5;
+    expect(hasEqualMortarWidth(equalMortar),
+           "texture-space mortar width is independent of the column-to-row ratio");
+    expectNear(
+        paperweight::evaluateBrickGrid(equalMortar, -0.137, 0.421),
+        paperweight::evaluateBrickGrid(equalMortar, 0.863, 1.421),
+        1.0e-12,
+        "texture-space brick mortar remains periodic on both axes");
+
     const paperweight::TileGridOperation tile;
     expect(paperweight::evaluateTileGrid(
                tile, 0.5 / tile.columns, 0.5 / tile.rows) == 1.0,
@@ -627,6 +665,11 @@ void testStructuralGenerators()
     std::get<paperweight::WorleyCellsOperation>(invalid.layers.front().operation).jitter = 1.1;
     expect(paperweight::validateMaterial(invalid).has_value(),
            "invalid Worley jitter is diagnosed");
+    invalid.layers = {paperweight::makeBrickGridLayer()};
+    std::get<paperweight::BrickGridOperation>(invalid.layers.front().operation).mortarSpace =
+        static_cast<paperweight::BrickMortarSpace>(99);
+    expect(paperweight::validateMaterial(invalid).has_value(),
+           "unknown brick mortar spaces are diagnosed");
     invalid.layers = {paperweight::makeLinesLayer()};
     std::get<paperweight::LinesOperation>(invalid.layers.front().operation).direction =
         static_cast<paperweight::LineDirection>(99);
@@ -1192,7 +1235,7 @@ void testPmat()
 {
     constexpr std::string_view canonical =
         "# Paperweight procedural material\n"
-        "pmat.version = 4\n"
+        "pmat.version = 5\n"
         "material.type = fbm\n"
         "material.seed = 18431\n"
         "colour.low = 0x000000FF\n"
@@ -1287,6 +1330,44 @@ void testPmat()
                std::holds_alternative<paperweight::BrickGridOperation>(
                    brickMaterial->layers.front().operation),
            "checked-in brick-wall example uses the brick-grid generator");
+    if (brickMaterial != nullptr) {
+        const auto& brick = std::get<paperweight::BrickGridOperation>(
+            brickMaterial->layers.front().operation);
+        expect(brick.mortarSpace == paperweight::BrickMortarSpace::cell,
+               "checked-in brick wall declares its cell-relative mortar space");
+
+        auto versionFourBrick = std::get<std::string>(
+            paperweight::serialisePmat(*brickMaterial));
+        const auto versionMarkerPosition = versionFourBrick.find("pmat.version = 5");
+        expect(versionMarkerPosition != std::string::npos,
+               "current brick fixture declares format version 5");
+        if (versionMarkerPosition != std::string::npos) {
+            versionFourBrick.replace(
+                versionMarkerPosition,
+                std::string("pmat.version = 5").size(),
+                "pmat.version = 4");
+        }
+        const auto mortarSpacePosition = versionFourBrick.find(
+            "layer.0.brick.mortar_space = cell\n");
+        expect(mortarSpacePosition != std::string::npos,
+               "current brick fixture contains its mortar-space declaration");
+        if (mortarSpacePosition != std::string::npos) {
+            auto prematureMortarSpace = versionFourBrick;
+            const auto prematureResult = paperweight::parsePmat(prematureMortarSpace);
+            expect(std::holds_alternative<paperweight::ParseDiagnostic>(prematureResult) &&
+                       std::get<paperweight::ParseDiagnostic>(prematureResult).message.find(
+                           "requires .pmat version 5") != std::string::npos,
+                   "format version 4 rejects the version-5 mortar-space field");
+
+            versionFourBrick.erase(
+                mortarSpacePosition,
+                std::string("layer.0.brick.mortar_space = cell\n").size());
+            const auto migrated = paperweight::parsePmat(versionFourBrick);
+            expect(std::holds_alternative<paperweight::Material>(migrated) &&
+                       std::get<paperweight::Material>(migrated) == *brickMaterial,
+                   "format version 4 bricks migrate to cell-relative mortar exactly");
+        }
+    }
     expect(cobblestoneMaterial != nullptr && !cobblestoneMaterial->layers.empty() &&
                std::holds_alternative<paperweight::WorleyCellsOperation>(
                    cobblestoneMaterial->layers.front().operation),
@@ -1370,7 +1451,13 @@ void testPmat()
     structuralRoundTrip.layers = {
         paperweight::MaterialLayer{
             true, 1.0, paperweight::CompositeMode::blend,
-            paperweight::BrickGridOperation{9, 6, 0.11, 0.5, 0.015}, {}, {}},
+            paperweight::BrickGridOperation{
+                9,
+                6,
+                0.01,
+                0.5,
+                0.015,
+                paperweight::BrickMortarSpace::texture}, {}, {}},
         paperweight::MaterialLayer{
             true, 0.8, paperweight::CompositeMode::add,
             paperweight::TileGridOperation{5, 7, 0.09, 0.025}, {}, {}},
@@ -1563,7 +1650,7 @@ void testPmat()
         }
     };
 
-    expectDiagnostic("pmat.version = 5\n", 1, "unsupported");
+    expectDiagnostic("pmat.version = 6\n", 1, "unsupported");
     expectDiagnostic("unknown.key = 1\n", 1, "unknown key");
     expectDiagnostic("pmat.version = 1\npmat.version = 1\n", 2, "duplicate");
     expectDiagnostic("pmat.version = nope\n", 1, "integer");

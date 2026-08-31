@@ -45,10 +45,13 @@ edit compiles the stack into a fresh graph and renders only the requested output
 branch; the preview status shows the resulting node count. Structural controls,
 transforms, warp, masks, output selection, 1x1/3x3 tiling, open/save, and PNG
 export behave as before. Preview work remains cancellable and off AppKit's event
-thread, and continuous sliders retain direct mouse tracking.
+thread, and continuous sliders retain direct mouse tracking. The visible layer
+stack now matches bottom-to-top evaluation, and brick layers may opt into equal
+horizontal and vertical mortar measured in texture space.
 
-Format-version-1, version-2, and version-3 `.pmat` files still open with their
-historical output intact; saving migrates them to canonical format version 4.
+Format-version-1 through version-4 `.pmat` files still open with their
+historical output intact; saving migrates them to canonical format version 5.
+Version 5 adds the brick mortar-space setting; older bricks remain cell-relative.
 v0.0.6 does not invent a redundant graph syntax for the existing layer recipe:
 direct graph construction is currently a portable C++ API, while visual graph
 authoring and graph-specific persistence remain later editor work.

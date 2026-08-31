@@ -195,6 +195,7 @@
 @property(nonatomic, strong) NSTextField* patternValueThreeLabel;
 @property(nonatomic, strong) NSSlider* patternValueThreeSlider;
 @property(nonatomic, strong) NSTextField* patternValueThreeValue;
+@property(nonatomic, strong) NSButton* equalMortarWidthCheckbox;
 @property(nonatomic, strong) NSStackView* patternDirectionRow;
 @property(nonatomic, strong) NSSegmentedControl* patternDirectionControl;
 @property(nonatomic, strong) NSStackView* patternSeedRow;
@@ -403,6 +404,12 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
         return nullptr;
     }
     return &material.layers[static_cast<std::size_t>(index)];
+}
+
+double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
+{
+    return paperweight::LayerLimits::maximumGap /
+        static_cast<double>(std::max(brick.columns, brick.rows));
 }
 
 } // namespace
@@ -935,6 +942,13 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
     self.patternValueThreeValue = static_cast<NSTextField*>(self.patternValueThreeRow.views[2]);
     self.patternValueThreeSlider.action = @selector(structuralParameterChanged:);
 
+    self.equalMortarWidthCheckbox = [NSButton
+        checkboxWithTitle:@"Equal horizontal/vertical mortar"
+                   target:self
+                   action:@selector(structuralParameterChanged:)];
+    self.equalMortarWidthCheckbox.toolTip =
+        @"Interpret mortar as one texture-space width on both axes.";
+
     auto* directionLabel = makeLabel(@"Direction");
     [directionLabel.widthAnchor constraintEqualToConstant:72.0].active = YES;
     self.patternDirectionControl = [[NSSegmentedControl alloc] initWithFrame:NSZeroRect];
@@ -990,6 +1004,7 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
         self.patternValueOneRow,
         self.patternValueTwoRow,
         self.patternValueThreeRow,
+        self.equalMortarWidthCheckbox,
         self.patternDirectionRow,
         self.patternSeedRow,
     ]];
@@ -1200,7 +1215,10 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
         [view removeFromSuperview];
     }
 
-    for (std::size_t index = 0; index < material_.layers.size(); ++index) {
+    for (std::size_t displayIndex = material_.layers.size();
+         displayIndex > 0;
+         --displayIndex) {
+        const std::size_t index = displayIndex - 1;
         const auto& layer = material_.layers[index];
         auto* enabled = [NSButton checkboxWithTitle:@""
                                             target:self
@@ -1301,6 +1319,7 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
         self.patternValueOneRow.hidden = YES;
         self.patternValueTwoRow.hidden = YES;
         self.patternValueThreeRow.hidden = YES;
+        self.equalMortarWidthCheckbox.hidden = YES;
         self.patternDirectionRow.hidden = YES;
         self.patternSeedRow.hidden = YES;
         [self updateLayerInspectorTabVisibility];
@@ -1348,6 +1367,7 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
     self.patternValueOneRow.hidden = YES;
     self.patternValueTwoRow.hidden = YES;
     self.patternValueThreeRow.hidden = YES;
+    self.equalMortarWidthCheckbox.hidden = YES;
     self.patternDirectionRow.hidden = YES;
     self.patternSeedRow.hidden = YES;
 
@@ -1401,13 +1421,22 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
         valueLabel.stringValue = [NSString stringWithFormat:@"%.2f", value];
     };
     if (brick != nullptr) {
+        const bool equalWidth =
+            brick->mortarSpace == paperweight::BrickMortarSpace::texture;
         showCount(self.patternCountXRow, self.patternCountXLabel,
                   self.patternCountXSlider, self.patternCountXValue, @"Columns", brick->columns);
         showCount(self.patternCountYRow, self.patternCountYLabel,
                   self.patternCountYSlider, self.patternCountYValue, @"Rows", brick->rows);
         showValue(self.patternValueOneRow, self.patternValueOneLabel,
                   self.patternValueOneSlider, self.patternValueOneValue,
-                  @"Mortar", 0.0, 0.95, brick->mortar);
+                  equalWidth ? @"Mortar width" : @"Mortar",
+                  0.0,
+                  equalWidth ? textureSpaceMortarMaximum(*brick) : 0.95,
+                  brick->mortar);
+        self.equalMortarWidthCheckbox.hidden = NO;
+        self.equalMortarWidthCheckbox.state = equalWidth
+            ? NSControlStateValueOn
+            : NSControlStateValueOff;
         showValue(self.patternValueTwoRow, self.patternValueTwoLabel,
                   self.patternValueTwoSlider, self.patternValueTwoValue,
                   @"Stagger", 0.0, 1.0, brick->stagger);
@@ -1821,9 +1850,37 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
     const auto countY = static_cast<std::uint32_t>(
         std::llround(self.patternCountYSlider.doubleValue));
     if (auto* brick = std::get_if<paperweight::BrickGridOperation>(&layer->operation)) {
+        const auto previousMortarSpace = brick->mortarSpace;
+        const auto previousMaximumCount = std::max(brick->columns, brick->rows);
+        const bool equalWidth =
+            self.equalMortarWidthCheckbox.state == NSControlStateValueOn;
+        double mortar = sender == self.patternValueOneSlider
+            ? self.patternValueOneSlider.doubleValue
+            : brick->mortar;
+        if (sender == self.equalMortarWidthCheckbox) {
+            if (equalWidth && previousMortarSpace == paperweight::BrickMortarSpace::cell) {
+                mortar /= static_cast<double>(previousMaximumCount);
+            } else if (!equalWidth &&
+                       previousMortarSpace == paperweight::BrickMortarSpace::texture) {
+                mortar = std::min(
+                    paperweight::LayerLimits::maximumGap,
+                    mortar * static_cast<double>(previousMaximumCount));
+            }
+        }
         brick->columns = countX;
         brick->rows = countY;
-        brick->mortar = self.patternValueOneSlider.doubleValue;
+        brick->mortarSpace = equalWidth
+            ? paperweight::BrickMortarSpace::texture
+            : paperweight::BrickMortarSpace::cell;
+        self.patternValueOneSlider.maxValue = equalWidth
+            ? textureSpaceMortarMaximum(*brick)
+            : paperweight::LayerLimits::maximumGap;
+        brick->mortar = std::clamp(
+            mortar,
+            paperweight::LayerLimits::minimumGap,
+            self.patternValueOneSlider.maxValue);
+        self.patternValueOneSlider.doubleValue = brick->mortar;
+        self.patternValueOneLabel.stringValue = equalWidth ? @"Mortar width" : @"Mortar";
         brick->stagger = self.patternValueTwoSlider.doubleValue;
         brick->softness = self.patternValueThreeSlider.doubleValue;
     } else if (auto* tile = std::get_if<paperweight::TileGridOperation>(&layer->operation)) {

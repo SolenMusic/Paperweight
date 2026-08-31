@@ -154,6 +154,13 @@ std::optional<std::string> validateMaterial(const Material& material)
                             LayerLimits::maximumGap)) {
                         return prefix + "brick mortar must be finite and between 0 and 0.95";
                     }
+                    switch (operation.mortarSpace) {
+                    case BrickMortarSpace::cell:
+                    case BrickMortarSpace::texture:
+                        break;
+                    default:
+                        return prefix + "brick mortar space is not supported";
+                    }
                     if (!validRange(
                             operation.stagger,
                             LayerLimits::minimumStagger,

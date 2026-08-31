@@ -1,5 +1,5 @@
 # Paperweight procedural material
-pmat.version = 4
+pmat.version = 5
 material.type = fbm
 material.seed = 481516
 colour.low = 0x241814FF
@@ -19,6 +19,7 @@ layer.0.opacity = 1
 layer.0.brick.columns = 8
 layer.0.brick.rows = 6
 layer.0.brick.mortar = 0.1
+layer.0.brick.mortar_space = cell
 layer.0.brick.stagger = 0.5
 layer.0.brick.softness = 0.025
 layer.0.transform.scale_x = 1

@@ -136,16 +136,17 @@ do not alter the cancellation contract.
 `.pmat` is a human-readable, versioned text format. Parsing and serialisation live in the portable core. Round trips should be stable and errors should identify useful source locations.
 
 The format version is deliberately independent of the application version.
-Paperweight v0.0.6 reads `.pmat` format versions 1 through 4 and writes version 4.
+Paperweight v0.0.6 reads `.pmat` format versions 1 through 5 and writes version 5.
 Unknown keys and unsupported format versions fail explicitly instead of being
 silently ignored. Version 1 maps to the original implicit FBM source; adding an
 explicit base noise layer produces byte-identical output. Version-2 layers map
 to identity transforms with warp and masks disabled, also preserving their
 historical output exactly. Format version 4 adds the seven structural operation
-names and their explicit parameter groups.
-The v0.0.6 layer recipe compiles to a graph in memory, so no file-format bump is
-needed. Direct-graph text persistence is deferred until a node-authoring
-workflow can round-trip it without discarding information.
+names and their explicit parameter groups. Format version 5 adds explicit cell-
+or texture-space brick mortar; older bricks migrate to cell space without pixel
+changes. The v0.0.6 layer recipe still compiles to a graph only in memory.
+Direct-graph text persistence is deferred until a node-authoring workflow can
+round-trip it without discarding information.
 See [pmat-format.md](pmat-format.md).
 
 ## Initial data flow

@@ -80,6 +80,17 @@ double evaluateBrickGrid(
         ? operation.stagger / static_cast<double>(operation.columns)
         : 0.0;
     const auto horizontal = repeatedCoordinate(u - offset, operation.columns);
+    if (operation.mortarSpace == BrickMortarSpace::texture) {
+        const double distanceX =
+            (0.5 - std::abs(horizontal.local)) / static_cast<double>(operation.columns) -
+            operation.mortar * 0.5;
+        const double distanceY =
+            (0.5 - std::abs(vertical.local)) / static_cast<double>(operation.rows) -
+            operation.mortar * 0.5;
+        const double textureSoftness = operation.softness /
+            static_cast<double>(std::max(operation.columns, operation.rows));
+        return smoothCoverage(std::min(distanceX, distanceY), textureSoftness);
+    }
     const double size = 1.0 - operation.mortar;
     return rectangleCoverage(
         horizontal.local,

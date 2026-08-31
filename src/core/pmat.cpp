@@ -98,6 +98,7 @@ struct LayerBuilder {
     ParsedValue<std::uint32_t> brickColumns;
     ParsedValue<std::uint32_t> brickRows;
     ParsedValue<double> brickMortar;
+    ParsedValue<BrickMortarSpace> brickMortarSpace;
     ParsedValue<double> brickStagger;
     ParsedValue<double> brickSoftness;
     ParsedValue<std::uint32_t> tileColumns;
@@ -317,6 +318,17 @@ std::optional<LineDirection> parseLineDirection(std::string_view value)
     return std::nullopt;
 }
 
+std::optional<BrickMortarSpace> parseBrickMortarSpace(std::string_view value)
+{
+    if (value == "cell") {
+        return BrickMortarSpace::cell;
+    }
+    if (value == "texture") {
+        return BrickMortarSpace::texture;
+    }
+    return std::nullopt;
+}
+
 std::optional<QuarterTurn> parseRotation(std::string_view value)
 {
     std::uint32_t degrees = 0;
@@ -375,6 +387,16 @@ bool hasVersionFourFields(const LayerBuilder& builder)
         builder.rectangleHeight.value || builder.rectangleSoftness.value ||
         builder.circleColumns.value || builder.circleRows.value ||
         builder.circleRadius.value || builder.circleSoftness.value;
+}
+
+bool hasVersionFiveFields(const LayerBuilder& builder)
+{
+    return builder.brickMortarSpace.value.has_value();
+}
+
+bool hasStructuralFields(const LayerBuilder& builder)
+{
+    return hasVersionFourFields(builder) || hasVersionFiveFields(builder);
 }
 
 template<typename Value>
@@ -702,6 +724,21 @@ ParseResult parsePmat(std::string_view text)
                         return diagnostic(lineNumber, valueColumn, "brick mortar must be a decimal number");
                     }
                     if (!storeValue(builder.brickMortar, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "brick.mortar_space") {
+                    const auto parsed = parseBrickMortarSpace(value);
+                    if (!parsed) {
+                        return diagnostic(
+                            lineNumber,
+                            valueColumn,
+                            "brick mortar space must be 'cell' or 'texture'");
+                    }
+                    if (!storeValue(
+                            builder.brickMortarSpace,
+                            *parsed,
+                            lineNumber,
+                            valueColumn)) {
                         return duplicate();
                     }
                 } else if (property == "brick.stagger") {
@@ -1098,6 +1135,13 @@ ParseResult parsePmat(std::string_view text)
                     "layer opacity must be finite and between 0 and 1");
             }
 
+            if (formatVersion < 5 && hasVersionFiveFields(builder)) {
+                return diagnostic(
+                    lineNumber + 1,
+                    1,
+                    "brick mortar space requires .pmat version 5");
+            }
+
             if (formatVersion < 4 &&
                 (hasVersionFourFields(builder) ||
                  isStructuralOperation(*builder.operation.value))) {
@@ -1241,8 +1285,8 @@ ParseResult parsePmat(std::string_view text)
                 };
             }
             const bool hasBrickFields = builder.brickColumns.value || builder.brickRows.value ||
-                builder.brickMortar.value || builder.brickStagger.value ||
-                builder.brickSoftness.value;
+                builder.brickMortar.value || builder.brickMortarSpace.value ||
+                builder.brickStagger.value || builder.brickSoftness.value;
             const bool hasTileFields = builder.tileColumns.value || builder.tileRows.value ||
                 builder.tileGrout.value || builder.tileSoftness.value;
             const bool hasWorleyFields = builder.worleyColumns.value || builder.worleyRows.value ||
@@ -1289,7 +1333,7 @@ ParseResult parsePmat(std::string_view text)
                 }
                 if (builder.levelsLow.value || builder.levelsHigh.value ||
                     builder.levelsGamma.value || builder.threshold.value ||
-                    hasVersionFourFields(builder)) {
+                    hasStructuralFields(builder)) {
                     return diagnostic(lineNumber + 1, 1, "noise layer contains parameters for another operation");
                 }
                 layer.operation = NoiseOperation{*builder.seedOffset.value};
@@ -1300,7 +1344,7 @@ ParseResult parsePmat(std::string_view text)
                 }
                 if (builder.seedOffset.value || builder.levelsLow.value || builder.levelsHigh.value ||
                     builder.levelsGamma.value || builder.threshold.value ||
-                    hasVersionFourFields(builder)) {
+                    hasStructuralFields(builder)) {
                     return diagnostic(
                         lineNumber + 1,
                         1,
@@ -1319,7 +1363,7 @@ ParseResult parsePmat(std::string_view text)
                     return missingLayerField(lineNumber + 1, index, "levels.gamma");
                 }
                 if (builder.seedOffset.value || builder.solidColour.value ||
-                    builder.threshold.value || hasVersionFourFields(builder)) {
+                    builder.threshold.value || hasStructuralFields(builder)) {
                     return diagnostic(lineNumber + 1, 1, "levels layer contains parameters for another operation");
                 }
                 if (!std::isfinite(*builder.levelsLow.value) ||
@@ -1364,7 +1408,7 @@ ParseResult parsePmat(std::string_view text)
                 }
                 if (builder.seedOffset.value || builder.solidColour.value || builder.levelsLow.value ||
                     builder.levelsHigh.value || builder.levelsGamma.value ||
-                    hasVersionFourFields(builder)) {
+                    hasStructuralFields(builder)) {
                     return diagnostic(lineNumber + 1, 1, "threshold layer contains parameters for another operation");
                 }
                 if (!std::isfinite(*builder.threshold.value) ||
@@ -1386,6 +1430,9 @@ ParseResult parsePmat(std::string_view text)
                 }
                 if (!builder.brickMortar.value) {
                     return missingLayerField(lineNumber + 1, index, "brick.mortar");
+                }
+                if (formatVersion >= 5 && !builder.brickMortarSpace.value) {
+                    return missingLayerField(lineNumber + 1, index, "brick.mortar_space");
                 }
                 if (!builder.brickStagger.value) {
                     return missingLayerField(lineNumber + 1, index, "brick.stagger");
@@ -1427,6 +1474,7 @@ ParseResult parsePmat(std::string_view text)
                     *builder.brickMortar.value,
                     *builder.brickStagger.value,
                     *builder.brickSoftness.value,
+                    builder.brickMortarSpace.value.value_or(BrickMortarSpace::cell),
                 };
                 break;
             case OperationKind::tileGrid:
@@ -1783,6 +1831,10 @@ SerialisationResult serialisePmat(const Material& material)
             output += prefix + "brick.columns = " + std::to_string(brick->columns) + "\n";
             output += prefix + "brick.rows = " + std::to_string(brick->rows) + "\n";
             output += prefix + "brick.mortar = " + mortar + "\n";
+            output += prefix + "brick.mortar_space = " +
+                std::string(
+                    brick->mortarSpace == BrickMortarSpace::texture ? "texture" : "cell") +
+                "\n";
             output += prefix + "brick.stagger = " + stagger + "\n";
             output += prefix + "brick.softness = " + softness + "\n";
         } else if (const auto* tile = std::get_if<TileGridOperation>(&layer.operation)) {
