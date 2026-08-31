@@ -56,6 +56,26 @@ Rgba8 encodeNormal(double derivativeU, double derivativeV, double strength)
 
 GenerationResult generate(const GenerationRequest& request)
 {
+    return generate(request, {});
+}
+
+GenerationResult generate(
+    const GenerationRequest& request,
+    const GenerationCancellationCheck& isCancelled)
+{
+    const auto cancelled = [&isCancelled]() {
+        return isCancelled && isCancelled();
+    };
+    const auto cancellationError = []() {
+        return GenerationError{
+            GenerationErrorCode::cancelled,
+            "generation was cancelled",
+        };
+    };
+
+    if (cancelled()) {
+        return cancellationError();
+    }
     if (request.width == 0 || request.height == 0 || request.width > maximumDimension ||
         request.height > maximumDimension) {
         return GenerationError{
@@ -73,6 +93,9 @@ GenerationResult generate(const GenerationRequest& request)
             std::vector<double> heights(
                 static_cast<std::size_t>(request.width) * request.height);
             for (std::uint32_t y = 0; y < request.height; ++y) {
+                if (cancelled()) {
+                    return cancellationError();
+                }
                 const double v = (static_cast<double>(y) + 0.5) / request.height;
                 for (std::uint32_t x = 0; x < request.width; ++x) {
                     const double u = (static_cast<double>(x) + 0.5) / request.width;
@@ -85,6 +108,9 @@ GenerationResult generate(const GenerationRequest& request)
                 return heights[static_cast<std::size_t>(y) * request.width + x];
             };
             for (std::uint32_t y = 0; y < request.height; ++y) {
+                if (cancelled()) {
+                    return cancellationError();
+                }
                 auto row = image.row(y);
                 const auto previousY = y == 0 ? request.height - 1 : y - 1;
                 const auto nextY = y + 1 == request.height ? 0 : y + 1;
@@ -107,6 +133,9 @@ GenerationResult generate(const GenerationRequest& request)
         }
 
         for (std::uint32_t y = 0; y < request.height; ++y) {
+            if (cancelled()) {
+                return cancellationError();
+            }
             auto row = image.row(y);
             const double v = (static_cast<double>(y) + 0.5) / request.height;
             for (std::uint32_t x = 0; x < request.width; ++x) {

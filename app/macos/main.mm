@@ -1,4 +1,5 @@
 #import <AppKit/AppKit.h>
+#import <dispatch/dispatch.h>
 
 #include "ImageBridge.hpp"
 
@@ -8,9 +9,11 @@
 #include <paperweight/pmat.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <charconv>
 #include <cmath>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <string>
 #include <variant>
@@ -117,6 +120,10 @@
 
 @property(nonatomic, strong) NSWindow* window;
 @property(nonatomic, strong) MaterialPreviewView* previewView;
+@property(nonatomic, strong) NSVisualEffectView* previewLoadingPanel;
+@property(nonatomic, strong) NSProgressIndicator* previewProgressIndicator;
+@property(nonatomic, strong) NSTextField* previewLoadingLabel;
+@property(nonatomic, strong) NSMenuItem* exportMenuItem;
 @property(nonatomic, strong) NSTextField* seedField;
 @property(nonatomic, strong) NSSlider* frequencySlider;
 @property(nonatomic, strong) NSTextField* frequencyValue;
@@ -404,6 +411,10 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
     paperweight::Material material_;
     paperweight::MaterialOutput selectedOutput_;
     std::optional<paperweight::Image> generatedImage_;
+    dispatch_queue_t previewQueue_;
+    dispatch_block_t pendingPreviewBlock_;
+    std::shared_ptr<std::atomic_bool> previewCancellation_;
+    std::uint64_t previewRevision_;
     bool dirty_;
     NSInteger selectedLayer_;
 }
@@ -414,6 +425,9 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
     selectedOutput_ = paperweight::MaterialOutput::colour;
     material_.layers.push_back(paperweight::makeNoiseLayer());
     selectedLayer_ = 0;
+    previewQueue_ = dispatch_queue_create(
+        "org.solen-music.paperweight.preview",
+        DISPATCH_QUEUE_SERIAL);
     [self buildMenus];
     [self buildWindow];
     [self updateControlLabels];
@@ -433,7 +447,18 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication*)sender
 {
     static_cast<void>(sender);
-    return [self confirmDiscardIfNeeded] ? NSTerminateNow : NSTerminateCancel;
+    if (![self confirmDiscardIfNeeded]) {
+        return NSTerminateCancel;
+    }
+    ++previewRevision_;
+    if (pendingPreviewBlock_ != nil) {
+        dispatch_block_cancel(pendingPreviewBlock_);
+        pendingPreviewBlock_ = nil;
+    }
+    if (previewCancellation_) {
+        previewCancellation_->store(true, std::memory_order_relaxed);
+    }
+    return NSTerminateNow;
 }
 
 - (BOOL)windowShouldClose:(NSWindow*)sender
@@ -466,10 +491,11 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
                                    keyEquivalent:@"s"];
     saveAsItem.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift;
     [fileMenu addItem:[NSMenuItem separatorItem]];
-    auto* exportItem = [fileMenu addItemWithTitle:@"Export PNG…"
-                                          action:@selector(exportPng:)
-                                   keyEquivalent:@"e"];
-    exportItem.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift;
+    self.exportMenuItem = [fileMenu addItemWithTitle:@"Export PNG…"
+                                              action:@selector(exportPng:)
+                                       keyEquivalent:@"e"];
+    self.exportMenuItem.keyEquivalentModifierMask =
+        NSEventModifierFlagCommand | NSEventModifierFlagShift;
     [fileMenu addItem:[NSMenuItem separatorItem]];
     [fileMenu addItemWithTitle:@"Close Window" action:@selector(performClose:) keyEquivalent:@"w"];
     fileMenuItem.submenu = fileMenu;
@@ -517,6 +543,36 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
     self.previewView = [[MaterialPreviewView alloc] initWithFrame:NSZeroRect];
     self.previewView.translatesAutoresizingMaskIntoConstraints = NO;
 
+    self.previewLoadingPanel = [[NSVisualEffectView alloc] initWithFrame:NSZeroRect];
+    self.previewLoadingPanel.translatesAutoresizingMaskIntoConstraints = NO;
+    self.previewLoadingPanel.material = NSVisualEffectMaterialHUDWindow;
+    self.previewLoadingPanel.blendingMode = NSVisualEffectBlendingModeWithinWindow;
+    self.previewLoadingPanel.state = NSVisualEffectStateActive;
+    self.previewLoadingPanel.wantsLayer = YES;
+    self.previewLoadingPanel.layer.cornerRadius = 9.0;
+    self.previewLoadingPanel.hidden = YES;
+
+    self.previewProgressIndicator = [[NSProgressIndicator alloc] initWithFrame:NSZeroRect];
+    self.previewProgressIndicator.style = NSProgressIndicatorStyleSpinning;
+    self.previewProgressIndicator.controlSize = NSControlSizeRegular;
+    self.previewProgressIndicator.indeterminate = YES;
+    self.previewProgressIndicator.displayedWhenStopped = NO;
+    self.previewProgressIndicator.usesThreadedAnimation = YES;
+    self.previewProgressIndicator.accessibilityLabel = @"Rendering preview";
+    self.previewLoadingLabel = makeLabel(@"Rendering preview…");
+    self.previewLoadingLabel.font = [NSFont systemFontOfSize:13.0 weight:NSFontWeightMedium];
+
+    auto* previewLoadingStack = [NSStackView stackViewWithViews:@[
+        self.previewProgressIndicator,
+        self.previewLoadingLabel,
+    ]];
+    previewLoadingStack.translatesAutoresizingMaskIntoConstraints = NO;
+    previewLoadingStack.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    previewLoadingStack.alignment = NSLayoutAttributeCenterY;
+    previewLoadingStack.spacing = 9.0;
+    [self.previewLoadingPanel addSubview:previewLoadingStack];
+    [self.previewView addSubview:self.previewLoadingPanel];
+
     [content addSubview:controlsPanel];
     [content addSubview:layersPanel];
     [content addSubview:self.previewView];
@@ -533,6 +589,16 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
         [self.previewView.trailingAnchor constraintEqualToAnchor:content.trailingAnchor constant:-20.0],
         [self.previewView.topAnchor constraintEqualToAnchor:content.topAnchor constant:20.0],
         [self.previewView.bottomAnchor constraintEqualToAnchor:content.bottomAnchor constant:-20.0],
+        [self.previewLoadingPanel.centerXAnchor constraintEqualToAnchor:self.previewView.centerXAnchor],
+        [self.previewLoadingPanel.centerYAnchor constraintEqualToAnchor:self.previewView.centerYAnchor],
+        [previewLoadingStack.leadingAnchor
+            constraintEqualToAnchor:self.previewLoadingPanel.leadingAnchor constant:14.0],
+        [previewLoadingStack.trailingAnchor
+            constraintEqualToAnchor:self.previewLoadingPanel.trailingAnchor constant:-14.0],
+        [previewLoadingStack.topAnchor
+            constraintEqualToAnchor:self.previewLoadingPanel.topAnchor constant:10.0],
+        [previewLoadingStack.bottomAnchor
+            constraintEqualToAnchor:self.previewLoadingPanel.bottomAnchor constant:-10.0],
     ]];
 
     auto* title = makeLabel(@"Procedural Material");
@@ -1939,24 +2005,95 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
     [self regeneratePreview];
 }
 
-- (void)regeneratePreview
+- (void)setPreviewLoading:(BOOL)loading
 {
-    const paperweight::GenerationRequest request{material_, 512, 512, selectedOutput_};
-    auto result = paperweight::generate(request);
-    if (const auto* image = std::get_if<paperweight::Image>(&result)) {
-        [self.previewView setGeneratedImage:*image];
-        generatedImage_ = *image;
-        self.statusLabel.stringValue = [NSString
-            stringWithFormat:@"512 × 512 %@ RGBA8 — mathematically seamless",
-                             outputName(selectedOutput_)];
-        self.statusLabel.textColor = NSColor.secondaryLabelColor;
+    self.previewLoadingPanel.hidden = !loading;
+    if (loading) {
+        [self.previewProgressIndicator startAnimation:nil];
+    } else {
+        [self.previewProgressIndicator stopAnimation:nil];
+    }
+}
+
+- (void)startPreviewGenerationForRevision:(std::uint64_t)revision
+{
+    if (revision != previewRevision_) {
         return;
     }
+    pendingPreviewBlock_ = nil;
 
-    const auto& error = std::get<paperweight::GenerationError>(result);
+    const paperweight::GenerationRequest request{material_, 512, 512, selectedOutput_};
+    auto cancellation = std::make_shared<std::atomic_bool>(false);
+    previewCancellation_ = cancellation;
+    __weak AppDelegate* weakSelf = self;
+    dispatch_async(previewQueue_, ^{
+        auto result = std::make_shared<paperweight::GenerationResult>(
+            paperweight::generate(
+                request,
+                [cancellation]() {
+                    return cancellation->load(std::memory_order_relaxed);
+                }));
+        dispatch_async(dispatch_get_main_queue(), ^{
+            AppDelegate* strongSelf = weakSelf;
+            if (strongSelf == nil || revision != strongSelf->previewRevision_ ||
+                cancellation->load(std::memory_order_relaxed)) {
+                return;
+            }
+
+            strongSelf->previewCancellation_.reset();
+            [strongSelf setPreviewLoading:NO];
+            if (const auto* image = std::get_if<paperweight::Image>(result.get())) {
+                [strongSelf.previewView setGeneratedImage:*image];
+                strongSelf->generatedImage_ = *image;
+                strongSelf.exportMenuItem.enabled = YES;
+                strongSelf.statusLabel.stringValue = [NSString
+                    stringWithFormat:@"512 × 512 %@ RGBA8 — mathematically seamless",
+                                     outputName(strongSelf->selectedOutput_)];
+                strongSelf.statusLabel.textColor = NSColor.secondaryLabelColor;
+                return;
+            }
+
+            const auto& error = std::get<paperweight::GenerationError>(*result);
+            strongSelf->generatedImage_.reset();
+            strongSelf.exportMenuItem.enabled = NO;
+            strongSelf.statusLabel.stringValue =
+                [NSString stringWithUTF8String:error.message.c_str()];
+            strongSelf.statusLabel.textColor = NSColor.systemRedColor;
+        });
+    });
+}
+
+- (void)regeneratePreview
+{
+    ++previewRevision_;
+    const auto revision = previewRevision_;
+    if (previewCancellation_) {
+        previewCancellation_->store(true, std::memory_order_relaxed);
+    }
+    if (pendingPreviewBlock_ != nil) {
+        dispatch_block_cancel(pendingPreviewBlock_);
+    }
+
     generatedImage_.reset();
-    self.statusLabel.stringValue = [NSString stringWithUTF8String:error.message.c_str()];
-    self.statusLabel.textColor = NSColor.systemRedColor;
+    self.exportMenuItem.enabled = NO;
+    self.statusLabel.stringValue = @"Rendering 512 × 512 preview…";
+    self.statusLabel.textColor = NSColor.secondaryLabelColor;
+    [self setPreviewLoading:YES];
+
+    __weak AppDelegate* weakSelf = self;
+    pendingPreviewBlock_ = dispatch_block_create(static_cast<dispatch_block_flags_t>(0), ^{
+        AppDelegate* strongSelf = weakSelf;
+        if (strongSelf != nil && revision == strongSelf->previewRevision_) {
+            [strongSelf startPreviewGenerationForRevision:revision];
+        }
+    });
+    constexpr std::int64_t coalescingDelayMilliseconds = 40;
+    dispatch_after(
+        dispatch_time(
+            DISPATCH_TIME_NOW,
+            coalescingDelayMilliseconds * static_cast<std::int64_t>(NSEC_PER_MSEC)),
+        dispatch_get_main_queue(),
+        pendingPreviewBlock_);
 }
 
 - (void)markDirty

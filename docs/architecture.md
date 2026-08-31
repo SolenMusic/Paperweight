@@ -88,6 +88,19 @@ in Objective-C++ and consumes the portable core's RGBA8 buffer without exposing
 AppKit types to the core. The same bridge encodes PNG data. Native file panels
 handle paths, while parsing and serialisation remain in portable C++.
 
+Live previews use a serial background queue and a snapshot of the current
+material. Continuous UI changes are briefly coalesced and cooperatively cancel
+the active core generation between scanlines. A monotonically increasing
+revision allows only the newest result onto the main thread. AppKit updates,
+including the loading indicator and image conversion, remain on the main
+thread. The ordinary synchronous `generate` entry point is unchanged; callers
+that need interruption may supply the optional portable cancellation check.
+
+The layer evaluator does not yet cache intermediate stack results. Changing a
+layer therefore invalidates that layer and every layer above it, and the whole
+preview is regenerated. Prefix caching belongs to the later incremental-preview
+performance work and does not alter the cancellation contract.
+
 ### Material format
 
 `.pmat` is a human-readable, versioned text format. Parsing and serialisation live in the portable core. Round trips should be stable and errors should identify useful source locations.
