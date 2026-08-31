@@ -144,6 +144,10 @@
 @property(nonatomic, strong) NSButton* moveLayerUpButton;
 @property(nonatomic, strong) NSButton* moveLayerDownButton;
 @property(nonatomic, strong) NSTextField* layerTypeLabel;
+@property(nonatomic, strong) NSSegmentedControl* layerInspectorTabs;
+@property(nonatomic, strong) NSStackView* layerSettingsGroup;
+@property(nonatomic, strong) NSStackView* transformSettingsGroup;
+@property(nonatomic, strong) NSStackView* maskSettingsGroup;
 @property(nonatomic, strong) NSButton* layerEnabledCheckbox;
 @property(nonatomic, strong) NSSegmentedControl* layerCompositeControl;
 @property(nonatomic, strong) NSSlider* layerOpacitySlider;
@@ -164,6 +168,28 @@
 @property(nonatomic, strong) NSStackView* thresholdRow;
 @property(nonatomic, strong) NSSlider* thresholdSlider;
 @property(nonatomic, strong) NSTextField* thresholdValue;
+@property(nonatomic, strong) NSSlider* transformScaleXSlider;
+@property(nonatomic, strong) NSTextField* transformScaleXValue;
+@property(nonatomic, strong) NSSlider* transformScaleYSlider;
+@property(nonatomic, strong) NSTextField* transformScaleYValue;
+@property(nonatomic, strong) NSSlider* transformOffsetXSlider;
+@property(nonatomic, strong) NSTextField* transformOffsetXValue;
+@property(nonatomic, strong) NSSlider* transformOffsetYSlider;
+@property(nonatomic, strong) NSTextField* transformOffsetYValue;
+@property(nonatomic, strong) NSSegmentedControl* transformRotationControl;
+@property(nonatomic, strong) NSButton* warpEnabledCheckbox;
+@property(nonatomic, strong) NSSlider* warpStrengthSlider;
+@property(nonatomic, strong) NSTextField* warpStrengthValue;
+@property(nonatomic, strong) NSSlider* warpFrequencySlider;
+@property(nonatomic, strong) NSTextField* warpFrequencyValue;
+@property(nonatomic, strong) NSTextField* warpSeedOffsetField;
+@property(nonatomic, strong) NSButton* maskEnabledCheckbox;
+@property(nonatomic, strong) NSButton* maskInvertedCheckbox;
+@property(nonatomic, strong) NSTextField* maskSeedOffsetField;
+@property(nonatomic, strong) NSSlider* maskLowSlider;
+@property(nonatomic, strong) NSTextField* maskLowValue;
+@property(nonatomic, strong) NSSlider* maskHighSlider;
+@property(nonatomic, strong) NSTextField* maskHighValue;
 
 @end
 
@@ -761,16 +787,16 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
     self.thresholdSlider = static_cast<NSSlider*>(self.thresholdRow.views[1]);
     self.thresholdValue = static_cast<NSTextField*>(self.thresholdRow.views[2]);
 
-    auto* layerStack = [NSStackView stackViewWithViews:@[
-        layersTitle,
-        layersSubtitle,
-        makeSeparator(),
-        layerScrollView,
-        addRow,
-        arrangeRow,
-        makeSeparator(),
-        inspectorLabel,
-        self.layerTypeLabel,
+    self.layerInspectorTabs = [[NSSegmentedControl alloc] initWithFrame:NSZeroRect];
+    self.layerInspectorTabs.segmentCount = 3;
+    [self.layerInspectorTabs setLabel:@"Layer" forSegment:0];
+    [self.layerInspectorTabs setLabel:@"Transform" forSegment:1];
+    [self.layerInspectorTabs setLabel:@"Mask" forSegment:2];
+    self.layerInspectorTabs.selectedSegment = 0;
+    self.layerInspectorTabs.target = self;
+    self.layerInspectorTabs.action = @selector(layerInspectorTabChanged:);
+
+    self.layerSettingsGroup = [NSStackView stackViewWithViews:@[
         self.layerEnabledCheckbox,
         compositeLabel,
         self.layerCompositeControl,
@@ -781,6 +807,161 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
         self.levelsHighRow,
         self.levelsGammaRow,
         self.thresholdRow,
+    ]];
+    self.layerSettingsGroup.orientation = NSUserInterfaceLayoutOrientationVertical;
+    self.layerSettingsGroup.alignment = NSLayoutAttributeLeading;
+    self.layerSettingsGroup.spacing = 9.0;
+
+    auto* scaleXRow = makeLayerSliderRow(
+        @"Scale X",
+        paperweight::LayerLimits::minimumScale,
+        paperweight::LayerLimits::maximumScale,
+        1.0,
+        self);
+    self.transformScaleXSlider = static_cast<NSSlider*>(scaleXRow.views[1]);
+    self.transformScaleXValue = static_cast<NSTextField*>(scaleXRow.views[2]);
+    self.transformScaleXSlider.action = @selector(transformParameterChanged:);
+    self.transformScaleXSlider.numberOfTickMarks = paperweight::LayerLimits::maximumScale;
+    self.transformScaleXSlider.allowsTickMarkValuesOnly = YES;
+
+    auto* scaleYRow = makeLayerSliderRow(
+        @"Scale Y",
+        paperweight::LayerLimits::minimumScale,
+        paperweight::LayerLimits::maximumScale,
+        1.0,
+        self);
+    self.transformScaleYSlider = static_cast<NSSlider*>(scaleYRow.views[1]);
+    self.transformScaleYValue = static_cast<NSTextField*>(scaleYRow.views[2]);
+    self.transformScaleYSlider.action = @selector(transformParameterChanged:);
+    self.transformScaleYSlider.numberOfTickMarks = paperweight::LayerLimits::maximumScale;
+    self.transformScaleYSlider.allowsTickMarkValuesOnly = YES;
+
+    auto* offsetXRow = makeLayerSliderRow(@"Offset X", -1.0, 1.0, 0.0, self);
+    self.transformOffsetXSlider = static_cast<NSSlider*>(offsetXRow.views[1]);
+    self.transformOffsetXValue = static_cast<NSTextField*>(offsetXRow.views[2]);
+    self.transformOffsetXSlider.action = @selector(transformParameterChanged:);
+    auto* offsetYRow = makeLayerSliderRow(@"Offset Y", -1.0, 1.0, 0.0, self);
+    self.transformOffsetYSlider = static_cast<NSSlider*>(offsetYRow.views[1]);
+    self.transformOffsetYValue = static_cast<NSTextField*>(offsetYRow.views[2]);
+    self.transformOffsetYSlider.action = @selector(transformParameterChanged:);
+
+    auto* rotationLabel = makeLabel(@"Rotation");
+    [rotationLabel.widthAnchor constraintEqualToConstant:72.0].active = YES;
+    self.transformRotationControl = [[NSSegmentedControl alloc] initWithFrame:NSZeroRect];
+    self.transformRotationControl.segmentCount = 4;
+    [self.transformRotationControl setLabel:@"0°" forSegment:0];
+    [self.transformRotationControl setLabel:@"90°" forSegment:1];
+    [self.transformRotationControl setLabel:@"180°" forSegment:2];
+    [self.transformRotationControl setLabel:@"270°" forSegment:3];
+    self.transformRotationControl.selectedSegment = 0;
+    self.transformRotationControl.target = self;
+    self.transformRotationControl.action = @selector(transformParameterChanged:);
+    auto* rotationRow = [NSStackView stackViewWithViews:@[
+        rotationLabel,
+        self.transformRotationControl,
+    ]];
+    rotationRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    rotationRow.alignment = NSLayoutAttributeCenterY;
+    rotationRow.spacing = 8.0;
+
+    self.warpEnabledCheckbox = [NSButton checkboxWithTitle:@"Enable periodic warp"
+                                                    target:self
+                                                    action:@selector(transformParameterChanged:)];
+    auto* warpStrengthRow = makeLayerSliderRow(@"Strength", 0.0, 1.0, 0.0, self);
+    self.warpStrengthSlider = static_cast<NSSlider*>(warpStrengthRow.views[1]);
+    self.warpStrengthValue = static_cast<NSTextField*>(warpStrengthRow.views[2]);
+    self.warpStrengthSlider.action = @selector(transformParameterChanged:);
+    auto* warpFrequencyRow = makeLayerSliderRow(
+        @"Frequency",
+        paperweight::LayerLimits::minimumWarpFrequency,
+        paperweight::LayerLimits::maximumWarpFrequency,
+        1.0,
+        self);
+    self.warpFrequencySlider = static_cast<NSSlider*>(warpFrequencyRow.views[1]);
+    self.warpFrequencyValue = static_cast<NSTextField*>(warpFrequencyRow.views[2]);
+    self.warpFrequencySlider.action = @selector(transformParameterChanged:);
+    self.warpFrequencySlider.numberOfTickMarks = paperweight::LayerLimits::maximumWarpFrequency;
+    self.warpFrequencySlider.allowsTickMarkValuesOnly = YES;
+    auto* warpSeedLabel = makeLabel(@"Warp seed");
+    [warpSeedLabel.widthAnchor constraintEqualToConstant:72.0].active = YES;
+    self.warpSeedOffsetField = [[NSTextField alloc] initWithFrame:NSZeroRect];
+    self.warpSeedOffsetField.target = self;
+    self.warpSeedOffsetField.action = @selector(transformParameterChanged:);
+    auto* warpSeedRow = [NSStackView stackViewWithViews:@[
+        warpSeedLabel,
+        self.warpSeedOffsetField,
+    ]];
+    warpSeedRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    warpSeedRow.alignment = NSLayoutAttributeCenterY;
+    warpSeedRow.spacing = 8.0;
+
+    self.transformSettingsGroup = [NSStackView stackViewWithViews:@[
+        scaleXRow,
+        scaleYRow,
+        offsetXRow,
+        offsetYRow,
+        rotationRow,
+        makeSeparator(),
+        self.warpEnabledCheckbox,
+        warpStrengthRow,
+        warpFrequencyRow,
+        warpSeedRow,
+    ]];
+    self.transformSettingsGroup.orientation = NSUserInterfaceLayoutOrientationVertical;
+    self.transformSettingsGroup.alignment = NSLayoutAttributeLeading;
+    self.transformSettingsGroup.spacing = 9.0;
+
+    self.maskEnabledCheckbox = [NSButton checkboxWithTitle:@"Enable noise mask"
+                                                    target:self
+                                                    action:@selector(maskParameterChanged:)];
+    self.maskInvertedCheckbox = [NSButton checkboxWithTitle:@"Invert mask"
+                                                     target:self
+                                                     action:@selector(maskParameterChanged:)];
+    auto* maskSeedLabel = makeLabel(@"Mask seed");
+    [maskSeedLabel.widthAnchor constraintEqualToConstant:72.0].active = YES;
+    self.maskSeedOffsetField = [[NSTextField alloc] initWithFrame:NSZeroRect];
+    self.maskSeedOffsetField.target = self;
+    self.maskSeedOffsetField.action = @selector(maskParameterChanged:);
+    auto* maskSeedRow = [NSStackView stackViewWithViews:@[
+        maskSeedLabel,
+        self.maskSeedOffsetField,
+    ]];
+    maskSeedRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    maskSeedRow.alignment = NSLayoutAttributeCenterY;
+    maskSeedRow.spacing = 8.0;
+    auto* maskLowRow = makeLayerSliderRow(@"Input low", 0.0, 1.0, 0.0, self);
+    self.maskLowSlider = static_cast<NSSlider*>(maskLowRow.views[1]);
+    self.maskLowValue = static_cast<NSTextField*>(maskLowRow.views[2]);
+    self.maskLowSlider.action = @selector(maskParameterChanged:);
+    auto* maskHighRow = makeLayerSliderRow(@"Input high", 0.0, 1.0, 1.0, self);
+    self.maskHighSlider = static_cast<NSSlider*>(maskHighRow.views[1]);
+    self.maskHighValue = static_cast<NSTextField*>(maskHighRow.views[2]);
+    self.maskHighSlider.action = @selector(maskParameterChanged:);
+    self.maskSettingsGroup = [NSStackView stackViewWithViews:@[
+        self.maskEnabledCheckbox,
+        self.maskInvertedCheckbox,
+        maskSeedRow,
+        maskLowRow,
+        maskHighRow,
+    ]];
+    self.maskSettingsGroup.orientation = NSUserInterfaceLayoutOrientationVertical;
+    self.maskSettingsGroup.alignment = NSLayoutAttributeLeading;
+    self.maskSettingsGroup.spacing = 9.0;
+
+    auto* layerStack = [NSStackView stackViewWithViews:@[
+        layersTitle,
+        layersSubtitle,
+        makeSeparator(),
+        layerScrollView,
+        addRow,
+        arrangeRow,
+        makeSeparator(),
+        inspectorLabel,
+        self.layerTypeLabel,
+        self.layerInspectorTabs,
+        self.layerSettingsGroup,
+        self.transformSettingsGroup,
+        self.maskSettingsGroup,
     ]];
     layerStack.translatesAutoresizingMaskIntoConstraints = NO;
     layerStack.orientation = NSUserInterfaceLayoutOrientationVertical;
@@ -794,7 +975,24 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
         [layerScrollView.widthAnchor constraintEqualToAnchor:layerStack.widthAnchor],
         [addRow.widthAnchor constraintEqualToAnchor:layerStack.widthAnchor],
         [arrangeRow.widthAnchor constraintEqualToAnchor:layerStack.widthAnchor],
-        [self.layerCompositeControl.widthAnchor constraintEqualToAnchor:layerStack.widthAnchor],
+        [self.layerInspectorTabs.widthAnchor constraintEqualToAnchor:layerStack.widthAnchor],
+        [self.layerSettingsGroup.widthAnchor constraintEqualToAnchor:layerStack.widthAnchor],
+        [self.transformSettingsGroup.widthAnchor constraintEqualToAnchor:layerStack.widthAnchor],
+        [self.maskSettingsGroup.widthAnchor constraintEqualToAnchor:layerStack.widthAnchor],
+        [self.layerCompositeControl.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [scaleXRow.widthAnchor constraintEqualToAnchor:self.transformSettingsGroup.widthAnchor],
+        [scaleYRow.widthAnchor constraintEqualToAnchor:self.transformSettingsGroup.widthAnchor],
+        [offsetXRow.widthAnchor constraintEqualToAnchor:self.transformSettingsGroup.widthAnchor],
+        [offsetYRow.widthAnchor constraintEqualToAnchor:self.transformSettingsGroup.widthAnchor],
+        [rotationRow.widthAnchor constraintEqualToAnchor:self.transformSettingsGroup.widthAnchor],
+        [warpStrengthRow.widthAnchor constraintEqualToAnchor:self.transformSettingsGroup.widthAnchor],
+        [warpFrequencyRow.widthAnchor constraintEqualToAnchor:self.transformSettingsGroup.widthAnchor],
+        [warpSeedRow.widthAnchor constraintEqualToAnchor:self.transformSettingsGroup.widthAnchor],
+        [self.transformRotationControl.trailingAnchor
+            constraintEqualToAnchor:rotationRow.trailingAnchor],
+        [maskSeedRow.widthAnchor constraintEqualToAnchor:self.maskSettingsGroup.widthAnchor],
+        [maskLowRow.widthAnchor constraintEqualToAnchor:self.maskSettingsGroup.widthAnchor],
+        [maskHighRow.widthAnchor constraintEqualToAnchor:self.maskSettingsGroup.widthAnchor],
     ]];
 
     [self rebuildLayerList];
@@ -852,6 +1050,7 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
     self.layerEnabledCheckbox.enabled = hasLayer;
     self.layerCompositeControl.enabled = hasLayer;
     self.layerOpacitySlider.enabled = hasLayer;
+    self.layerInspectorTabs.enabled = hasLayer;
     if (!hasLayer) {
         self.layerTypeLabel.stringValue = @"No layer selected";
         self.noiseSeedRow.hidden = YES;
@@ -860,6 +1059,7 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
         self.levelsHighRow.hidden = YES;
         self.levelsGammaRow.hidden = YES;
         self.thresholdRow.hidden = YES;
+        [self updateLayerInspectorTabVisibility];
         return;
     }
 
@@ -913,6 +1113,62 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
         self.thresholdValue.stringValue = [NSString
             stringWithFormat:@"%.2f", threshold->threshold];
     }
+
+    const auto& transform = layer->transform;
+    self.transformScaleXSlider.doubleValue = transform.scaleX;
+    self.transformScaleYSlider.doubleValue = transform.scaleY;
+    self.transformOffsetXSlider.doubleValue = transform.offsetX;
+    self.transformOffsetYSlider.doubleValue = transform.offsetY;
+    self.transformRotationControl.selectedSegment = static_cast<NSInteger>(transform.rotation);
+    self.warpEnabledCheckbox.state = transform.warpEnabled
+        ? NSControlStateValueOn
+        : NSControlStateValueOff;
+    self.warpStrengthSlider.doubleValue = transform.warpStrength;
+    self.warpFrequencySlider.doubleValue = transform.warpFrequency;
+    self.warpSeedOffsetField.stringValue = [NSString
+        stringWithFormat:@"%llu", transform.warpSeedOffset];
+    self.transformScaleXValue.stringValue = [NSString stringWithFormat:@"%u", transform.scaleX];
+    self.transformScaleYValue.stringValue = [NSString stringWithFormat:@"%u", transform.scaleY];
+    self.transformOffsetXValue.stringValue = [NSString stringWithFormat:@"%.2f", transform.offsetX];
+    self.transformOffsetYValue.stringValue = [NSString stringWithFormat:@"%.2f", transform.offsetY];
+    self.warpStrengthValue.stringValue = [NSString stringWithFormat:@"%.2f", transform.warpStrength];
+    self.warpFrequencyValue.stringValue = [NSString stringWithFormat:@"%u", transform.warpFrequency];
+    self.warpStrengthSlider.enabled = transform.warpEnabled;
+    self.warpFrequencySlider.enabled = transform.warpEnabled;
+    self.warpSeedOffsetField.enabled = transform.warpEnabled;
+
+    const auto& mask = layer->mask;
+    self.maskEnabledCheckbox.state = mask.enabled
+        ? NSControlStateValueOn
+        : NSControlStateValueOff;
+    self.maskInvertedCheckbox.state = mask.inverted
+        ? NSControlStateValueOn
+        : NSControlStateValueOff;
+    self.maskSeedOffsetField.stringValue = [NSString stringWithFormat:@"%llu", mask.seedOffset];
+    self.maskLowSlider.doubleValue = mask.inputLow;
+    self.maskHighSlider.doubleValue = mask.inputHigh;
+    self.maskLowValue.stringValue = [NSString stringWithFormat:@"%.2f", mask.inputLow];
+    self.maskHighValue.stringValue = [NSString stringWithFormat:@"%.2f", mask.inputHigh];
+    self.maskInvertedCheckbox.enabled = mask.enabled;
+    self.maskSeedOffsetField.enabled = mask.enabled;
+    self.maskLowSlider.enabled = mask.enabled;
+    self.maskHighSlider.enabled = mask.enabled;
+    [self updateLayerInspectorTabVisibility];
+}
+
+- (void)updateLayerInspectorTabVisibility
+{
+    const BOOL hasLayer = layerAt(material_, selectedLayer_) != nullptr;
+    const NSInteger tab = self.layerInspectorTabs.selectedSegment;
+    self.layerSettingsGroup.hidden = !hasLayer || tab != 0;
+    self.transformSettingsGroup.hidden = !hasLayer || tab != 1;
+    self.maskSettingsGroup.hidden = !hasLayer || tab != 2;
+}
+
+- (void)layerInspectorTabChanged:(id)sender
+{
+    static_cast<void>(sender);
+    [self updateLayerInspectorTabVisibility];
 }
 
 - (void)selectLayer:(NSButton*)sender
@@ -1098,6 +1354,87 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
     if (auto* threshold = std::get_if<paperweight::ThresholdOperation>(&layer->operation)) {
         threshold->threshold = self.thresholdSlider.doubleValue;
     }
+
+    [self refreshLayerInspector];
+    [self regeneratePreview];
+    [self markDirty];
+}
+
+- (void)transformParameterChanged:(id)sender
+{
+    auto* layer = layerAt(material_, selectedLayer_);
+    if (layer == nullptr) {
+        return;
+    }
+
+    auto& transform = layer->transform;
+    transform.scaleX = static_cast<std::uint32_t>(
+        std::llround(self.transformScaleXSlider.doubleValue));
+    transform.scaleY = static_cast<std::uint32_t>(
+        std::llround(self.transformScaleYSlider.doubleValue));
+    transform.offsetX = self.transformOffsetXSlider.doubleValue;
+    transform.offsetY = self.transformOffsetYSlider.doubleValue;
+    transform.rotation = static_cast<paperweight::QuarterTurn>(
+        self.transformRotationControl.selectedSegment);
+    transform.warpEnabled = self.warpEnabledCheckbox.state == NSControlStateValueOn;
+    transform.warpStrength = self.warpStrengthSlider.doubleValue;
+    transform.warpFrequency = static_cast<std::uint32_t>(
+        std::llround(self.warpFrequencySlider.doubleValue));
+
+    if (sender == self.warpSeedOffsetField) {
+        const std::string text = self.warpSeedOffsetField.stringValue.UTF8String;
+        std::uint64_t parsed = 0;
+        const auto result = std::from_chars(text.data(), text.data() + text.size(), parsed, 10);
+        if (text.empty() || result.ec != std::errc{} || result.ptr != text.data() + text.size()) {
+            self.statusLabel.stringValue = @"A warp seed offset must be a non-negative integer.";
+            self.statusLabel.textColor = NSColor.systemRedColor;
+            return;
+        }
+        transform.warpSeedOffset = parsed;
+    }
+
+    [self refreshLayerInspector];
+    [self regeneratePreview];
+    [self markDirty];
+}
+
+- (void)maskParameterChanged:(id)sender
+{
+    auto* layer = layerAt(material_, selectedLayer_);
+    if (layer == nullptr) {
+        return;
+    }
+
+    auto& mask = layer->mask;
+    mask.enabled = self.maskEnabledCheckbox.state == NSControlStateValueOn;
+    mask.inverted = self.maskInvertedCheckbox.state == NSControlStateValueOn;
+    if (sender == self.maskSeedOffsetField) {
+        const std::string text = self.maskSeedOffsetField.stringValue.UTF8String;
+        std::uint64_t parsed = 0;
+        const auto result = std::from_chars(text.data(), text.data() + text.size(), parsed, 10);
+        if (text.empty() || result.ec != std::errc{} || result.ptr != text.data() + text.size()) {
+            self.statusLabel.stringValue = @"A mask seed offset must be a non-negative integer.";
+            self.statusLabel.textColor = NSColor.systemRedColor;
+            return;
+        }
+        mask.seedOffset = parsed;
+    }
+
+    double low = self.maskLowSlider.doubleValue;
+    double high = self.maskHighSlider.doubleValue;
+    if (low >= high) {
+        if (sender == self.maskLowSlider) {
+            low = std::min(low, 0.99);
+            high = std::max(high, low + 0.01);
+        } else {
+            high = std::max(high, 0.01);
+            low = std::min(low, high - 0.01);
+        }
+        self.maskLowSlider.doubleValue = low;
+        self.maskHighSlider.doubleValue = high;
+    }
+    mask.inputLow = low;
+    mask.inputHigh = high;
 
     [self refreshLayerInspector];
     [self regeneratePreview];

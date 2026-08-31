@@ -13,7 +13,7 @@ struct Version {
     friend constexpr bool operator==(const Version&, const Version&) = default;
 };
 
-inline constexpr Version currentVersion{0, 0, 3};
+inline constexpr Version currentVersion{0, 0, 4};
 
 [[nodiscard]] std::string_view versionString() noexcept;
 
