@@ -1,5 +1,5 @@
 # Paperweight procedural material
-pmat.version = 4
+pmat.version = 5
 material.type = fbm
 material.seed = 271828
 colour.low = 0x191B1CFF
