@@ -1262,6 +1262,15 @@ void testPhysicalScale()
     expect(paperweight::validateMaterial(incompatible).has_value(),
            "physical brick dimensions must divide the material repeat exactly");
 
+    auto uncommonDimensions = material;
+    uncommonDimensions.physicalSize = {2.53, 0.486};
+    auto& uncommonBrick = std::get<paperweight::BrickGridOperation>(
+        uncommonDimensions.layers.front().operation);
+    uncommonBrick.physicalDimensions =
+        paperweight::BrickGridOperation::PhysicalDimensions{0.23, 0.081, 0.01};
+    expect(!paperweight::validateMaterial(uncommonDimensions).has_value(),
+           "any positive brick size works when the repeat is derived from whole brick counts");
+
     const auto serialised = paperweight::serialisePmat(material);
     const auto* physicalText = std::get_if<std::string>(&serialised);
     expect(physicalText != nullptr &&
