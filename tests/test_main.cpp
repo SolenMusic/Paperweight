@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <exception>
@@ -111,9 +112,9 @@ paperweight::Material materialWithNoiseParameters(
 
 void testVersion()
 {
-    constexpr paperweight::Version expected{0, 0, 8};
+    constexpr paperweight::Version expected{0, 0, 9};
     static_assert(paperweight::currentVersion == expected);
-    expect(paperweight::versionString() == "0.0.8", "version string is 0.0.8");
+    expect(paperweight::versionString() == "0.0.9", "version string is 0.0.9");
 }
 
 void testImage()
@@ -1449,6 +1450,25 @@ void testGenerator()
                std::get<paperweight::GenerationError>(cancelledBeforeStart).code ==
                    paperweight::GenerationErrorCode::cancelled,
            "normal generation honours cancellation before allocating its height field");
+
+    std::atomic_size_t parallelCancellationChecks{0};
+    const auto cancelledParallel = paperweight::generate(
+        paperweight::GenerationRequest{
+            paperweight::Material{},
+            512,
+            512,
+            paperweight::MaterialOutput::colour,
+            std::nullopt,
+            std::nullopt,
+            4},
+        [&parallelCancellationChecks]() {
+            return parallelCancellationChecks.fetch_add(1, std::memory_order_relaxed) >= 3;
+        });
+    expect(
+        std::holds_alternative<paperweight::GenerationError>(cancelledParallel) &&
+            std::get<paperweight::GenerationError>(cancelledParallel).code ==
+                paperweight::GenerationErrorCode::cancelled,
+        "parallel generation cooperatively cancels without publishing a partial image");
 }
 
 void testPhysicalScale()
@@ -1720,18 +1740,30 @@ void testPmat()
                "checked-in advanced surface showcase parses");
         if (showcaseMaterial != nullptr) {
             for (std::size_t outputIndex = 0; outputIndex < outputs.size(); ++outputIndex) {
-                const auto generated = paperweight::generate(
-                    {*showcaseMaterial,
-                     32,
-                     32,
-                     outputs[outputIndex],
-                     std::nullopt,
-                     std::nullopt});
-                const auto* image = std::get_if<paperweight::Image>(&generated);
+                paperweight::GenerationRequest request{
+                    *showcaseMaterial,
+                    32,
+                    32,
+                    outputs[outputIndex],
+                    std::nullopt,
+                    std::nullopt,
+                    1};
+                const auto serial = paperweight::generate(request);
+                request.workerCount = 4;
+                const auto parallel = paperweight::generate(request);
+                const auto* image = std::get_if<paperweight::Image>(&serial);
+                const auto* parallelImage = std::get_if<paperweight::Image>(&parallel);
                 expectChecksum(
                     image,
                     showcase.checksums[outputIndex],
                     "showcase output matches its byte-exact golden checksum");
+                expect(
+                    image != nullptr && parallelImage != nullptr &&
+                        std::equal(
+                            image->pixels().begin(),
+                            image->pixels().end(),
+                            parallelImage->pixels().begin()),
+                    "serial and four-worker showcase output is byte-identical");
             }
         }
     }

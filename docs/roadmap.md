@@ -69,11 +69,15 @@ recipes - and later seedless templates - composed from these operations.
 ## v0.0.9 - Performance
 
 Profile before optimising, then improve the CPU path under a byte-identical
-output requirement. Candidate improvements include multithreaded CPU generation,
-SIMD where exact, tile-based evaluation, cached intermediate nodes, and
-incremental preview regeneration. Optional Vulkan and MoltenVK research is
-tracked for a later release; GPU choices must not dictate the core material
-model or add dependencies to a CPU-only library build.
+output requirement. v0.0.9 adds reproducible command-line and native-app
+benchmarks, cross-architecture golden tests, a resolved evaluator execution
+plan, and bounded deterministic multithreaded row generation. The native tool
+compares one and multiple workers across every bundled recipe from 64 x 64 to
+1024 x 1024, displays results live, and exports machine-labelled CSV. Profiling
+did not justify strict SIMD or a potentially enormous neighbourhood-sample
+cache in this release; both remain evidence-led future work. Optional Vulkan
+and MoltenVK research is tracked separately; GPU choices must not dictate the
+core material model or add dependencies to a CPU-only library build.
 
 ## v0.0.10 - 3D Material Preview
 

@@ -21,6 +21,9 @@ struct GenerationRequest {
     MaterialOutput output{MaterialOutput::colour};
     std::optional<MaterialGraph> graph;
     std::optional<PhysicalSize> physicalCoverage;
+    // Zero selects an automatic count, one forces the reference serial path,
+    // and larger values request a bounded deterministic worker pool.
+    std::uint32_t workerCount{0};
 };
 
 enum class GenerationErrorCode {

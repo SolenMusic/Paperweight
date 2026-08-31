@@ -4,6 +4,8 @@
 #include <paperweight/noise.hpp>
 #include <paperweight/structural.hpp>
 
+#include "noise_internal.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -56,7 +58,7 @@ double surfaceFbm(
     double amplitudeSum = 0.0;
     auto frequency = scale;
     for (std::uint32_t octave = 0; octave < octaves; ++octave) {
-        total += periodicValueNoise2D(
+        total += detail::periodicValueNoise2DUnchecked(
             u * static_cast<double>(frequency),
             v * static_cast<double>(frequency),
             frequency,

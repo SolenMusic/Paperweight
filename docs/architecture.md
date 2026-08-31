@@ -150,24 +150,28 @@ handle paths, while parsing and serialisation remain in portable C++.
 
 Live previews use a serial background queue and a snapshot of the current
 material. Continuous UI changes are briefly coalesced and cooperatively cancel
-the active core generation between scanlines. A monotonically increasing
-revision allows only the newest result onto the main thread. AppKit updates,
-including the loading indicator and image conversion, remain on the main
-thread. The ordinary synchronous `generate` entry point is unchanged; callers
-that need interruption may supply the optional portable cancellation check.
+the active core generation between scanlines. For sufficiently large images,
+the synchronous core call divides rows among a bounded native worker pool; each
+worker owns its graph evaluator and writes disjoint rows. Seeds and coordinates
+remain independent of scheduling. A monotonically increasing revision allows
+only the newest complete result onto the main thread. AppKit updates, including
+the loading indicator and image conversion, remain on the main thread. Callers
+may force the serial reference path or disable threading at build time.
 
-The graph evaluator memoises shared nodes within one material sample, but does
-not yet cache intermediate images across pixels or preview generations.
-Changing a layer recompiles the graph and regenerates the whole preview. Image
-and prefix caching belong to the later incremental-preview performance work and
-do not alter the cancellation contract.
+The graph evaluator compiles graph identifiers and processing connections into
+an internal index-based execution plan, then memoises shared nodes within one
+material sample. It does not retain intermediate images across pixels or
+preview generations. Profiling found graph compilation itself takes only a few
+microseconds; generation time is dominated by procedural sampling, particularly
+neighbourhood filters. Any later image or prefix cache must demonstrate a useful
+hit rate and bounded memory without altering the cancellation contract.
 
 ### Material format
 
 `.pmat` is a human-readable, versioned text format. Parsing and serialisation live in the portable core. Round trips should be stable and errors should identify useful source locations.
 
 The format version is deliberately independent of the application version.
-Paperweight v0.0.8 reads `.pmat` format versions 1 through 7 and writes version 7.
+Paperweight v0.0.9 reads `.pmat` format versions 1 through 7 and writes version 7.
 Unknown keys and unsupported format versions fail explicitly instead of being
 silently ignored. Version 1 maps to the original implicit FBM source; adding an
 explicit base noise layer produces byte-identical output. Version-2 layers map
@@ -211,4 +215,4 @@ See [pmat-format.md](pmat-format.md).
 
 Visual node-canvas authoring, graph-specific text persistence, WebAssembly
 bindings, game-engine adapters, complete PBR authoring, arbitrary-angle
-rotation, and GPU backends remain outside v0.0.8.
+rotation, and GPU backends remain outside v0.0.9.

@@ -26,8 +26,11 @@ namespace {
 
 using Clock = std::chrono::steady_clock;
 
-constexpr std::array<std::string_view, 7> materialNames{
+constexpr std::array<std::string_view, 10> materialNames{
     "default",
+    "brick-wall",
+    "cobblestone",
+    "ember",
     "cracked-stone",
     "weathered-metal",
     "mossy-pebbles",
@@ -48,6 +51,7 @@ struct Configuration {
     std::uint32_t iterations{1};
     std::string material{"all"};
     std::string output{"all"};
+    std::uint32_t workers{1};
 };
 
 std::uint32_t parsePositiveInteger(std::string_view text, std::string_view option)
@@ -65,7 +69,7 @@ void printUsage(const char* executable)
     std::cerr
         << "Usage: " << executable
         << " [--resolution N] [--iterations N] [--material NAME|all]"
-           " [--output colour|height|normal|roughness|all]\n";
+           " [--output colour|height|normal|roughness|all] [--workers N|auto]\n";
 }
 
 Configuration parseArguments(int argc, char** argv)
@@ -89,6 +93,10 @@ Configuration parseArguments(int argc, char** argv)
             configuration.material = value;
         } else if (argument == "--output") {
             configuration.output = value;
+        } else if (argument == "--workers") {
+            configuration.workers = value == "auto"
+                ? 0U
+                : parsePositiveInteger(value, argument);
         } else {
             throw std::invalid_argument("unknown option " + std::string(argument));
         }
@@ -188,7 +196,7 @@ void benchmarkCompilation(std::string_view name, const paperweight::Material& ma
         nodeCount = graph->nodes.size();
         timings.push_back(std::chrono::duration<double, std::micro>(finish - start).count());
     }
-    std::cout << "compile," << name << ",graph,0,0," << compileIterations << ','
+    std::cout << "compile," << name << ",graph,0,0," << compileIterations << ",1,"
               << std::fixed << std::setprecision(3) << median(timings) << ','
               << *std::min_element(timings.begin(), timings.end()) << ",0," << nodeCount
               << '\n';
@@ -212,6 +220,7 @@ void benchmarkGeneration(
             output,
             graph,
             std::nullopt,
+            configuration.workers,
         };
         const auto start = Clock::now();
         auto result = paperweight::generate(request);
@@ -234,7 +243,8 @@ void benchmarkGeneration(
     const double megapixelsPerSecond = megapixels / (medianMilliseconds / 1000.0);
     std::cout << "generate," << name << ',' << outputName(output) << ','
               << configuration.resolution << ',' << configuration.resolution << ','
-              << configuration.iterations << ',' << std::fixed << std::setprecision(3)
+              << configuration.iterations << ',' << configuration.workers << ','
+              << std::fixed << std::setprecision(3)
               << medianMilliseconds << ','
               << *std::min_element(timings.begin(), timings.end()) << ','
               << megapixelsPerSecond << ',' << resultChecksum << '\n';
@@ -256,7 +266,7 @@ int run(const Configuration& configuration)
         throw std::invalid_argument("unknown benchmark output " + configuration.output);
     }
 
-    std::cout << "record,material,output,width,height,iterations,median_time,min_time,"
+    std::cout << "record,material,output,width,height,iterations,workers,median_time,min_time,"
                  "megapixels_per_second,checksum_or_nodes\n";
     for (const auto name : materialNames) {
         if (!includesMaterial(configuration, name)) {

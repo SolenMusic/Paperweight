@@ -7,6 +7,9 @@ file(MAKE_DIRECTORY "${PAPERWEIGHT_BENCHMARK_MATERIAL_DIR}")
 
 foreach(material IN ITEMS
     default
+    brick-wall
+    cobblestone
+    ember
     cracked-stone
     weathered-metal
     mossy-pebbles

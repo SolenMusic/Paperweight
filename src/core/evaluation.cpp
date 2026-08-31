@@ -6,6 +6,7 @@
 #include <paperweight/surface.hpp>
 
 #include "graph_evaluator.hpp"
+#include "noise_internal.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -60,7 +61,7 @@ EvaluatedSample noiseSample(const EvaluationContext& context, std::uint64_t seed
     const auto seed = seedOffset == 0
         ? context.material.seed
         : mixBits(context.material.seed ^ seedOffset);
-    const double scalar = periodicFbm2D(
+    const double scalar = detail::periodicFbm2DUnchecked(
         context.u,
         context.v,
         context.material,
@@ -157,7 +158,7 @@ EvaluatedCoordinates transformCoordinates(
     const double warpV = coordinates.v * static_cast<double>(transform.warpFrequency);
     constexpr std::uint64_t xDomain = 0x5a17c9e3d4b2816fULL;
     constexpr std::uint64_t yDomain = 0xc3e5a7912b4d680fULL;
-    const double displacementX = periodicFbm2D(
+    const double displacementX = detail::periodicFbm2DUnchecked(
         warpU,
         warpV,
         context.material,
@@ -165,7 +166,7 @@ EvaluatedCoordinates transformCoordinates(
             context.material.seed,
             transform.warpSeedOffset,
             xDomain));
-    const double displacementY = periodicFbm2D(
+    const double displacementY = detail::periodicFbm2DUnchecked(
         warpU,
         warpV,
         context.material,
@@ -184,7 +185,7 @@ double evaluateLayerMask(const LayerMask& mask, const EvaluationContext& context
         return 1.0;
     }
     constexpr std::uint64_t maskDomain = 0x8f31b6d2c5a479e0ULL;
-    const double source = periodicFbm2D(
+    const double source = detail::periodicFbm2DUnchecked(
         context.u,
         context.v,
         context.material,

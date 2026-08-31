@@ -1,6 +1,10 @@
 find_library(APPKIT_FRAMEWORK AppKit REQUIRED)
 
 set(PAPERWEIGHT_SHOWCASE_MATERIALS
+    "${PROJECT_SOURCE_DIR}/examples/materials/default.pmat"
+    "${PROJECT_SOURCE_DIR}/examples/materials/brick-wall.pmat"
+    "${PROJECT_SOURCE_DIR}/examples/materials/cobblestone.pmat"
+    "${PROJECT_SOURCE_DIR}/examples/materials/ember.pmat"
     "${PROJECT_SOURCE_DIR}/examples/materials/cracked-stone.pmat"
     "${PROJECT_SOURCE_DIR}/examples/materials/weathered-metal.pmat"
     "${PROJECT_SOURCE_DIR}/examples/materials/mossy-pebbles.pmat"
@@ -13,6 +17,8 @@ set_source_files_properties(${PAPERWEIGHT_SHOWCASE_MATERIALS} PROPERTIES
 )
 
 add_executable(Paperweight MACOSX_BUNDLE
+    BenchmarkWindowController.hpp
+    BenchmarkWindowController.mm
     ImageBridge.mm
     main.mm
     ${PAPERWEIGHT_SHOWCASE_MATERIALS}
