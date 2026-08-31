@@ -3,6 +3,7 @@
 
 #include "BenchmarkWindowController.hpp"
 #include "ImageBridge.hpp"
+#include "Material3DPreviewView.hpp"
 
 #include <paperweight/generator.hpp>
 #include <paperweight/hash.hpp>
@@ -10,6 +11,7 @@
 #include <paperweight/pmat.hpp>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <charconv>
 #include <cmath>
@@ -123,7 +125,9 @@
 
 @property(nonatomic, strong) NSWindow* window;
 @property(nonatomic, strong) BenchmarkWindowController* benchmarkWindowController;
+@property(nonatomic, strong) NSView* previewContainer;
 @property(nonatomic, strong) MaterialPreviewView* previewView;
+@property(nonatomic, strong) Material3DPreviewView* material3DPreviewView;
 @property(nonatomic, strong) NSVisualEffectView* previewLoadingPanel;
 @property(nonatomic, strong) NSProgressIndicator* previewProgressIndicator;
 @property(nonatomic, strong) NSTextField* previewLoadingLabel;
@@ -151,6 +155,33 @@
 @property(nonatomic, strong) NSTextField* roughnessHighValue;
 @property(nonatomic, strong) NSSegmentedControl* outputControl;
 @property(nonatomic, strong) NSSegmentedControl* tilingControl;
+@property(nonatomic, strong) NSSegmentedControl* previewModeControl;
+@property(nonatomic, strong) NSStackView* twoDPreviewControls;
+@property(nonatomic, strong) NSStackView* threeDPreviewControls;
+@property(nonatomic, strong) NSPopUpButton* previewShapePopup;
+@property(nonatomic, strong) NSPopUpButton* lightPresetPopup;
+@property(nonatomic, strong) NSSlider* lightAzimuthSlider;
+@property(nonatomic, strong) NSTextField* lightAzimuthValue;
+@property(nonatomic, strong) NSSlider* lightElevationSlider;
+@property(nonatomic, strong) NSTextField* lightElevationValue;
+@property(nonatomic, strong) NSSlider* lightIntensitySlider;
+@property(nonatomic, strong) NSTextField* lightIntensityValue;
+@property(nonatomic, strong) NSSlider* ambientIntensitySlider;
+@property(nonatomic, strong) NSTextField* ambientIntensityValue;
+@property(nonatomic, strong) NSSlider* displacementSlider;
+@property(nonatomic, strong) NSTextField* displacementValue;
+@property(nonatomic, strong) NSSlider* previewNormalSlider;
+@property(nonatomic, strong) NSTextField* previewNormalValue;
+@property(nonatomic, strong) NSSlider* animationPhaseSlider;
+@property(nonatomic, strong) NSTextField* animationPhaseValue;
+@property(nonatomic, strong) NSSlider* animationSpeedSlider;
+@property(nonatomic, strong) NSTextField* animationSpeedValue;
+@property(nonatomic, strong) NSButton* animationButton;
+@property(nonatomic, strong) NSButton* colourMapCheckbox;
+@property(nonatomic, strong) NSButton* heightMapCheckbox;
+@property(nonatomic, strong) NSButton* normalMapCheckbox;
+@property(nonatomic, strong) NSButton* roughnessMapCheckbox;
+@property(nonatomic, strong) NSTimer* animationUiTimer;
 @property(nonatomic, strong) NSTextField* statusLabel;
 @property(nonatomic, strong) NSURL* currentFileURL;
 @property(nonatomic, strong) NSStackView* layerListStack;
@@ -320,6 +351,33 @@ NSStackView* makeLayerSliderRow(
     return row;
 }
 
+NSStackView* makePreviewSliderRow(
+    NSString* title,
+    double minimum,
+    double maximum,
+    double value,
+    id target)
+{
+    auto* titleLabel = makeLabel(title);
+    [titleLabel.widthAnchor constraintEqualToConstant:72.0].active = YES;
+    auto* slider = [NSSlider sliderWithValue:value
+                                    minValue:minimum
+                                    maxValue:maximum
+                                      target:target
+                                      action:@selector(preview3DParameterChanged:)];
+    slider.continuous = YES;
+    auto* valueLabel = makeLabel(@"");
+    valueLabel.alignment = NSTextAlignmentRight;
+    valueLabel.font = [NSFont monospacedDigitSystemFontOfSize:12.0
+                                                       weight:NSFontWeightRegular];
+    [valueLabel.widthAnchor constraintEqualToConstant:48.0].active = YES;
+    auto* row = [NSStackView stackViewWithViews:@[titleLabel, slider, valueLabel]];
+    row.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    row.alignment = NSLayoutAttributeCenterY;
+    row.spacing = 8.0;
+    return row;
+}
+
 NSBox* makeSeparator()
 {
     auto* separator = [[NSBox alloc] initWithFrame:NSZeroRect];
@@ -439,6 +497,13 @@ NSString* outputName(paperweight::MaterialOutput output)
     return @"Unknown";
 }
 
+struct PreviewMapSet {
+    paperweight::Image colour;
+    paperweight::Image height;
+    paperweight::Image normal;
+    paperweight::Image roughness;
+};
+
 NSString* operationDisplayName(const paperweight::LayerOperation& operation)
 {
     switch (operation.index()) {
@@ -527,6 +592,13 @@ bool materialUsesPhysicalBricks(const paperweight::Material& material)
         });
 }
 
+double recommendedPreviewDisplacement(const paperweight::Material& material)
+{
+    // Normal strength is the existing authored indication of intended surface relief.
+    // Keep the display-only displacement bounded so high-detail materials remain legible.
+    return std::clamp(material.normalStrength * 0.04, 0.0, 0.12);
+}
+
 double resizedCoverageExtent(
     double oldCoverage,
     double oldRepeat,
@@ -554,6 +626,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     paperweight::Material material_;
     paperweight::MaterialOutput selectedOutput_;
     std::optional<paperweight::Image> generatedImage_;
+    std::shared_ptr<PreviewMapSet> generated3DMaps_;
     dispatch_queue_t previewQueue_;
     dispatch_block_t pendingPreviewBlock_;
     std::shared_ptr<std::atomic_bool> previewCancellation_;
@@ -603,6 +676,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     if (previewCancellation_) {
         previewCancellation_->store(true, std::memory_order_relaxed);
     }
+    [self.animationUiTimer invalidate];
+    self.animationUiTimer = nil;
     return NSTerminateNow;
 }
 
@@ -726,8 +801,16 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     layersPanel.blendingMode = NSVisualEffectBlendingModeWithinWindow;
     layersPanel.state = NSVisualEffectStateActive;
 
+    self.previewContainer = [[NSView alloc] initWithFrame:NSZeroRect];
+    self.previewContainer.translatesAutoresizingMaskIntoConstraints = NO;
     self.previewView = [[MaterialPreviewView alloc] initWithFrame:NSZeroRect];
     self.previewView.translatesAutoresizingMaskIntoConstraints = NO;
+    self.material3DPreviewView = [[Material3DPreviewView alloc] initWithFrame:NSZeroRect];
+    self.material3DPreviewView.translatesAutoresizingMaskIntoConstraints = NO;
+    self.material3DPreviewView.hidden = YES;
+    self.material3DPreviewView.wantsLayer = YES;
+    self.material3DPreviewView.layer.cornerRadius = 10.0;
+    self.material3DPreviewView.layer.masksToBounds = YES;
 
     self.previewLoadingPanel = [[NSVisualEffectView alloc] initWithFrame:NSZeroRect];
     self.previewLoadingPanel.translatesAutoresizingMaskIntoConstraints = NO;
@@ -757,11 +840,13 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     previewLoadingStack.alignment = NSLayoutAttributeCenterY;
     previewLoadingStack.spacing = 9.0;
     [self.previewLoadingPanel addSubview:previewLoadingStack];
-    [self.previewView addSubview:self.previewLoadingPanel];
+    [self.previewContainer addSubview:self.previewView];
+    [self.previewContainer addSubview:self.material3DPreviewView];
+    [self.previewContainer addSubview:self.previewLoadingPanel];
 
     [content addSubview:controlsPanel];
     [content addSubview:layersPanel];
-    [content addSubview:self.previewView];
+    [content addSubview:self.previewContainer];
     [NSLayoutConstraint activateConstraints:@[
         [controlsPanel.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
         [controlsPanel.topAnchor constraintEqualToAnchor:content.topAnchor],
@@ -771,12 +856,20 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         [layersPanel.topAnchor constraintEqualToAnchor:content.topAnchor],
         [layersPanel.bottomAnchor constraintEqualToAnchor:content.bottomAnchor],
         [layersPanel.widthAnchor constraintEqualToConstant:340.0],
-        [self.previewView.leadingAnchor constraintEqualToAnchor:layersPanel.trailingAnchor constant:20.0],
-        [self.previewView.trailingAnchor constraintEqualToAnchor:content.trailingAnchor constant:-20.0],
-        [self.previewView.topAnchor constraintEqualToAnchor:content.topAnchor constant:20.0],
-        [self.previewView.bottomAnchor constraintEqualToAnchor:content.bottomAnchor constant:-20.0],
-        [self.previewLoadingPanel.centerXAnchor constraintEqualToAnchor:self.previewView.centerXAnchor],
-        [self.previewLoadingPanel.centerYAnchor constraintEqualToAnchor:self.previewView.centerYAnchor],
+        [self.previewContainer.leadingAnchor constraintEqualToAnchor:layersPanel.trailingAnchor constant:20.0],
+        [self.previewContainer.trailingAnchor constraintEqualToAnchor:content.trailingAnchor constant:-20.0],
+        [self.previewContainer.topAnchor constraintEqualToAnchor:content.topAnchor constant:20.0],
+        [self.previewContainer.bottomAnchor constraintEqualToAnchor:content.bottomAnchor constant:-20.0],
+        [self.previewView.leadingAnchor constraintEqualToAnchor:self.previewContainer.leadingAnchor],
+        [self.previewView.trailingAnchor constraintEqualToAnchor:self.previewContainer.trailingAnchor],
+        [self.previewView.topAnchor constraintEqualToAnchor:self.previewContainer.topAnchor],
+        [self.previewView.bottomAnchor constraintEqualToAnchor:self.previewContainer.bottomAnchor],
+        [self.material3DPreviewView.leadingAnchor constraintEqualToAnchor:self.previewContainer.leadingAnchor],
+        [self.material3DPreviewView.trailingAnchor constraintEqualToAnchor:self.previewContainer.trailingAnchor],
+        [self.material3DPreviewView.topAnchor constraintEqualToAnchor:self.previewContainer.topAnchor],
+        [self.material3DPreviewView.bottomAnchor constraintEqualToAnchor:self.previewContainer.bottomAnchor],
+        [self.previewLoadingPanel.centerXAnchor constraintEqualToAnchor:self.previewContainer.centerXAnchor],
+        [self.previewLoadingPanel.centerYAnchor constraintEqualToAnchor:self.previewContainer.centerYAnchor],
         [previewLoadingStack.leadingAnchor
             constraintEqualToAnchor:self.previewLoadingPanel.leadingAnchor constant:14.0],
         [previewLoadingStack.trailingAnchor
@@ -930,6 +1023,20 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.roughnessHighSlider = static_cast<NSSlider*>(roughnessHighRow.views[1]);
     self.roughnessHighValue = static_cast<NSTextField*>(roughnessHighRow.views[2]);
 
+    auto* previewModeLabel = makeLabel(@"Preview mode");
+    self.previewModeControl = [[NSSegmentedControl alloc] initWithFrame:NSZeroRect];
+    self.previewModeControl.segmentCount = 2;
+    [self.previewModeControl setLabel:@"2D" forSegment:0];
+    [self.previewModeControl setLabel:@"3D" forSegment:1];
+    self.previewModeControl.selectedSegment = 0;
+    self.previewModeControl.target = self;
+    self.previewModeControl.action = @selector(previewModeChanged:);
+    self.previewModeControl.accessibilityLabel = @"Preview mode";
+    if (!self.material3DPreviewView.isRendererAvailable) {
+        [self.previewModeControl setEnabled:NO forSegment:1];
+        self.previewModeControl.toolTip = @"This Mac does not provide a compatible Metal device.";
+    }
+
     auto* outputLabel = makeLabel(@"Material output");
     self.outputControl = [[NSSegmentedControl alloc] initWithFrame:NSZeroRect];
     self.outputControl.segmentCount = 4;
@@ -950,6 +1057,131 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.tilingControl.selectedSegment = 0;
     self.tilingControl.target = self;
     self.tilingControl.action = @selector(tilingChanged:);
+
+    self.twoDPreviewControls = [NSStackView stackViewWithViews:@[
+        outputLabel,
+        self.outputControl,
+        previewLabel,
+        self.tilingControl,
+    ]];
+    self.twoDPreviewControls.orientation = NSUserInterfaceLayoutOrientationVertical;
+    self.twoDPreviewControls.alignment = NSLayoutAttributeLeading;
+    self.twoDPreviewControls.spacing = 8.0;
+
+    auto* shapeLabel = makeLabel(@"Inspection shape");
+    [shapeLabel.widthAnchor constraintEqualToConstant:72.0].active = YES;
+    self.previewShapePopup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+    [self.previewShapePopup addItemsWithTitles:@[@"Plane", @"Sphere", @"Cube", @"Cylinder"]];
+    [self.previewShapePopup selectItemAtIndex:1];
+    self.previewShapePopup.target = self;
+    self.previewShapePopup.action = @selector(previewShapeChanged:);
+    auto* shapeRow = [NSStackView stackViewWithViews:@[shapeLabel, self.previewShapePopup]];
+    shapeRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    shapeRow.alignment = NSLayoutAttributeCenterY;
+    shapeRow.spacing = 8.0;
+
+    auto* lightingLabel = makeLabel(@"Lighting");
+    [lightingLabel.widthAnchor constraintEqualToConstant:72.0].active = YES;
+    self.lightPresetPopup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+    [self.lightPresetPopup addItemsWithTitles:@[@"Studio", @"Raking", @"Top", @"Backlight", @"Custom"]];
+    self.lightPresetPopup.target = self;
+    self.lightPresetPopup.action = @selector(lightPresetChanged:);
+    auto* lightingRow = [NSStackView stackViewWithViews:@[lightingLabel, self.lightPresetPopup]];
+    lightingRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    lightingRow.alignment = NSLayoutAttributeCenterY;
+    lightingRow.spacing = 8.0;
+
+    auto* lightAzimuthRow = makePreviewSliderRow(@"Azimuth", 0.0, 360.0, 35.0, self);
+    self.lightAzimuthSlider = static_cast<NSSlider*>(lightAzimuthRow.views[1]);
+    self.lightAzimuthValue = static_cast<NSTextField*>(lightAzimuthRow.views[2]);
+    auto* lightElevationRow = makePreviewSliderRow(@"Elevation", -10.0, 90.0, 38.0, self);
+    self.lightElevationSlider = static_cast<NSSlider*>(lightElevationRow.views[1]);
+    self.lightElevationValue = static_cast<NSTextField*>(lightElevationRow.views[2]);
+    auto* lightIntensityRow = makePreviewSliderRow(@"Brightness", 0.2, 2.5, 1.0, self);
+    self.lightIntensitySlider = static_cast<NSSlider*>(lightIntensityRow.views[1]);
+    self.lightIntensityValue = static_cast<NSTextField*>(lightIntensityRow.views[2]);
+    auto* ambientRow = makePreviewSliderRow(@"Ambient", 0.0, 0.8, 0.18, self);
+    self.ambientIntensitySlider = static_cast<NSSlider*>(ambientRow.views[1]);
+    self.ambientIntensityValue = static_cast<NSTextField*>(ambientRow.views[2]);
+    auto* displacementRow = makePreviewSliderRow(@"Height", 0.0, 0.4, 0.04, self);
+    self.displacementSlider = static_cast<NSSlider*>(displacementRow.views[1]);
+    self.displacementValue = static_cast<NSTextField*>(displacementRow.views[2]);
+    auto* previewNormalRow = makePreviewSliderRow(@"Normal", 0.0, 2.0, 1.0, self);
+    self.previewNormalSlider = static_cast<NSSlider*>(previewNormalRow.views[1]);
+    self.previewNormalValue = static_cast<NSTextField*>(previewNormalRow.views[2]);
+
+    self.colourMapCheckbox = [NSButton checkboxWithTitle:@"Colour"
+                                                   target:self
+                                                   action:@selector(previewMapToggled:)];
+    self.heightMapCheckbox = [NSButton checkboxWithTitle:@"Height"
+                                                   target:self
+                                                   action:@selector(previewMapToggled:)];
+    self.normalMapCheckbox = [NSButton checkboxWithTitle:@"Normal"
+                                                   target:self
+                                                   action:@selector(previewMapToggled:)];
+    self.roughnessMapCheckbox = [NSButton checkboxWithTitle:@"Roughness"
+                                                      target:self
+                                                      action:@selector(previewMapToggled:)];
+    for (NSButton* checkbox in @[
+             self.colourMapCheckbox,
+             self.heightMapCheckbox,
+             self.normalMapCheckbox,
+             self.roughnessMapCheckbox,
+         ]) {
+        checkbox.state = NSControlStateValueOn;
+    }
+    auto* mapsFirstRow = [NSStackView stackViewWithViews:@[
+        self.colourMapCheckbox, self.heightMapCheckbox,
+    ]];
+    mapsFirstRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    mapsFirstRow.distribution = NSStackViewDistributionFillEqually;
+    auto* mapsSecondRow = [NSStackView stackViewWithViews:@[
+        self.normalMapCheckbox, self.roughnessMapCheckbox,
+    ]];
+    mapsSecondRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    mapsSecondRow.distribution = NSStackViewDistributionFillEqually;
+
+    auto* animationPhaseRow = makePreviewSliderRow(@"Light phase", 0.0, 1.0, 0.0, self);
+    self.animationPhaseSlider = static_cast<NSSlider*>(animationPhaseRow.views[1]);
+    self.animationPhaseValue = static_cast<NSTextField*>(animationPhaseRow.views[2]);
+    auto* animationSpeedRow = makePreviewSliderRow(@"Speed", 0.02, 1.5, 0.25, self);
+    self.animationSpeedSlider = static_cast<NSSlider*>(animationSpeedRow.views[1]);
+    self.animationSpeedValue = static_cast<NSTextField*>(animationSpeedRow.views[2]);
+    self.animationButton = [NSButton buttonWithTitle:@"Play Light"
+                                              target:self
+                                              action:@selector(togglePreviewAnimation:)];
+    auto* resetCameraButton = [NSButton buttonWithTitle:@"Reset View"
+                                                  target:self
+                                                  action:@selector(resetPreviewCamera:)];
+    auto* animationButtons = [NSStackView stackViewWithViews:@[
+        self.animationButton, resetCameraButton,
+    ]];
+    animationButtons.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    animationButtons.distribution = NSStackViewDistributionFillEqually;
+    animationButtons.spacing = 8.0;
+
+    self.threeDPreviewControls = [NSStackView stackViewWithViews:@[
+        shapeRow,
+        lightingRow,
+        lightAzimuthRow,
+        lightElevationRow,
+        lightIntensityRow,
+        ambientRow,
+        makeLabel(@"Material maps"),
+        mapsFirstRow,
+        mapsSecondRow,
+        displacementRow,
+        previewNormalRow,
+        makeLabel(@"Animated inspection"),
+        animationPhaseRow,
+        animationSpeedRow,
+        animationButtons,
+    ]];
+    self.threeDPreviewControls.orientation = NSUserInterfaceLayoutOrientationVertical;
+    self.threeDPreviewControls.alignment = NSLayoutAttributeLeading;
+    self.threeDPreviewControls.spacing = 7.0;
+    self.threeDPreviewControls.hidden = YES;
+    [self updatePreview3DControlLabels];
 
     auto* resetButton = [NSButton buttonWithTitle:@"Reset Material"
                                            target:self
@@ -980,10 +1212,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         roughnessLowRow,
         roughnessHighRow,
         makeSeparator(),
-        outputLabel,
-        self.outputControl,
-        previewLabel,
-        self.tilingControl,
+        previewModeLabel,
+        self.previewModeControl,
+        self.twoDPreviewControls,
+        self.threeDPreviewControls,
         resetButton,
         self.statusLabel,
     ]];
@@ -1011,8 +1243,24 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         [controlStack.trailingAnchor constraintEqualToAnchor:controlsDocument.trailingAnchor constant:-20.0],
         [controlStack.topAnchor constraintEqualToAnchor:controlsDocument.topAnchor constant:24.0],
         [controlStack.bottomAnchor constraintEqualToAnchor:controlsDocument.bottomAnchor constant:-24.0],
-        [self.tilingControl.widthAnchor constraintEqualToAnchor:controlStack.widthAnchor],
-        [self.outputControl.widthAnchor constraintEqualToAnchor:controlStack.widthAnchor],
+        [self.previewModeControl.widthAnchor constraintEqualToAnchor:controlStack.widthAnchor],
+        [self.twoDPreviewControls.widthAnchor constraintEqualToAnchor:controlStack.widthAnchor],
+        [self.threeDPreviewControls.widthAnchor constraintEqualToAnchor:controlStack.widthAnchor],
+        [self.tilingControl.widthAnchor constraintEqualToAnchor:self.twoDPreviewControls.widthAnchor],
+        [self.outputControl.widthAnchor constraintEqualToAnchor:self.twoDPreviewControls.widthAnchor],
+        [shapeRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
+        [lightingRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
+        [lightAzimuthRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
+        [lightElevationRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
+        [lightIntensityRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
+        [ambientRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
+        [mapsFirstRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
+        [mapsSecondRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
+        [displacementRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
+        [previewNormalRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
+        [animationPhaseRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
+        [animationSpeedRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
+        [animationButtons.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
         [self.statusLabel.widthAnchor constraintEqualToAnchor:controlStack.widthAnchor],
     ]];
 
@@ -2654,6 +2902,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.normalStrengthSlider.doubleValue = material_.normalStrength;
     self.roughnessLowSlider.doubleValue = material_.roughnessLow;
     self.roughnessHighSlider.doubleValue = material_.roughnessHigh;
+    self.displacementSlider.doubleValue = recommendedPreviewDisplacement(material_);
+    self.material3DPreviewView.displacementStrength = self.displacementSlider.doubleValue;
     [self rebuildLayerList];
     [self refreshLayerInspector];
     [self updateControlLabels];
@@ -2699,6 +2949,153 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     [self regeneratePreview];
 }
 
+- (void)previewModeChanged:(id)sender
+{
+    static_cast<void>(sender);
+    const BOOL threeDimensional = self.previewModeControl.selectedSegment == 1;
+    if (threeDimensional && !self.material3DPreviewView.isRendererAvailable) {
+        self.previewModeControl.selectedSegment = 0;
+        self.statusLabel.stringValue = @"The 3D preview requires a compatible Metal device.";
+        self.statusLabel.textColor = NSColor.systemRedColor;
+        return;
+    }
+    self.previewView.hidden = threeDimensional;
+    self.material3DPreviewView.hidden = !threeDimensional;
+    self.twoDPreviewControls.hidden = threeDimensional;
+    self.threeDPreviewControls.hidden = !threeDimensional;
+    if (!threeDimensional && self.material3DPreviewView.isAnimationRunning) {
+        [self togglePreviewAnimation:nil];
+    }
+    [self regeneratePreview];
+}
+
+- (void)previewShapeChanged:(id)sender
+{
+    static_cast<void>(sender);
+    self.material3DPreviewView.previewShape =
+        static_cast<PWPreviewShape>(self.previewShapePopup.indexOfSelectedItem);
+}
+
+- (void)lightPresetChanged:(id)sender
+{
+    static_cast<void>(sender);
+    switch (self.lightPresetPopup.indexOfSelectedItem) {
+    case 0:
+        self.lightAzimuthSlider.doubleValue = 35.0;
+        self.lightElevationSlider.doubleValue = 38.0;
+        self.lightIntensitySlider.doubleValue = 1.0;
+        self.ambientIntensitySlider.doubleValue = 0.18;
+        break;
+    case 1:
+        self.lightAzimuthSlider.doubleValue = 110.0;
+        self.lightElevationSlider.doubleValue = 12.0;
+        self.lightIntensitySlider.doubleValue = 1.25;
+        self.ambientIntensitySlider.doubleValue = 0.10;
+        break;
+    case 2:
+        self.lightAzimuthSlider.doubleValue = 0.0;
+        self.lightElevationSlider.doubleValue = 82.0;
+        self.lightIntensitySlider.doubleValue = 0.92;
+        self.ambientIntensitySlider.doubleValue = 0.22;
+        break;
+    case 3:
+        self.lightAzimuthSlider.doubleValue = 205.0;
+        self.lightElevationSlider.doubleValue = 25.0;
+        self.lightIntensitySlider.doubleValue = 1.15;
+        self.ambientIntensitySlider.doubleValue = 0.12;
+        break;
+    default:
+        return;
+    }
+    [self applyPreview3DParameters];
+}
+
+- (void)preview3DParameterChanged:(id)sender
+{
+    if (sender == self.lightAzimuthSlider || sender == self.lightElevationSlider ||
+        sender == self.lightIntensitySlider || sender == self.ambientIntensitySlider) {
+        [self.lightPresetPopup selectItemAtIndex:4];
+    }
+    [self applyPreview3DParameters];
+}
+
+- (void)applyPreview3DParameters
+{
+    self.material3DPreviewView.lightAzimuthDegrees = self.lightAzimuthSlider.doubleValue;
+    self.material3DPreviewView.lightElevationDegrees = self.lightElevationSlider.doubleValue;
+    self.material3DPreviewView.lightIntensity = self.lightIntensitySlider.doubleValue;
+    self.material3DPreviewView.ambientIntensity = self.ambientIntensitySlider.doubleValue;
+    self.material3DPreviewView.displacementStrength = self.displacementSlider.doubleValue;
+    self.material3DPreviewView.previewNormalStrength = self.previewNormalSlider.doubleValue;
+    self.material3DPreviewView.animationPhase = self.animationPhaseSlider.doubleValue;
+    self.material3DPreviewView.animationSpeed = self.animationSpeedSlider.doubleValue;
+    [self updatePreview3DControlLabels];
+}
+
+- (void)updatePreview3DControlLabels
+{
+    self.lightAzimuthValue.stringValue = [NSString
+        stringWithFormat:@"%.0f°", self.lightAzimuthSlider.doubleValue];
+    self.lightElevationValue.stringValue = [NSString
+        stringWithFormat:@"%.0f°", self.lightElevationSlider.doubleValue];
+    self.lightIntensityValue.stringValue = [NSString
+        stringWithFormat:@"%.2f", self.lightIntensitySlider.doubleValue];
+    self.ambientIntensityValue.stringValue = [NSString
+        stringWithFormat:@"%.2f", self.ambientIntensitySlider.doubleValue];
+    self.displacementValue.stringValue = [NSString
+        stringWithFormat:@"%.2f", self.displacementSlider.doubleValue];
+    self.previewNormalValue.stringValue = [NSString
+        stringWithFormat:@"%.2f", self.previewNormalSlider.doubleValue];
+    self.animationPhaseValue.stringValue = [NSString
+        stringWithFormat:@"%.2f", self.animationPhaseSlider.doubleValue];
+    self.animationSpeedValue.stringValue = [NSString
+        stringWithFormat:@"%.2f×", self.animationSpeedSlider.doubleValue];
+}
+
+- (void)previewMapToggled:(id)sender
+{
+    static_cast<void>(sender);
+    self.material3DPreviewView.colourEnabled =
+        self.colourMapCheckbox.state == NSControlStateValueOn;
+    self.material3DPreviewView.heightEnabled =
+        self.heightMapCheckbox.state == NSControlStateValueOn;
+    self.material3DPreviewView.normalEnabled =
+        self.normalMapCheckbox.state == NSControlStateValueOn;
+    self.material3DPreviewView.roughnessEnabled =
+        self.roughnessMapCheckbox.state == NSControlStateValueOn;
+}
+
+- (void)togglePreviewAnimation:(id)sender
+{
+    static_cast<void>(sender);
+    const BOOL running = !self.material3DPreviewView.isAnimationRunning;
+    self.material3DPreviewView.animationRunning = running;
+    self.animationButton.title = running ? @"Pause Light" : @"Play Light";
+    [self.animationUiTimer invalidate];
+    self.animationUiTimer = nil;
+    if (running) {
+        self.animationUiTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 / 30.0
+                                                                target:self
+                                                              selector:@selector(previewAnimationTick:)
+                                                              userInfo:nil
+                                                               repeats:YES];
+    }
+}
+
+- (void)previewAnimationTick:(NSTimer*)timer
+{
+    static_cast<void>(timer);
+    self.animationPhaseSlider.doubleValue = self.material3DPreviewView.animationPhase;
+    self.animationPhaseValue.stringValue = [NSString
+        stringWithFormat:@"%.2f", self.animationPhaseSlider.doubleValue];
+}
+
+- (void)resetPreviewCamera:(id)sender
+{
+    static_cast<void>(sender);
+    [self.material3DPreviewView resetCamera];
+}
+
 - (void)updateControlLabels
 {
     self.frequencyValue.stringValue = [NSString stringWithFormat:@"%u", material_.frequency];
@@ -2741,6 +3138,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.normalStrengthSlider.doubleValue = material_.normalStrength;
     self.roughnessLowSlider.doubleValue = material_.roughnessLow;
     self.roughnessHighSlider.doubleValue = material_.roughnessHigh;
+    self.displacementSlider.doubleValue = recommendedPreviewDisplacement(material_);
+    self.material3DPreviewView.displacementStrength = self.displacementSlider.doubleValue;
     [self rebuildLayerList];
     [self refreshLayerInspector];
     [self updateControlLabels];
@@ -2763,6 +3162,11 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         return;
     }
     pendingPreviewBlock_ = nil;
+
+    if (self.previewModeControl.selectedSegment == 1) {
+        [self start3DPreviewGenerationForRevision:revision];
+        return;
+    }
 
     const paperweight::GenerationRequest request{
         material_, 512, 512, selectedOutput_, std::nullopt, previewCoverage_};
@@ -2816,6 +3220,101 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     });
 }
 
+- (void)start3DPreviewGenerationForRevision:(std::uint64_t)revision
+{
+    const paperweight::GenerationRequest request{
+        material_,
+        256,
+        256,
+        paperweight::MaterialOutput::colour,
+        std::nullopt,
+        previewCoverage_,
+    };
+    auto cancellation = std::make_shared<std::atomic_bool>(false);
+    previewCancellation_ = cancellation;
+    __weak AppDelegate* weakSelf = self;
+    dispatch_async(previewQueue_, ^{
+        auto graphRequest = request;
+        std::size_t graphNodeCount = 0;
+        std::optional<paperweight::GenerationError> failure;
+        auto compilation = paperweight::compileMaterialGraph(request.material);
+        if (auto* graph = std::get_if<paperweight::MaterialGraph>(&compilation)) {
+            graphNodeCount = graph->nodes.size();
+            graphRequest.graph = std::move(*graph);
+        } else {
+            const auto& error = std::get<paperweight::GraphError>(compilation);
+            failure = paperweight::GenerationError{
+                paperweight::GenerationErrorCode::invalidGraph,
+                error.message,
+            };
+        }
+
+        std::array<std::optional<paperweight::Image>, 4> images;
+        if (!failure) {
+            for (std::size_t outputIndex = 0; outputIndex < paperweight::materialOutputs.size(); ++outputIndex) {
+                if (cancellation->load(std::memory_order_relaxed)) {
+                    break;
+                }
+                graphRequest.output = paperweight::materialOutputs[outputIndex];
+                auto result = paperweight::generate(
+                    graphRequest,
+                    [cancellation]() {
+                        return cancellation->load(std::memory_order_relaxed);
+                    });
+                if (auto* image = std::get_if<paperweight::Image>(&result)) {
+                    images[outputIndex].emplace(std::move(*image));
+                    continue;
+                }
+                failure = std::get<paperweight::GenerationError>(std::move(result));
+                break;
+            }
+        }
+
+        std::shared_ptr<PreviewMapSet> maps;
+        if (!failure && std::all_of(images.begin(), images.end(), [](const auto& image) {
+                return image.has_value();
+            })) {
+            maps = std::make_shared<PreviewMapSet>(PreviewMapSet{
+                std::move(*images[paperweight::materialOutputIndex(paperweight::MaterialOutput::colour)]),
+                std::move(*images[paperweight::materialOutputIndex(paperweight::MaterialOutput::height)]),
+                std::move(*images[paperweight::materialOutputIndex(paperweight::MaterialOutput::normal)]),
+                std::move(*images[paperweight::materialOutputIndex(paperweight::MaterialOutput::roughness)]),
+            });
+        }
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            AppDelegate* strongSelf = weakSelf;
+            if (strongSelf == nil || revision != strongSelf->previewRevision_ ||
+                cancellation->load(std::memory_order_relaxed)) {
+                return;
+            }
+            strongSelf->previewCancellation_.reset();
+            [strongSelf setPreviewLoading:NO];
+            if (maps) {
+                [strongSelf.material3DPreviewView setColourImage:maps->colour
+                                                     heightImage:maps->height
+                                                     normalImage:maps->normal
+                                                  roughnessImage:maps->roughness];
+                strongSelf->generated3DMaps_ = maps;
+                strongSelf.statusLabel.stringValue = [NSString stringWithFormat:
+                    @"Four 256 × 256 maps — %.6g × %.6g m — %zu-node graph — drag to orbit, scroll to zoom",
+                    strongSelf->previewCoverage_.widthMetres,
+                    strongSelf->previewCoverage_.heightMetres,
+                    graphNodeCount];
+                strongSelf.statusLabel.textColor = NSColor.secondaryLabelColor;
+                return;
+            }
+
+            strongSelf->generated3DMaps_.reset();
+            const std::string message = failure
+                ? failure->message
+                : "3D preview generation did not produce a complete map set";
+            strongSelf.statusLabel.stringValue = [NSString stringWithUTF8String:message.c_str()];
+            strongSelf.statusLabel.textColor = NSColor.systemRedColor;
+        });
+    });
+}
+
 - (void)regeneratePreview
 {
     ++previewRevision_;
@@ -2828,8 +3327,16 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     }
 
     generatedImage_.reset();
+    generated3DMaps_.reset();
     self.exportMenuItem.enabled = NO;
-    self.statusLabel.stringValue = @"Rendering 512 × 512 preview…";
+    if (self.previewModeControl.selectedSegment == 1) {
+        [self.material3DPreviewView clearMaterialImages];
+        self.statusLabel.stringValue = @"Rendering four 256 × 256 material maps for 3D…";
+        self.previewLoadingLabel.stringValue = @"Rendering 3D material maps…";
+    } else {
+        self.statusLabel.stringValue = @"Rendering 512 × 512 preview…";
+        self.previewLoadingLabel.stringValue = @"Rendering preview…";
+    }
     self.statusLabel.textColor = NSColor.secondaryLabelColor;
     [self setPreviewLoading:YES];
 

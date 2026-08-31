@@ -288,7 +288,7 @@ generation wrap mathematically across both tile axes.
 ## Compatibility policy
 
 The `.pmat` format version and Paperweight application version are separate.
-Paperweight v0.0.9 reads versions 1 through 7 and writes version 7. A reader
+Paperweight v0.0.10 reads versions 1 through 7 and writes version 7. A reader
 rejects unsupported versions and unknown fields so that it cannot quietly
 reinterpret a future material.
 
