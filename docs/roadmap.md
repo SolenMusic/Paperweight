@@ -51,7 +51,10 @@ and graph-specific file syntax are later work.
 ## v0.0.7 - Physical Scale
 
 Add material-space dimensions and caller-selected physical coverage so
-materials retain consistent world scale across output resolutions.
+materials retain consistent world scale across output resolutions. One material
+repeat has an explicit metre width and height; requested coverage contains whole
+repeats to preserve mathematical seamlessness. Brick width, height, and mortar
+may be authored directly in metres.
 
 ## v0.0.8 - Advanced Surface Tools
 

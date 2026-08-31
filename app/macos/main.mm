@@ -14,7 +14,9 @@
 #include <cmath>
 #include <limits>
 #include <memory>
+#include <locale>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <variant>
 
@@ -125,6 +127,10 @@
 @property(nonatomic, strong) NSTextField* previewLoadingLabel;
 @property(nonatomic, strong) NSMenuItem* exportMenuItem;
 @property(nonatomic, strong) NSTextField* seedField;
+@property(nonatomic, strong) NSTextField* materialWidthField;
+@property(nonatomic, strong) NSTextField* materialHeightField;
+@property(nonatomic, strong) NSTextField* coverageWidthField;
+@property(nonatomic, strong) NSTextField* coverageHeightField;
 @property(nonatomic, strong) NSSlider* frequencySlider;
 @property(nonatomic, strong) NSTextField* frequencyValue;
 @property(nonatomic, strong) NSSlider* octavesSlider;
@@ -196,6 +202,13 @@
 @property(nonatomic, strong) NSSlider* patternValueThreeSlider;
 @property(nonatomic, strong) NSTextField* patternValueThreeValue;
 @property(nonatomic, strong) NSButton* equalMortarWidthCheckbox;
+@property(nonatomic, strong) NSButton* physicalBrickCheckbox;
+@property(nonatomic, strong) NSStackView* physicalBrickWidthRow;
+@property(nonatomic, strong) NSTextField* physicalBrickWidthField;
+@property(nonatomic, strong) NSStackView* physicalBrickHeightRow;
+@property(nonatomic, strong) NSTextField* physicalBrickHeightField;
+@property(nonatomic, strong) NSStackView* physicalBrickMortarRow;
+@property(nonatomic, strong) NSTextField* physicalBrickMortarField;
 @property(nonatomic, strong) NSStackView* patternDirectionRow;
 @property(nonatomic, strong) NSSegmentedControl* patternDirectionControl;
 @property(nonatomic, strong) NSStackView* patternSeedRow;
@@ -303,6 +316,55 @@ NSBox* makeSeparator()
     auto* separator = [[NSBox alloc] initWithFrame:NSZeroRect];
     separator.boxType = NSBoxSeparator;
     return separator;
+}
+
+std::optional<double> positiveDecimal(NSTextField* field)
+{
+    const std::string text = field.stringValue.UTF8String;
+    std::istringstream stream{text};
+    stream.imbue(std::locale::classic());
+    double value = 0.0;
+    stream >> std::noskipws >> value;
+    if (!stream || stream.peek() != std::char_traits<char>::eof() ||
+        !std::isfinite(value) || value <= 0.0) {
+        return std::nullopt;
+    }
+    return value;
+}
+
+std::optional<double> nonNegativeDecimal(NSTextField* field)
+{
+    const std::string text = field.stringValue.UTF8String;
+    std::istringstream stream{text};
+    stream.imbue(std::locale::classic());
+    double value = 0.0;
+    stream >> std::noskipws >> value;
+    if (!stream || stream.peek() != std::char_traits<char>::eof() ||
+        !std::isfinite(value) || value < 0.0) {
+        return std::nullopt;
+    }
+    return value;
+}
+
+NSStackView* makeMetreFieldRow(
+    NSString* title,
+    double value,
+    id target,
+    SEL action)
+{
+    auto* label = makeLabel(title);
+    [label.widthAnchor constraintEqualToConstant:78.0].active = YES;
+    auto* field = [[NSTextField alloc] initWithFrame:NSZeroRect];
+    field.stringValue = [NSString stringWithFormat:@"%.6g", value];
+    field.target = target;
+    field.action = action;
+    auto* unit = makeLabel(@"m");
+    [unit.widthAnchor constraintEqualToConstant:14.0].active = YES;
+    auto* row = [NSStackView stackViewWithViews:@[ label, field, unit ]];
+    row.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    row.alignment = NSLayoutAttributeCenterY;
+    row.spacing = 8.0;
+    return row;
 }
 
 NSColor* colourFromRgba8(const paperweight::Rgba8& colour)
@@ -424,6 +486,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     std::uint64_t previewRevision_;
     bool dirty_;
     NSInteger selectedLayer_;
+    paperweight::PhysicalSize previewCoverage_;
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification*)notification
@@ -431,6 +494,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     static_cast<void>(notification);
     selectedOutput_ = paperweight::MaterialOutput::colour;
     material_.layers.push_back(paperweight::makeNoiseLayer());
+    previewCoverage_ = material_.physicalSize;
     selectedLayer_ = 0;
     previewQueue_ = dispatch_queue_create(
         "org.solen-music.paperweight.preview",
@@ -625,6 +689,43 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     seedRow.alignment = NSLayoutAttributeCenterY;
     seedRow.spacing = 8.0;
 
+    const auto makePhysicalSizeRow = ^NSStackView*(
+        NSString* title,
+        paperweight::PhysicalSize value,
+        SEL action) {
+        auto* label = makeLabel(title);
+        [label.widthAnchor constraintEqualToConstant:78.0].active = YES;
+        auto* widthField = [[NSTextField alloc] initWithFrame:NSZeroRect];
+        widthField.stringValue = [NSString stringWithFormat:@"%.6g", value.widthMetres];
+        widthField.target = self;
+        widthField.action = action;
+        auto* by = makeLabel(@"×");
+        auto* heightField = [[NSTextField alloc] initWithFrame:NSZeroRect];
+        heightField.stringValue = [NSString stringWithFormat:@"%.6g", value.heightMetres];
+        heightField.target = self;
+        heightField.action = action;
+        auto* unit = makeLabel(@"m");
+        auto* row = [NSStackView stackViewWithViews:@[
+            label, widthField, by, heightField, unit,
+        ]];
+        row.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+        row.alignment = NSLayoutAttributeCenterY;
+        row.spacing = 6.0;
+        return row;
+    };
+    auto* materialSizeRow = makePhysicalSizeRow(
+        @"Repeat size",
+        material_.physicalSize,
+        @selector(materialSizeChanged:));
+    self.materialWidthField = static_cast<NSTextField*>(materialSizeRow.views[1]);
+    self.materialHeightField = static_cast<NSTextField*>(materialSizeRow.views[3]);
+    auto* coverageSizeRow = makePhysicalSizeRow(
+        @"Coverage",
+        previewCoverage_,
+        @selector(coverageChanged:));
+    self.coverageWidthField = static_cast<NSTextField*>(coverageSizeRow.views[1]);
+    self.coverageHeightField = static_cast<NSTextField*>(coverageSizeRow.views[3]);
+
     const auto& frequencyMetadata = paperweight::metadataFor(paperweight::MaterialParameter::frequency);
     const auto& octavesMetadata = paperweight::metadataFor(paperweight::MaterialParameter::octaves);
     const auto& lacunarityMetadata = paperweight::metadataFor(paperweight::MaterialParameter::lacunarity);
@@ -752,6 +853,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         subtitle,
         makeSeparator(),
         seedRow,
+        materialSizeRow,
+        coverageSizeRow,
         frequencyRow,
         octavesRow,
         lacunarityRow,
@@ -773,11 +876,26 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     controlStack.orientation = NSUserInterfaceLayoutOrientationVertical;
     controlStack.alignment = NSLayoutAttributeLeading;
     controlStack.spacing = 10.0;
-    [controlsPanel addSubview:controlStack];
+    auto* controlsDocument = [[FlippedView alloc] initWithFrame:NSZeroRect];
+    controlsDocument.translatesAutoresizingMaskIntoConstraints = NO;
+    [controlsDocument addSubview:controlStack];
+    auto* controlsScrollView = [[NSScrollView alloc] initWithFrame:NSZeroRect];
+    controlsScrollView.translatesAutoresizingMaskIntoConstraints = NO;
+    controlsScrollView.documentView = controlsDocument;
+    controlsScrollView.hasVerticalScroller = YES;
+    controlsScrollView.drawsBackground = NO;
+    controlsScrollView.borderType = NSNoBorder;
+    [controlsPanel addSubview:controlsScrollView];
     [NSLayoutConstraint activateConstraints:@[
-        [controlStack.leadingAnchor constraintEqualToAnchor:controlsPanel.leadingAnchor constant:20.0],
-        [controlStack.trailingAnchor constraintEqualToAnchor:controlsPanel.trailingAnchor constant:-20.0],
-        [controlStack.topAnchor constraintEqualToAnchor:controlsPanel.topAnchor constant:24.0],
+        [controlsScrollView.leadingAnchor constraintEqualToAnchor:controlsPanel.leadingAnchor],
+        [controlsScrollView.trailingAnchor constraintEqualToAnchor:controlsPanel.trailingAnchor],
+        [controlsScrollView.topAnchor constraintEqualToAnchor:controlsPanel.topAnchor],
+        [controlsScrollView.bottomAnchor constraintEqualToAnchor:controlsPanel.bottomAnchor],
+        [controlsDocument.widthAnchor constraintEqualToAnchor:controlsScrollView.contentView.widthAnchor],
+        [controlStack.leadingAnchor constraintEqualToAnchor:controlsDocument.leadingAnchor constant:20.0],
+        [controlStack.trailingAnchor constraintEqualToAnchor:controlsDocument.trailingAnchor constant:-20.0],
+        [controlStack.topAnchor constraintEqualToAnchor:controlsDocument.topAnchor constant:24.0],
+        [controlStack.bottomAnchor constraintEqualToAnchor:controlsDocument.bottomAnchor constant:-24.0],
         [self.tilingControl.widthAnchor constraintEqualToAnchor:controlStack.widthAnchor],
         [self.outputControl.widthAnchor constraintEqualToAnchor:controlStack.widthAnchor],
         [self.statusLabel.widthAnchor constraintEqualToAnchor:controlStack.widthAnchor],
@@ -948,6 +1066,33 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
                    action:@selector(structuralParameterChanged:)];
     self.equalMortarWidthCheckbox.toolTip =
         @"Interpret mortar as one texture-space width on both axes.";
+    self.physicalBrickCheckbox = [NSButton
+        checkboxWithTitle:@"Size brick in metres"
+                   target:self
+                   action:@selector(structuralParameterChanged:)];
+    self.physicalBrickCheckbox.toolTip =
+        @"Keep brick and mortar dimensions consistent in world space.";
+    self.physicalBrickWidthRow = makeMetreFieldRow(
+        @"Brick width",
+        0.24,
+        self,
+        @selector(structuralParameterChanged:));
+    self.physicalBrickWidthField = static_cast<NSTextField*>(
+        self.physicalBrickWidthRow.views[1]);
+    self.physicalBrickHeightRow = makeMetreFieldRow(
+        @"Brick height",
+        0.075,
+        self,
+        @selector(structuralParameterChanged:));
+    self.physicalBrickHeightField = static_cast<NSTextField*>(
+        self.physicalBrickHeightRow.views[1]);
+    self.physicalBrickMortarRow = makeMetreFieldRow(
+        @"Mortar",
+        0.01,
+        self,
+        @selector(structuralParameterChanged:));
+    self.physicalBrickMortarField = static_cast<NSTextField*>(
+        self.physicalBrickMortarRow.views[1]);
 
     auto* directionLabel = makeLabel(@"Direction");
     [directionLabel.widthAnchor constraintEqualToConstant:72.0].active = YES;
@@ -999,6 +1144,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.levelsHighRow,
         self.levelsGammaRow,
         self.thresholdRow,
+        self.physicalBrickCheckbox,
+        self.physicalBrickWidthRow,
+        self.physicalBrickHeightRow,
+        self.physicalBrickMortarRow,
         self.patternCountXRow,
         self.patternCountYRow,
         self.patternValueOneRow,
@@ -1180,6 +1329,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         [self.transformSettingsGroup.widthAnchor constraintEqualToAnchor:layerStack.widthAnchor],
         [self.maskSettingsGroup.widthAnchor constraintEqualToAnchor:layerStack.widthAnchor],
         [self.layerCompositeControl.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.physicalBrickWidthRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.physicalBrickHeightRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.physicalBrickMortarRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.patternCountXRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.patternCountYRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.patternValueOneRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
@@ -1320,6 +1472,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.patternValueTwoRow.hidden = YES;
         self.patternValueThreeRow.hidden = YES;
         self.equalMortarWidthCheckbox.hidden = YES;
+        self.physicalBrickCheckbox.hidden = YES;
+        self.physicalBrickWidthRow.hidden = YES;
+        self.physicalBrickHeightRow.hidden = YES;
+        self.physicalBrickMortarRow.hidden = YES;
         self.patternDirectionRow.hidden = YES;
         self.patternSeedRow.hidden = YES;
         [self updateLayerInspectorTabVisibility];
@@ -1368,6 +1524,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.patternValueTwoRow.hidden = YES;
     self.patternValueThreeRow.hidden = YES;
     self.equalMortarWidthCheckbox.hidden = YES;
+    self.physicalBrickCheckbox.hidden = brick == nullptr;
+    self.physicalBrickWidthRow.hidden = YES;
+    self.physicalBrickHeightRow.hidden = YES;
+    self.physicalBrickMortarRow.hidden = YES;
     self.patternDirectionRow.hidden = YES;
     self.patternSeedRow.hidden = YES;
 
@@ -1421,22 +1581,38 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         valueLabel.stringValue = [NSString stringWithFormat:@"%.2f", value];
     };
     if (brick != nullptr) {
-        const bool equalWidth =
-            brick->mortarSpace == paperweight::BrickMortarSpace::texture;
-        showCount(self.patternCountXRow, self.patternCountXLabel,
-                  self.patternCountXSlider, self.patternCountXValue, @"Columns", brick->columns);
-        showCount(self.patternCountYRow, self.patternCountYLabel,
-                  self.patternCountYSlider, self.patternCountYValue, @"Rows", brick->rows);
-        showValue(self.patternValueOneRow, self.patternValueOneLabel,
-                  self.patternValueOneSlider, self.patternValueOneValue,
-                  equalWidth ? @"Mortar width" : @"Mortar",
-                  0.0,
-                  equalWidth ? textureSpaceMortarMaximum(*brick) : 0.95,
-                  brick->mortar);
-        self.equalMortarWidthCheckbox.hidden = NO;
-        self.equalMortarWidthCheckbox.state = equalWidth
+        const bool physical = brick->physicalDimensions.has_value();
+        self.physicalBrickCheckbox.state = physical
             ? NSControlStateValueOn
             : NSControlStateValueOff;
+        if (physical) {
+            self.physicalBrickWidthRow.hidden = NO;
+            self.physicalBrickHeightRow.hidden = NO;
+            self.physicalBrickMortarRow.hidden = NO;
+            self.physicalBrickWidthField.stringValue = [NSString
+                stringWithFormat:@"%.6g", brick->physicalDimensions->widthMetres];
+            self.physicalBrickHeightField.stringValue = [NSString
+                stringWithFormat:@"%.6g", brick->physicalDimensions->heightMetres];
+            self.physicalBrickMortarField.stringValue = [NSString
+                stringWithFormat:@"%.6g", brick->physicalDimensions->mortarMetres];
+        } else {
+            const bool equalWidth =
+                brick->mortarSpace == paperweight::BrickMortarSpace::texture;
+            showCount(self.patternCountXRow, self.patternCountXLabel,
+                      self.patternCountXSlider, self.patternCountXValue, @"Columns", brick->columns);
+            showCount(self.patternCountYRow, self.patternCountYLabel,
+                      self.patternCountYSlider, self.patternCountYValue, @"Rows", brick->rows);
+            showValue(self.patternValueOneRow, self.patternValueOneLabel,
+                      self.patternValueOneSlider, self.patternValueOneValue,
+                      equalWidth ? @"Mortar width" : @"Mortar",
+                      0.0,
+                      equalWidth ? textureSpaceMortarMaximum(*brick) : 0.95,
+                      brick->mortar);
+            self.equalMortarWidthCheckbox.hidden = NO;
+            self.equalMortarWidthCheckbox.state = equalWidth
+                ? NSControlStateValueOn
+                : NSControlStateValueOff;
+        }
         showValue(self.patternValueTwoRow, self.patternValueTwoLabel,
                   self.patternValueTwoSlider, self.patternValueTwoValue,
                   @"Stagger", 0.0, 1.0, brick->stagger);
@@ -1850,37 +2026,95 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     const auto countY = static_cast<std::uint32_t>(
         std::llround(self.patternCountYSlider.doubleValue));
     if (auto* brick = std::get_if<paperweight::BrickGridOperation>(&layer->operation)) {
-        const auto previousMortarSpace = brick->mortarSpace;
-        const auto previousMaximumCount = std::max(brick->columns, brick->rows);
-        const bool equalWidth =
-            self.equalMortarWidthCheckbox.state == NSControlStateValueOn;
-        double mortar = sender == self.patternValueOneSlider
-            ? self.patternValueOneSlider.doubleValue
-            : brick->mortar;
-        if (sender == self.equalMortarWidthCheckbox) {
-            if (equalWidth && previousMortarSpace == paperweight::BrickMortarSpace::cell) {
-                mortar /= static_cast<double>(previousMaximumCount);
-            } else if (!equalWidth &&
-                       previousMortarSpace == paperweight::BrickMortarSpace::texture) {
-                mortar = std::min(
-                    paperweight::LayerLimits::maximumGap,
-                    mortar * static_cast<double>(previousMaximumCount));
+        const bool wantsPhysical =
+            self.physicalBrickCheckbox.state == NSControlStateValueOn;
+        if (sender == self.physicalBrickCheckbox) {
+            if (wantsPhysical && !brick->physicalDimensions) {
+                const double width = material_.physicalSize.widthMetres / brick->columns;
+                const double height = material_.physicalSize.heightMetres / brick->rows;
+                const double mortar = brick->mortarSpace == paperweight::BrickMortarSpace::texture
+                    ? brick->mortar * std::min(
+                        material_.physicalSize.widthMetres,
+                        material_.physicalSize.heightMetres)
+                    : brick->mortar * std::min(width, height);
+                brick->physicalDimensions = paperweight::BrickGridOperation::PhysicalDimensions{
+                    width,
+                    height,
+                    mortar,
+                };
+            } else if (!wantsPhysical && brick->physicalDimensions) {
+                const auto physical = *brick->physicalDimensions;
+                brick->columns = static_cast<std::uint32_t>(std::clamp(
+                    std::llround(material_.physicalSize.widthMetres / physical.widthMetres),
+                    static_cast<long long>(paperweight::LayerLimits::minimumPatternCount),
+                    static_cast<long long>(paperweight::LayerLimits::maximumPatternCount)));
+                brick->rows = static_cast<std::uint32_t>(std::clamp(
+                    std::llround(material_.physicalSize.heightMetres / physical.heightMetres),
+                    static_cast<long long>(paperweight::LayerLimits::minimumPatternCount),
+                    static_cast<long long>(paperweight::LayerLimits::maximumPatternCount)));
+                brick->mortar = std::clamp(
+                    physical.mortarMetres / std::min(
+                        physical.widthMetres,
+                        physical.heightMetres),
+                    paperweight::LayerLimits::minimumGap,
+                    paperweight::LayerLimits::maximumGap);
+                brick->mortarSpace = paperweight::BrickMortarSpace::cell;
+                brick->physicalDimensions.reset();
             }
         }
-        brick->columns = countX;
-        brick->rows = countY;
-        brick->mortarSpace = equalWidth
-            ? paperweight::BrickMortarSpace::texture
-            : paperweight::BrickMortarSpace::cell;
-        self.patternValueOneSlider.maxValue = equalWidth
-            ? textureSpaceMortarMaximum(*brick)
-            : paperweight::LayerLimits::maximumGap;
-        brick->mortar = std::clamp(
-            mortar,
-            paperweight::LayerLimits::minimumGap,
-            self.patternValueOneSlider.maxValue);
-        self.patternValueOneSlider.doubleValue = brick->mortar;
-        self.patternValueOneLabel.stringValue = equalWidth ? @"Mortar width" : @"Mortar";
+
+        if (sender == self.physicalBrickCheckbox) {
+            [self refreshLayerInspector];
+        }
+
+        if (brick->physicalDimensions) {
+            const auto width = positiveDecimal(self.physicalBrickWidthField);
+            const auto height = positiveDecimal(self.physicalBrickHeightField);
+            const auto mortar = nonNegativeDecimal(self.physicalBrickMortarField);
+            if (!width || !height || !mortar || *mortar >= std::min(*width, *height)) {
+                self.statusLabel.stringValue =
+                    @"Brick dimensions must be positive metres; mortar may be zero but must be smaller than the brick.";
+                self.statusLabel.textColor = NSColor.systemRedColor;
+                return;
+            }
+            brick->physicalDimensions = paperweight::BrickGridOperation::PhysicalDimensions{
+                *width,
+                *height,
+                *mortar,
+            };
+        } else {
+            const auto previousMortarSpace = brick->mortarSpace;
+            const auto previousMaximumCount = std::max(brick->columns, brick->rows);
+            const bool equalWidth =
+                self.equalMortarWidthCheckbox.state == NSControlStateValueOn;
+            double mortar = sender == self.patternValueOneSlider
+                ? self.patternValueOneSlider.doubleValue
+                : brick->mortar;
+            if (sender == self.equalMortarWidthCheckbox) {
+                if (equalWidth && previousMortarSpace == paperweight::BrickMortarSpace::cell) {
+                    mortar /= static_cast<double>(previousMaximumCount);
+                } else if (!equalWidth &&
+                           previousMortarSpace == paperweight::BrickMortarSpace::texture) {
+                    mortar = std::min(
+                        paperweight::LayerLimits::maximumGap,
+                        mortar * static_cast<double>(previousMaximumCount));
+                }
+            }
+            brick->columns = countX;
+            brick->rows = countY;
+            brick->mortarSpace = equalWidth
+                ? paperweight::BrickMortarSpace::texture
+                : paperweight::BrickMortarSpace::cell;
+            self.patternValueOneSlider.maxValue = equalWidth
+                ? textureSpaceMortarMaximum(*brick)
+                : paperweight::LayerLimits::maximumGap;
+            brick->mortar = std::clamp(
+                mortar,
+                paperweight::LayerLimits::minimumGap,
+                self.patternValueOneSlider.maxValue);
+            self.patternValueOneSlider.doubleValue = brick->mortar;
+            self.patternValueOneLabel.stringValue = equalWidth ? @"Mortar width" : @"Mortar";
+        }
         brick->stagger = self.patternValueTwoSlider.doubleValue;
         brick->softness = self.patternValueThreeSlider.doubleValue;
     } else if (auto* tile = std::get_if<paperweight::TileGridOperation>(&layer->operation)) {
@@ -1982,6 +2216,42 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     [self markDirty];
 }
 
+- (void)materialSizeChanged:(id)sender
+{
+    static_cast<void>(sender);
+    const auto width = positiveDecimal(self.materialWidthField);
+    const auto height = positiveDecimal(self.materialHeightField);
+    if (!width || !height) {
+        self.statusLabel.stringValue = @"Material repeat width and height must be positive metre values.";
+        self.statusLabel.textColor = NSColor.systemRedColor;
+        return;
+    }
+    const bool coverageFollowedMaterial =
+        previewCoverage_ == material_.physicalSize;
+    material_.physicalSize = {*width, *height};
+    if (coverageFollowedMaterial) {
+        previewCoverage_ = material_.physicalSize;
+        self.coverageWidthField.stringValue = [NSString stringWithFormat:@"%.6g", *width];
+        self.coverageHeightField.stringValue = [NSString stringWithFormat:@"%.6g", *height];
+    }
+    [self regeneratePreview];
+    [self markDirty];
+}
+
+- (void)coverageChanged:(id)sender
+{
+    static_cast<void>(sender);
+    const auto width = positiveDecimal(self.coverageWidthField);
+    const auto height = positiveDecimal(self.coverageHeightField);
+    if (!width || !height) {
+        self.statusLabel.stringValue = @"Preview coverage width and height must be positive metre values.";
+        self.statusLabel.textColor = NSColor.systemRedColor;
+        return;
+    }
+    previewCoverage_ = {*width, *height};
+    [self regeneratePreview];
+}
+
 - (void)parameterChanged:(id)sender
 {
     if (sender == self.seedField) {
@@ -2021,8 +2291,17 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     static_cast<void>(sender);
     material_ = paperweight::Material{};
     material_.layers.push_back(paperweight::makeNoiseLayer());
+    previewCoverage_ = material_.physicalSize;
     selectedLayer_ = 0;
     self.seedField.stringValue = [NSString stringWithFormat:@"%llu", material_.seed];
+    self.materialWidthField.stringValue = [NSString
+        stringWithFormat:@"%.6g", material_.physicalSize.widthMetres];
+    self.materialHeightField.stringValue = [NSString
+        stringWithFormat:@"%.6g", material_.physicalSize.heightMetres];
+    self.coverageWidthField.stringValue = [NSString
+        stringWithFormat:@"%.6g", previewCoverage_.widthMetres];
+    self.coverageHeightField.stringValue = [NSString
+        stringWithFormat:@"%.6g", previewCoverage_.heightMetres];
     self.frequencySlider.doubleValue = material_.frequency;
     self.octavesSlider.doubleValue = material_.octaves;
     self.lacunaritySlider.doubleValue = material_.lacunarity;
@@ -2100,7 +2379,16 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         selectedLayer_,
         static_cast<NSInteger>(0),
         static_cast<NSInteger>(material_.layers.size() - 1));
+    previewCoverage_ = material_.physicalSize;
     self.seedField.stringValue = [NSString stringWithFormat:@"%llu", material_.seed];
+    self.materialWidthField.stringValue = [NSString
+        stringWithFormat:@"%.6g", material_.physicalSize.widthMetres];
+    self.materialHeightField.stringValue = [NSString
+        stringWithFormat:@"%.6g", material_.physicalSize.heightMetres];
+    self.coverageWidthField.stringValue = [NSString
+        stringWithFormat:@"%.6g", previewCoverage_.widthMetres];
+    self.coverageHeightField.stringValue = [NSString
+        stringWithFormat:@"%.6g", previewCoverage_.heightMetres];
     self.frequencySlider.doubleValue = material_.frequency;
     self.octavesSlider.doubleValue = material_.octaves;
     self.lacunaritySlider.doubleValue = material_.lacunarity;
@@ -2134,7 +2422,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     pendingPreviewBlock_ = nil;
 
     const paperweight::GenerationRequest request{
-        material_, 512, 512, selectedOutput_, std::nullopt};
+        material_, 512, 512, selectedOutput_, std::nullopt, previewCoverage_};
     auto cancellation = std::make_shared<std::atomic_bool>(false);
     previewCancellation_ = cancellation;
     __weak AppDelegate* weakSelf = self;
@@ -2166,8 +2454,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
                 strongSelf->generatedImage_ = *image;
                 strongSelf.exportMenuItem.enabled = YES;
                 strongSelf.statusLabel.stringValue = [NSString
-                    stringWithFormat:@"512 × 512 %@ RGBA8 — %zu-node graph — mathematically seamless",
+                    stringWithFormat:@"512 × 512 %@ — %.6g × %.6g m — %zu-node graph — seamless",
                                      outputName(strongSelf->selectedOutput_),
+                                     strongSelf->previewCoverage_.widthMetres,
+                                     strongSelf->previewCoverage_.heightMetres,
                                      graphNodeCount];
                 strongSelf.statusLabel.textColor = NSColor.secondaryLabelColor;
                 return;

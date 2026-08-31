@@ -1,4 +1,4 @@
-# `.pmat` format version 5
+# `.pmat` format version 6
 
 Paperweight material files are UTF-8 text. They are intended to be readable,
 diffable, and small enough to embed alongside game assets.
@@ -7,9 +7,11 @@ diffable, and small enough to embed alongside game assets.
 
 ```text
 # Paperweight procedural material
-pmat.version = 5
+pmat.version = 6
 material.type = fbm
 material.seed = 18431
+material.width = 1m
+material.height = 1m
 colour.low = 0x000000FF
 colour.high = 0xFFFFFFFF
 noise.frequency = 4
@@ -66,9 +68,11 @@ no material; it never returns a partially accepted definition.
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
-| `pmat.version` | File-format version | `5` |
+| `pmat.version` | File-format version | `6` |
 | `material.type` | Generator model | `fbm` |
 | `material.seed` | Deterministic seed | Unsigned 64-bit integer |
+| `material.width` | Width of one seamless material repeat | Metre value from `0.000001m` to `1000000m` |
+| `material.height` | Height of one seamless material repeat | Metre value from `0.000001m` to `1000000m` |
 | `colour.low` | Low colour and threshold endpoint | `0xRRGGBBAA` hexadecimal |
 | `colour.high` | High colour and threshold endpoint | `0xRRGGBBAA` hexadecimal |
 | `noise.frequency` | Base lattice frequency for noise operations | Integer from 1 to 64 |
@@ -83,6 +87,14 @@ no material; it never returns a partially accepted definition.
 The combination of frequency, octaves, and lacunarity must keep every lattice
 period at or below 4096. The roughness endpoints may be reversed if an inverse
 relationship is wanted.
+
+`material.width` and `material.height` describe one complete mathematical
+repeat, not the pixel dimensions of an export. A caller may set
+`GenerationRequest::physicalCoverage` to the same size or to a whole-number
+multiple on either axis. Fractional repeats are rejected because cropping or
+stretching them would break the seamlessness contract. Omitting coverage means
+exactly one material repeat. Changing only output resolution changes sampling
+density, not material-space feature placement.
 
 ## Layer fields
 
@@ -105,9 +117,12 @@ The operation selects exactly one parameter group:
 | `levels` | `layer.N.levels.input_high` | Decimal from 0 to 1 and greater than input low |
 | `levels` | `layer.N.levels.gamma` | Decimal from 0.1 to 4 |
 | `threshold` | `layer.N.threshold.value` | Decimal from 0 to 1 |
-| `brick_grid` | `layer.N.brick.columns`, `rows` | Integers from 1 to 64 |
-| `brick_grid` | `layer.N.brick.mortar` | Decimal from 0 to 0.95 |
-| `brick_grid` | `layer.N.brick.mortar_space` | `cell` or `texture` |
+| `brick_grid` | `layer.N.brick.sizing` | `relative` or `physical` |
+| `brick_grid` (relative) | `layer.N.brick.columns`, `rows` | Integers from 1 to 64 |
+| `brick_grid` (relative) | `layer.N.brick.mortar` | Decimal from 0 to 0.95 |
+| `brick_grid` (relative) | `layer.N.brick.mortar_space` | `cell` or `texture` |
+| `brick_grid` (physical) | `layer.N.brick.width`, `height` | Positive metre values that divide the material repeat into 1 to 64 bricks |
+| `brick_grid` (physical) | `layer.N.brick.mortar_width` | Non-negative metre value smaller than brick width and height |
 | `brick_grid` | `layer.N.brick.stagger` | Decimal from 0 to 1 |
 | `brick_grid` | `layer.N.brick.softness` | Decimal from 0 to 0.25 |
 | `tile_grid` | `layer.N.tile.columns`, `rows` | Integers from 1 to 64 |
@@ -131,7 +146,7 @@ The operation selects exactly one parameter group:
 | `circles` | `layer.N.circles.softness` | Decimal from 0 to 0.25 |
 
 Brick and tile values are one inside each unit and zero in mortar or grout.
-With brick `mortar_space = cell`, mortar is a fraction of each repeated cell,
+With relative brick `mortar_space = cell`, mortar is a fraction of each repeated cell,
 preserving version-4 behaviour. With `mortar_space = texture`, mortar is a
 fraction of the complete tile and therefore has the same horizontal and
 vertical width even when column and row counts differ. Stagger shifts alternate
@@ -141,7 +156,22 @@ Random cells assign one deterministic value per cell. Shape sizes are fractions
 of a repeated cell, and softness controls a smooth coverage transition around
 an edge.
 
-Every layer in versions 3 through 5 also has this coordinate-transform group:
+Physical brick sizing replaces `columns`, `rows`, `mortar`, and
+`mortar_space` with explicit dimensions. For example:
+
+```text
+material.width = 1.92m
+material.height = 0.45m
+layer.0.brick.sizing = physical
+layer.0.brick.width = 0.24m
+layer.0.brick.height = 0.075m
+layer.0.brick.mortar_width = 0.01m
+```
+
+This produces eight columns and six rows. Mortar is evaluated as a true 10mm
+distance on both axes rather than as a percentage of differently shaped cells.
+
+Every layer in versions 3 through 6 also has this coordinate-transform group:
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
@@ -160,7 +190,7 @@ Offsets are continuous and wrap naturally. When enabled, warp uses two
 independent periodic FBM channels to displace the transformed coordinates.
 Disabling warp, or setting its strength to zero, is exactly the identity path.
 
-Every layer in versions 3 through 5 also declares its optional mask:
+Every layer in versions 3 through 6 also declares its optional mask:
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
@@ -174,7 +204,7 @@ The mask samples an independent periodic FBM field in the layer's transformed
 coordinates. Its remapped value multiplies the layer opacity, allowing smooth,
 threshold-like, or inverted spatial control without changing the operation.
 Disabled masks evaluate to exactly one. Transform, warp, and mask fields remain
-required in versions 3 through 5 even when their optional features are disabled; this
+required in versions 3 through 6 even when their optional features are disabled; this
 keeps canonical files explicit and round trips unambiguous.
 
 Noise seed offset zero reproduces the original material seed exactly. Other
@@ -190,7 +220,7 @@ formula is applied to scalar, red, green, blue, and alpha channels.
 
 ## Graph compilation
 
-Paperweight v0.0.6 retains the layer syntax, now at version 5, as the compact,
+Paperweight v0.0.7 retains the layer syntax, now at version 6, as the compact,
 human-editable authoring projection. Before generation, the portable core
 compiles it into a directed acyclic material graph:
 
@@ -207,21 +237,21 @@ Portable C++ callers may instead provide a direct graph with independent output
 branches through `GenerationRequest::graph`.
 
 Graph-specific text syntax is intentionally deferred until Paperweight has a
-graph authoring workflow that can round-trip it honestly. Version 5 exists for
-the user-authored brick mortar-space setting, not merely to serialise the
-internal graph representation.
+graph authoring workflow that can round-trip it honestly. Format version 6 adds
+physical authoring data; it does not serialise the internal graph representation.
 
 ## Material outputs
 
-Every layer-authored v0.0.6 output derives from the same final graph sample at
+Every layer-authored v0.0.7 output derives from the same final graph sample at
 the same pixel centre:
 
 - Colour encodes the final RGBA channels.
 - Height writes the final scalar to R, G, and B as linear UNORM8, with alpha 255.
 - Roughness interpolates between `roughness.low` and `roughness.high` using the
   final scalar, then writes linear greyscale UNORM8 with alpha 255.
-- Normal uses wrapped central differences of the final scalar field. The
-  tangent-space vector `(-dH/du * strength, -dH/dv * strength, 1)` is
+- Normal uses wrapped central differences of the final scalar field. Derivatives
+  are measured per metre of requested coverage. The tangent-space vector
+  `(-dH/dx * strength, -dH/dy * strength, 1)` is
   normalised, maps XYZ from `[-1, 1]` to RGB `[0, 255]`, and writes alpha 255.
 
 All procedural noise remains periodic, and scalar neighbours used by normal
@@ -230,7 +260,7 @@ generation wrap mathematically across both tile axes.
 ## Compatibility policy
 
 The `.pmat` format version and Paperweight application version are separate.
-Paperweight v0.0.6 reads versions 1 through 5 and writes version 5. A reader
+Paperweight v0.0.7 reads versions 1 through 6 and writes version 6. A reader
 rejects unsupported versions and unknown fields so that it cannot quietly
 reinterpret a future material.
 
@@ -241,8 +271,10 @@ opening such a file; this is byte-identical. Version-2 layers acquire identity
 transforms with warp and masks disabled, which also preserves every generated
 pixel. Version 3 remains the exact Masks and Warping representation. Structural
 operations require version 4. Version 5 adds `brick.mortar_space`; version-4
-bricks migrate to `cell` and retain their exact pixels. Saving any older format
-performs the explicit migration to version 5.
+bricks migrate to `cell` and retain their exact pixels. Version 6 adds the
+physical repeat and brick fields. Versions 1 through 5 migrate to a 1m by 1m
+repeat and retain their exact default-coverage pixels. Saving any older format
+performs the explicit migration to version 6.
 
 The portable entry points are `paperweight::parsePmat` and
 `paperweight::serialisePmat` in `include/paperweight/pmat.hpp`.

@@ -13,11 +13,11 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-v0.0.6 is the current Material Graph release. The friendly layer stack now
-compiles into a validated portable graph containing generator, mask, output,
-and processing nodes (including composites). The same C++ API can also accept a
-direct graph whose colour, height, normal, and roughness outputs follow
-independent branches. Existing material files retain their v0.0.5 pixels exactly.
+v0.0.7 is the current Physical Scale release. A material declares the real-world
+width and height of one seamless repeat, and callers may request any coverage
+containing whole repeats. Feature placement is therefore independent of output
+resolution. Brick layers may optionally use explicit width, height, and mortar
+width in metres, including equal physical mortar on both axes.
 
 The staged work is tracked in [GitHub Issues](https://github.com/SolenMusic/Paperweight/issues).
 
@@ -40,24 +40,25 @@ See [docs/architecture.md](docs/architecture.md) and [docs/roadmap.md](docs/road
 
 ## Current scope
 
-The native editor intentionally retains its approachable layer interface. Each
+The native editor retains its approachable layer interface. Each
 edit compiles the stack into a fresh graph and renders only the requested output
 branch; the preview status shows the resulting node count. Structural controls,
 transforms, warp, masks, output selection, 1x1/3x3 tiling, open/save, and PNG
 export behave as before. Preview work remains cancellable and off AppKit's event
 thread, and continuous sliders retain direct mouse tracking. The visible layer
-stack now matches bottom-to-top evaluation, and brick layers may opt into equal
-horizontal and vertical mortar measured in texture space.
+stack matches bottom-to-top evaluation. Compact repeat-size and preview-coverage
+controls use metres, while brick layers can switch between relative sizing and
+friendly metre fields.
 
-Format-version-1 through version-4 `.pmat` files still open with their
-historical output intact; saving migrates them to canonical format version 5.
-Version 5 adds the brick mortar-space setting; older bricks remain cell-relative.
-v0.0.6 does not invent a redundant graph syntax for the existing layer recipe:
+Format-version-1 through version-5 `.pmat` files still open with their
+historical output intact; saving migrates them to canonical format version 6.
+Version 6 adds material repeat dimensions and optional physical brick sizing.
+The editor does not invent a redundant graph syntax for the existing layer recipe:
 direct graph construction is currently a portable C++ API, while visual graph
 authoring and graph-specific persistence remain later editor work.
 
-Physical scale, advanced surface tools, performance work, and the stable game
-library follow in the documented roadmap.
+Advanced surface tools, performance work, and the stable game library follow in
+the documented roadmap.
 
 ## Repository layout
 
@@ -106,7 +107,8 @@ to store one, build a stack in the Layer Stack panel, choose a material output,
 and use File > Export PNG to write that 512x512 RGBA8 tile. Select a layer and
 use the Layer, Transform, and Mask tabs to shape it. Structural operations show
 their own controls in the Layer tab. The stack is shown bottom-to-top, matching
-evaluation order.
+evaluation order. Repeat Size is stored with the material; Coverage controls how
+many whole physical repeats the preview generates.
 See [the `.pmat` format reference](docs/pmat-format.md) for the text format.
 
 For a universal Intel and Apple Silicon build:
@@ -126,7 +128,8 @@ conventions.
 `examples/generate_graph.cpp` demonstrates a direct branched graph in which the
 four material outputs deliberately select different sources. Layer-oriented
 callers can continue using `GenerationRequest` exactly as before; the core
-compiles their material once per request.
+compiles their material once per request. Set `physicalCoverage` when a caller
+needs more than the material's single default repeat.
 
 ## Licence
 

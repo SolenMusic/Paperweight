@@ -9,6 +9,7 @@
 
 #include <paperweight/image.hpp>
 #include <paperweight/layer.hpp>
+#include <paperweight/physical.hpp>
 
 namespace paperweight {
 
@@ -24,6 +25,7 @@ struct Material {
     double roughnessLow{0.25};
     double roughnessHigh{0.85};
     std::vector<MaterialLayer> layers;
+    PhysicalSize physicalSize;
 
     friend bool operator==(const Material&, const Material&) = default;
 };

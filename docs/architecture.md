@@ -87,6 +87,21 @@ Generated nodes record their source-layer index so diagnostics and later
 incremental caching can map evaluation work back to authoring state. Existing
 v0.0.5 golden pixels are unchanged.
 
+In v0.0.7, every `Material` declares the physical width and height of its unit
+repeat. `GenerationRequest::physicalCoverage` optionally selects a larger
+world-space rectangle. Coverage must contain a whole number of material repeats
+on both axes, making the output periodic without stretching, clipping, or seam
+repair. Omitting coverage evaluates exactly one repeat and preserves all legacy
+callers and pixels. Pixel-centre coordinates scale by the repeat count, while
+normal-map derivatives divide by coverage in metres, so both feature placement
+and surface slope remain stable when resolution changes.
+
+Brick generators may additionally replace relative column, row, and mortar
+parameters with physical width, height, and mortar width. The dimensions must
+divide the material repeat into 1 to 64 whole bricks. Mortar distance and edge
+softness are evaluated in metre space, giving one real horizontal/vertical
+width even on non-square repeats.
+
 The prepared graph evaluator resolves identifiers once per generation request
 and memoises shared nodes once per sample. It walks only the branch selected by
 `GenerationRequest::output`. An optional `GenerationRequest::graph` lets a
@@ -136,7 +151,7 @@ do not alter the cancellation contract.
 `.pmat` is a human-readable, versioned text format. Parsing and serialisation live in the portable core. Round trips should be stable and errors should identify useful source locations.
 
 The format version is deliberately independent of the application version.
-Paperweight v0.0.6 reads `.pmat` format versions 1 through 5 and writes version 5.
+Paperweight v0.0.7 reads `.pmat` format versions 1 through 6 and writes version 6.
 Unknown keys and unsupported format versions fail explicitly instead of being
 silently ignored. Version 1 maps to the original implicit FBM source; adding an
 explicit base noise layer produces byte-identical output. Version-2 layers map
@@ -144,7 +159,10 @@ to identity transforms with warp and masks disabled, also preserving their
 historical output exactly. Format version 4 adds the seven structural operation
 names and their explicit parameter groups. Format version 5 adds explicit cell-
 or texture-space brick mortar; older bricks migrate to cell space without pixel
-changes. The v0.0.6 layer recipe still compiles to a graph only in memory.
+changes. Format version 6 adds metre-suffixed material repeat dimensions and the
+optional physical brick parameter group. Versions 1 through 5 acquire a 1m by
+1m repeat, so default one-repeat generation remains byte-identical. The layer
+recipe still compiles to a graph only in memory.
 Direct-graph text persistence is deferred until a node-authoring workflow can
 round-trip it without discarding information.
 See [pmat-format.md](pmat-format.md).
@@ -176,4 +194,4 @@ See [pmat-format.md](pmat-format.md).
 
 Visual node-canvas authoring, graph-specific text persistence, WebAssembly
 bindings, game-engine adapters, complete PBR authoring, arbitrary-angle
-rotation, and GPU backends remain outside v0.0.6.
+rotation, and GPU backends remain outside v0.0.7.

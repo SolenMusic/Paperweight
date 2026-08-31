@@ -220,7 +220,11 @@ EvaluatedSample evaluateOperation(
             [&context](const BrickGridOperation& brick) {
                 return sampleFromScalar(
                     context.material,
-                    evaluateBrickGrid(brick, context.u, context.v));
+                    evaluateBrickGrid(
+                        brick,
+                        context.material.physicalSize,
+                        context.u,
+                        context.v));
             },
             [&context](const TileGridOperation& tile) {
                 return sampleFromScalar(

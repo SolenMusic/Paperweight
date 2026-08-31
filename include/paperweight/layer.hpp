@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string_view>
 #include <variant>
 
@@ -90,6 +91,16 @@ struct BrickGridOperation {
     double stagger{0.5};
     double softness{0.02};
     BrickMortarSpace mortarSpace{BrickMortarSpace::cell};
+    struct PhysicalDimensions {
+        double widthMetres{0.24};
+        double heightMetres{0.075};
+        double mortarMetres{0.01};
+
+        friend constexpr bool operator==(
+            const PhysicalDimensions&,
+            const PhysicalDimensions&) = default;
+    };
+    std::optional<PhysicalDimensions> physicalDimensions;
 
     friend constexpr bool operator==(
         const BrickGridOperation&,
