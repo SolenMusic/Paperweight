@@ -3,6 +3,8 @@
 #include <paperweight/evaluation.hpp>
 #include <paperweight/noise.hpp>
 
+#include "graph_evaluator.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <exception>
@@ -83,11 +85,43 @@ GenerationResult generate(
             "output dimensions must be between 1 and 4096 pixels",
         };
     }
-    if (const auto error = validateMaterial(request.material)) {
-        return GenerationError{GenerationErrorCode::invalidMaterial, *error};
+    switch (request.output) {
+    case MaterialOutput::colour:
+    case MaterialOutput::height:
+    case MaterialOutput::normal:
+    case MaterialOutput::roughness:
+        break;
+    default:
+        return GenerationError{
+            GenerationErrorCode::invalidOutput,
+            "the requested material output is not supported",
+        };
+    }
+
+    MaterialGraph compiledGraph;
+    const MaterialGraph* graph = nullptr;
+    if (request.graph) {
+        if (const auto error = validateMaterialSettings(request.material)) {
+            return GenerationError{GenerationErrorCode::invalidMaterial, *error};
+        }
+        if (const auto error = validateMaterialGraph(*request.graph)) {
+            return GenerationError{GenerationErrorCode::invalidGraph, error->message};
+        }
+        graph = &*request.graph;
+    } else {
+        if (const auto error = validateMaterial(request.material)) {
+            return GenerationError{GenerationErrorCode::invalidMaterial, *error};
+        }
+        auto compilation = compileMaterialGraph(request.material);
+        if (const auto* error = std::get_if<GraphError>(&compilation)) {
+            return GenerationError{GenerationErrorCode::invalidGraph, error->message};
+        }
+        compiledGraph = std::get<MaterialGraph>(std::move(compilation));
+        graph = &compiledGraph;
     }
 
     try {
+        detail::GraphEvaluator evaluator(request.material, *graph);
         Image image(request.width, request.height);
         if (request.output == MaterialOutput::normal) {
             std::vector<double> heights(
@@ -100,7 +134,7 @@ GenerationResult generate(
                 for (std::uint32_t x = 0; x < request.width; ++x) {
                     const double u = (static_cast<double>(x) + 0.5) / request.width;
                     heights[static_cast<std::size_t>(y) * request.width + x] =
-                        evaluateMaterialSample(request.material, u, v).scalar;
+                        evaluator.evaluate(MaterialOutput::normal, u, v).scalar;
                 }
             }
 
@@ -140,7 +174,7 @@ GenerationResult generate(
             const double v = (static_cast<double>(y) + 0.5) / request.height;
             for (std::uint32_t x = 0; x < request.width; ++x) {
                 const double u = (static_cast<double>(x) + 0.5) / request.width;
-                const auto sample = evaluateMaterialSample(request.material, u, v);
+                const auto sample = evaluator.evaluate(request.output, u, v);
                 switch (request.output) {
                 case MaterialOutput::colour:
                     row[x] = encodeColour(sample);

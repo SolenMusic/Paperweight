@@ -2,6 +2,7 @@
 #include <paperweight/hash.hpp>
 #include <paperweight/image.hpp>
 #include <paperweight/evaluation.hpp>
+#include <paperweight/graph.hpp>
 #include <paperweight/layer.hpp>
 #include <paperweight/material.hpp>
 #include <paperweight/noise.hpp>
@@ -21,6 +22,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <variant>
 #include <utility>
 
@@ -39,6 +41,15 @@ void expect(bool condition, std::string_view description)
 void expectNear(double actual, double expected, double tolerance, std::string_view description)
 {
     expect(std::abs(actual - expected) <= tolerance, description);
+}
+
+void expectGraphError(
+    const paperweight::MaterialGraph& graph,
+    paperweight::GraphErrorCode code,
+    std::string_view description)
+{
+    const auto error = paperweight::validateMaterialGraph(graph);
+    expect(error && error->code == code, description);
 }
 
 template<typename Exception, typename Function>
@@ -83,9 +94,9 @@ paperweight::Material materialWithNoiseParameters(
 
 void testVersion()
 {
-    constexpr paperweight::Version expected{0, 0, 5};
+    constexpr paperweight::Version expected{0, 0, 6};
     static_assert(paperweight::currentVersion == expected);
-    expect(paperweight::versionString() == "0.0.5", "version string is 0.0.5");
+    expect(paperweight::versionString() == "0.0.6", "version string is 0.0.6");
 }
 
 void testImage()
@@ -627,9 +638,278 @@ void testStructuralGenerators()
            "invalid circle radii are diagnosed");
 }
 
+void testMaterialGraph()
+{
+    static_assert(std::is_aggregate_v<paperweight::GenerationRequest>);
+
+    auto material = paperweight::Material{};
+    material.layers = {
+        paperweight::makeNoiseLayer(11),
+        paperweight::MaterialLayer{
+            true,
+            1.0,
+            paperweight::CompositeMode::blend,
+            paperweight::LevelsOperation{0.1, 0.9, 1.2},
+            {},
+            {}},
+        paperweight::makeSolidColourLayer({200, 120, 70, 255}),
+        paperweight::makeCirclesLayer(),
+    };
+    material.layers[2].compositeMode = paperweight::CompositeMode::multiply;
+    material.layers[2].opacity = 0.6;
+    material.layers[2].transform.scaleX = 2;
+    material.layers[2].mask.enabled = true;
+    material.layers[2].mask.seedOffset = 81;
+    material.layers[3].enabled = false;
+
+    const auto compilation = paperweight::compileMaterialGraph(material);
+    const auto* graph = std::get_if<paperweight::MaterialGraph>(&compilation);
+    expect(graph != nullptr, "valid layer stacks compile into material graphs");
+    if (graph == nullptr) {
+        return;
+    }
+    expect(!paperweight::validateMaterialGraph(*graph),
+           "compiled layer graphs satisfy graph validation");
+    expect(graph->nodes.size() == 12,
+           "layer compilation emits explicit source, processing, mask, and output nodes");
+
+    std::array<std::size_t, 4> categoryCounts{};
+    std::array<std::size_t, 4> outputCounts{};
+    std::size_t mappedNodes = 0;
+    for (const auto& node : graph->nodes) {
+        ++categoryCounts[static_cast<std::size_t>(paperweight::graphNodeCategory(node))];
+        const auto sourceLayer = std::visit(
+            [](const auto& value) -> std::optional<std::size_t> {
+                using Node = std::decay_t<decltype(value)>;
+                if constexpr (std::is_same_v<Node, paperweight::OutputNode>) {
+                    return std::nullopt;
+                } else {
+                    return value.sourceLayer;
+                }
+            },
+            node);
+        if (sourceLayer) {
+            ++mappedNodes;
+        }
+        if (const auto* output = std::get_if<paperweight::OutputNode>(&node)) {
+            ++outputCounts[paperweight::materialOutputIndex(output->output)];
+        }
+    }
+    expect(categoryCounts[static_cast<std::size_t>(
+               paperweight::GraphNodeCategory::generator)] == 3 &&
+               categoryCounts[static_cast<std::size_t>(
+                   paperweight::GraphNodeCategory::processing)] == 4 &&
+               categoryCounts[static_cast<std::size_t>(
+                   paperweight::GraphNodeCategory::mask)] == 1 &&
+               categoryCounts[static_cast<std::size_t>(
+                   paperweight::GraphNodeCategory::output)] == 4,
+           "compiled graphs use all four explicit node categories");
+    expect(std::all_of(outputCounts.begin(), outputCounts.end(), [](auto count) {
+               return count == 1;
+           }),
+           "compiled graphs route each material output exactly once");
+    expect(mappedNodes == 7,
+           "compiled evaluation nodes retain their source-layer mapping");
+
+    auto reordered = *graph;
+    std::reverse(reordered.nodes.begin(), reordered.nodes.end());
+    expect(!paperweight::validateMaterialGraph(reordered),
+           "valid graph dependencies may use arbitrary storage order and forward references");
+    reordered.nodes.emplace_back(paperweight::GeneratorNode{
+        500,
+        std::nullopt,
+        {},
+        paperweight::SolidColourOperation{{17, 23, 41, 255}},
+    });
+    expect(!paperweight::validateMaterialGraph(reordered),
+           "disconnected working nodes are permitted for editor workflows");
+
+    for (const auto output : paperweight::materialOutputs) {
+        const auto layered = paperweight::generate(
+            {material, 33, 25, output, std::nullopt});
+        const auto graphBacked = paperweight::generate({material, 33, 25, output, *graph});
+        const auto* layeredImage = std::get_if<paperweight::Image>(&layered);
+        const auto* graphImage = std::get_if<paperweight::Image>(&graphBacked);
+        expect(layeredImage != nullptr && graphImage != nullptr &&
+                   checksum(layeredImage->pixels()) == checksum(graphImage->pixels()),
+               "explicit compiled graphs preserve layer output pixels");
+    }
+
+    paperweight::MaterialGraph routedGraph;
+    routedGraph.nodes = {
+        paperweight::GeneratorNode{
+            10,
+            std::nullopt,
+            {},
+            paperweight::SolidColourOperation{{255, 0, 0, 255}},
+        },
+        paperweight::GeneratorNode{
+            20,
+            std::nullopt,
+            {},
+            paperweight::SolidColourOperation{{255, 255, 255, 255}},
+        },
+        paperweight::MaskNode{30, std::nullopt, {}, {true, false, 7, 0.1, 0.9}},
+        paperweight::ProcessingNode{
+            40,
+            std::nullopt,
+            paperweight::CompositeProcessing{
+                10,
+                20,
+                30,
+                paperweight::CompositeMode::blend,
+                1.0,
+            },
+        },
+        paperweight::ProcessingNode{
+            50,
+            std::nullopt,
+            paperweight::LevelsProcessing{40, {0.0, 1.0, 1.0}},
+        },
+        paperweight::OutputNode{60, paperweight::MaterialOutput::colour, 10},
+        paperweight::OutputNode{61, paperweight::MaterialOutput::height, 20},
+        paperweight::OutputNode{62, paperweight::MaterialOutput::normal, 20},
+        paperweight::OutputNode{63, paperweight::MaterialOutput::roughness, 50},
+    };
+    expect(!paperweight::validateMaterialGraph(routedGraph),
+           "direct branched graphs validate independently of layer stacks");
+    const auto routedColour = paperweight::generate(
+        {paperweight::Material{}, 8, 8, paperweight::MaterialOutput::colour, routedGraph});
+    const auto routedHeight = paperweight::generate(
+        {paperweight::Material{}, 8, 8, paperweight::MaterialOutput::height, routedGraph});
+    const auto* routedColourImage = std::get_if<paperweight::Image>(&routedColour);
+    const auto* routedHeightImage = std::get_if<paperweight::Image>(&routedHeight);
+    expect(routedColourImage != nullptr &&
+               routedColourImage->pixels().front() == paperweight::Rgba8{255, 0, 0, 255},
+           "a graph output node can route colour to its own branch");
+    expect(routedHeightImage != nullptr &&
+               routedHeightImage->pixels().front() == paperweight::Rgba8{255, 255, 255, 255},
+           "a graph output node can route height to a different branch");
+    const auto directSample = paperweight::evaluateMaterialGraphSample(
+        paperweight::Material{},
+        routedGraph,
+        paperweight::MaterialOutput::roughness,
+        -0.23,
+        0.61);
+    const auto repeatedSample = paperweight::evaluateMaterialGraphSample(
+        paperweight::Material{},
+        routedGraph,
+        paperweight::MaterialOutput::roughness,
+        0.77,
+        1.61);
+    expectNear(directSample.scalar, repeatedSample.scalar, 1.0e-12,
+               "direct material graphs remain periodic on both axes");
+
+    auto duplicateId = routedGraph;
+    std::get<paperweight::GeneratorNode>(duplicateId.nodes[1]).id = 10;
+    expectGraphError(
+        duplicateId,
+        paperweight::GraphErrorCode::duplicateNodeId,
+        "duplicate graph node identifiers are diagnosed");
+
+    auto zeroId = routedGraph;
+    std::get<paperweight::GeneratorNode>(zeroId.nodes.front()).id =
+        paperweight::invalidGraphNodeId;
+    expectGraphError(
+        zeroId,
+        paperweight::GraphErrorCode::invalidNodeId,
+        "zero is reserved as the invalid graph node identifier");
+
+    auto oversized = routedGraph;
+    for (std::size_t index = oversized.nodes.size();
+         index <= paperweight::GraphLimits::maximumNodes;
+         ++index) {
+        oversized.nodes.emplace_back(paperweight::GeneratorNode{
+            static_cast<paperweight::GraphNodeId>(1000 + index),
+            std::nullopt,
+            {},
+            paperweight::NoiseOperation{},
+        });
+    }
+    expectGraphError(
+        oversized,
+        paperweight::GraphErrorCode::invalidNodeCount,
+        "graphs larger than the portable node limit are rejected");
+
+    auto missingInput = routedGraph;
+    std::get<paperweight::OutputNode>(missingInput.nodes.back()).input = 999;
+    expectGraphError(
+        missingInput,
+        paperweight::GraphErrorCode::missingInput,
+        "dangling graph inputs are diagnosed");
+
+    auto incompatibleInput = routedGraph;
+    std::get<paperweight::OutputNode>(incompatibleInput.nodes[5]).input = 30;
+    expectGraphError(
+        incompatibleInput,
+        paperweight::GraphErrorCode::incompatibleInput,
+        "graph node categories constrain their input connections");
+
+    auto missingOutput = routedGraph;
+    missingOutput.nodes.pop_back();
+    expectGraphError(
+        missingOutput,
+        paperweight::GraphErrorCode::missingOutput,
+        "missing material output nodes are diagnosed");
+
+    auto duplicateOutput = routedGraph;
+    std::get<paperweight::OutputNode>(duplicateOutput.nodes.back()).output =
+        paperweight::MaterialOutput::colour;
+    expectGraphError(
+        duplicateOutput,
+        paperweight::GraphErrorCode::duplicateOutput,
+        "duplicate material output routes are diagnosed");
+
+    auto invalidParameter = routedGraph;
+    std::get<paperweight::GeneratorNode>(invalidParameter.nodes.front()).transform.scaleX = 0;
+    expectGraphError(
+        invalidParameter,
+        paperweight::GraphErrorCode::invalidParameter,
+        "invalid generator parameters receive node-specific diagnostics");
+
+    paperweight::MaterialGraph cyclicGraph;
+    cyclicGraph.nodes = {
+        paperweight::GeneratorNode{1, std::nullopt, {}, paperweight::NoiseOperation{}},
+        paperweight::ProcessingNode{
+            2,
+            std::nullopt,
+            paperweight::LevelsProcessing{3, {}},
+        },
+        paperweight::ProcessingNode{
+            3,
+            std::nullopt,
+            paperweight::ThresholdProcessing{2, {}},
+        },
+        paperweight::OutputNode{4, paperweight::MaterialOutput::colour, 2},
+        paperweight::OutputNode{5, paperweight::MaterialOutput::height, 2},
+        paperweight::OutputNode{6, paperweight::MaterialOutput::normal, 2},
+        paperweight::OutputNode{7, paperweight::MaterialOutput::roughness, 2},
+    };
+    expectGraphError(
+        cyclicGraph,
+        paperweight::GraphErrorCode::cycle,
+        "directed cycles are rejected before graph evaluation");
+
+    const auto invalidGraphGeneration = paperweight::generate(
+        {paperweight::Material{},
+         8,
+         8,
+         paperweight::MaterialOutput::colour,
+         missingInput});
+    expect(std::holds_alternative<paperweight::GenerationError>(invalidGraphGeneration) &&
+               std::get<paperweight::GenerationError>(invalidGraphGeneration).code ==
+                   paperweight::GenerationErrorCode::invalidGraph,
+           "invalid direct graphs return a structured generation error");
+}
+
 void testGenerator()
 {
-    const paperweight::GenerationRequest request{paperweight::Material{}, 48, 32};
+    const paperweight::GenerationRequest request{
+        paperweight::Material{},
+        48,
+        32,
+        paperweight::MaterialOutput::colour,
+        std::nullopt};
     auto firstResult = paperweight::generate(request);
     auto secondResult = paperweight::generate(request);
     expect(std::holds_alternative<paperweight::Image>(firstResult), "valid request generates an image");
@@ -822,7 +1102,8 @@ void testGenerator()
              paperweight::MaterialOutput::normal,
              paperweight::MaterialOutput::roughness,
          }) {
-        const paperweight::GenerationRequest layeredRequest{layeredMaterial, 31, 27, output};
+        const paperweight::GenerationRequest layeredRequest{
+            layeredMaterial, 31, 27, output, std::nullopt};
         const auto layeredA = paperweight::generate(layeredRequest);
         const auto layeredB = paperweight::generate(layeredRequest);
         const auto* imageA = std::get_if<paperweight::Image>(&layeredA);
@@ -832,7 +1113,11 @@ void testGenerator()
                "every layered material output is byte-deterministic");
     }
     const auto layeredHeight = paperweight::generate(
-        {layeredMaterial, 31, 27, paperweight::MaterialOutput::height});
+        {layeredMaterial,
+         31,
+         27,
+         paperweight::MaterialOutput::height,
+         std::nullopt});
     if (const auto* image = std::get_if<paperweight::Image>(&layeredHeight)) {
         const auto sample = paperweight::evaluateMaterialSample(
             layeredMaterial, 0.5 / 31.0, 0.5 / 27.0);
@@ -846,7 +1131,12 @@ void testGenerator()
              std::pair<std::uint32_t, std::uint32_t>{17, 29},
              std::pair<std::uint32_t, std::uint32_t>{65, 3},
          }) {
-        const paperweight::GenerationRequest representative{paperweight::Material{}, width, height};
+        const paperweight::GenerationRequest representative{
+            paperweight::Material{},
+            width,
+            height,
+            paperweight::MaterialOutput::colour,
+            std::nullopt};
         const auto generatedA = paperweight::generate(representative);
         const auto generatedB = paperweight::generate(representative);
         const auto* imageA = std::get_if<paperweight::Image>(&generatedA);
@@ -871,7 +1161,12 @@ void testGenerator()
 
     std::size_t cancellationChecks = 0;
     const auto cancelled = paperweight::generate(
-        paperweight::GenerationRequest{paperweight::Material{}, 128, 128},
+        paperweight::GenerationRequest{
+            paperweight::Material{},
+            128,
+            128,
+            paperweight::MaterialOutput::colour,
+            std::nullopt},
         [&cancellationChecks]() { return ++cancellationChecks >= 4; });
     expect(std::holds_alternative<paperweight::GenerationError>(cancelled) &&
                std::get<paperweight::GenerationError>(cancelled).code ==
@@ -881,7 +1176,11 @@ void testGenerator()
 
     const auto cancelledBeforeStart = paperweight::generate(
         paperweight::GenerationRequest{
-            paperweight::Material{}, 128, 128, paperweight::MaterialOutput::normal},
+            paperweight::Material{},
+            128,
+            128,
+            paperweight::MaterialOutput::normal,
+            std::nullopt},
         []() { return true; });
     expect(std::holds_alternative<paperweight::GenerationError>(cancelledBeforeStart) &&
                std::get<paperweight::GenerationError>(cancelledBeforeStart).code ==
@@ -934,7 +1233,8 @@ void testPmat()
                    std::get<paperweight::Material>(example).layers.front().operation),
            "checked-in canonical example contains an explicit base-noise layer");
     if (const auto* material = std::get_if<paperweight::Material>(&example)) {
-        const auto generated = paperweight::generate({*material, 48, 32});
+        const auto generated = paperweight::generate(
+            {*material, 48, 32, paperweight::MaterialOutput::colour, std::nullopt});
         const auto* image = std::get_if<paperweight::Image>(&generated);
         expect(image != nullptr && checksum(image->pixels()) == 4981563472745378647ULL,
                "checked-in example retains the default golden image checksum");
@@ -959,8 +1259,10 @@ void testPmat()
                    emberMaterial->layers[1].mask.enabled &&
                    emberMaterial->layers[1].mask.seedOffset == 77,
                "checked-in coloured example exercises transforms, warp, and masks");
-        const auto firstEmber = paperweight::generate({*emberMaterial, 37, 29});
-        const auto secondEmber = paperweight::generate({*emberMaterial, 37, 29});
+        const auto firstEmber = paperweight::generate(
+            {*emberMaterial, 37, 29, paperweight::MaterialOutput::colour, std::nullopt});
+        const auto secondEmber = paperweight::generate(
+            {*emberMaterial, 37, 29, paperweight::MaterialOutput::colour, std::nullopt});
         const auto* firstImage = std::get_if<paperweight::Image>(&firstEmber);
         const auto* secondImage = std::get_if<paperweight::Image>(&secondEmber);
         expect(firstImage != nullptr && secondImage != nullptr &&
@@ -990,10 +1292,22 @@ void testPmat()
                    cobblestoneMaterial->layers.front().operation),
            "checked-in cobblestone example uses the Worley-cell generator");
     if (brickMaterial != nullptr && cobblestoneMaterial != nullptr) {
-        const auto brickA = paperweight::generate({*brickMaterial, 41, 37});
-        const auto brickB = paperweight::generate({*brickMaterial, 41, 37});
-        const auto cobbleA = paperweight::generate({*cobblestoneMaterial, 41, 37});
-        const auto cobbleB = paperweight::generate({*cobblestoneMaterial, 41, 37});
+        const auto brickA = paperweight::generate(
+            {*brickMaterial, 41, 37, paperweight::MaterialOutput::colour, std::nullopt});
+        const auto brickB = paperweight::generate(
+            {*brickMaterial, 41, 37, paperweight::MaterialOutput::colour, std::nullopt});
+        const auto cobbleA = paperweight::generate(
+            {*cobblestoneMaterial,
+             41,
+             37,
+             paperweight::MaterialOutput::colour,
+             std::nullopt});
+        const auto cobbleB = paperweight::generate(
+            {*cobblestoneMaterial,
+             41,
+             37,
+             paperweight::MaterialOutput::colour,
+             std::nullopt});
         const auto* brickImageA = std::get_if<paperweight::Image>(&brickA);
         const auto* brickImageB = std::get_if<paperweight::Image>(&brickB);
         const auto* cobbleImageA = std::get_if<paperweight::Image>(&cobbleA);
@@ -1107,8 +1421,18 @@ void testPmat()
                        std::get<paperweight::Material>(roundTrip) == candidate,
                    "boundary and custom materials round-trip exactly");
             if (const auto* reparsed = std::get_if<paperweight::Material>(&roundTrip)) {
-                const auto directImage = paperweight::generate({candidate, 23, 17});
-                const auto fileImage = paperweight::generate({*reparsed, 23, 17});
+                const auto directImage = paperweight::generate(
+                    {candidate,
+                     23,
+                     17,
+                     paperweight::MaterialOutput::colour,
+                     std::nullopt});
+                const auto fileImage = paperweight::generate(
+                    {*reparsed,
+                     23,
+                     17,
+                     paperweight::MaterialOutput::colour,
+                     std::nullopt});
                 const auto* directPixels = std::get_if<paperweight::Image>(&directImage);
                 const auto* filePixels = std::get_if<paperweight::Image>(&fileImage);
                 expect(directPixels != nullptr && filePixels != nullptr &&
@@ -1171,7 +1495,12 @@ void testPmat()
                versionTwoMaterial->layers.front().mask == paperweight::LayerMask{},
            "v0.0.3 .pmat files migrate to identity transforms and disabled masks");
     if (versionTwoMaterial != nullptr) {
-        const auto generated = paperweight::generate({*versionTwoMaterial, 48, 32});
+        const auto generated = paperweight::generate(
+            {*versionTwoMaterial,
+             48,
+             32,
+             paperweight::MaterialOutput::colour,
+             std::nullopt});
         const auto* image = std::get_if<paperweight::Image>(&generated);
         expect(image != nullptr && checksum(image->pixels()) == 4981563472745378647ULL,
                "v0.0.3 .pmat migration preserves its exact generated pixels");
@@ -1202,7 +1531,12 @@ void testPmat()
     expect(versionThreeMaterial != nullptr && versionThreeMaterial->layers.size() == 1,
            "v0.0.4 .pmat files remain readable without structural parameters");
     if (versionThreeMaterial != nullptr) {
-        const auto generated = paperweight::generate({*versionThreeMaterial, 48, 32});
+        const auto generated = paperweight::generate(
+            {*versionThreeMaterial,
+             48,
+             32,
+             paperweight::MaterialOutput::colour,
+             std::nullopt});
         const auto* image = std::get_if<paperweight::Image>(&generated);
         expect(image != nullptr && checksum(image->pixels()) == 4981563472745378647ULL,
                "v0.0.4 .pmat compatibility preserves its exact generated pixels");
@@ -1334,6 +1668,7 @@ int main()
     testLayerEvaluation();
     testMasksAndWarping();
     testStructuralGenerators();
+    testMaterialGraph();
     testGenerator();
     testPmat();
 

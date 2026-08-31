@@ -270,4 +270,29 @@ std::optional<std::string> validateMaterial(const Material& material)
     return std::nullopt;
 }
 
+std::optional<std::string> validateMaterialSettings(const Material& material)
+{
+    auto settingsOnly = material;
+    settingsOnly.layers.clear();
+    return validateMaterial(settingsOnly);
+}
+
+std::optional<std::string> validateMaterialLayer(
+    const MaterialLayer& layer,
+    std::string_view prefix)
+{
+    Material probe;
+    probe.layers.push_back(layer);
+    auto error = validateMaterial(probe);
+    if (!error) {
+        return std::nullopt;
+    }
+
+    constexpr std::string_view generatedPrefix = "layer 0: ";
+    if (error->starts_with(generatedPrefix)) {
+        return std::string(prefix) + error->substr(generatedPrefix.size());
+    }
+    return error;
+}
+
 } // namespace paperweight

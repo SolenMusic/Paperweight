@@ -183,10 +183,33 @@ opacity-scaled source and clamps it to the normalised range. Multiply scales the
 accumulated value towards a full multiplication according to opacity. The same
 formula is applied to scalar, red, green, blue, and alpha channels.
 
+## Graph compilation
+
+Paperweight v0.0.6 retains this version-4 layer syntax as the compact,
+human-editable authoring projection. Before generation, the portable core
+compiles it into a directed acyclic material graph:
+
+- source operations become generator nodes;
+- levels and threshold become unary processing nodes;
+- enabled procedural masks become mask nodes;
+- layer blend, add, or multiply behaviour becomes composite processing nodes;
+- colour, height, normal, and roughness receive explicit output nodes.
+
+Disabled layers compile as exact no-ops. Node metadata records the source layer
+for future diagnostics and incremental evaluation. All four output nodes point
+to the final layer result for a `.pmat` material, preserving historical output.
+Portable C++ callers may instead provide a direct graph with independent output
+branches through `GenerationRequest::graph`.
+
+Graph-specific text syntax is intentionally deferred until Paperweight has a
+graph authoring workflow that can round-trip it honestly. Bumping the file
+format merely to serialise an internal representation would make files larger
+without adding authoring power.
+
 ## Material outputs
 
-Every v0.0.5 output derives from the same final layered sample at the same pixel
-centre:
+Every layer-authored v0.0.6 output derives from the same final graph sample at
+the same pixel centre:
 
 - Colour encodes the final RGBA channels.
 - Height writes the final scalar to R, G, and B as linear UNORM8, with alpha 255.
@@ -202,7 +225,7 @@ generation wrap mathematically across both tile axes.
 ## Compatibility policy
 
 The `.pmat` format version and Paperweight application version are separate.
-Paperweight v0.0.5 reads versions 1, 2, 3, and 4 and writes version 4. A reader
+Paperweight v0.0.6 reads versions 1, 2, 3, and 4 and writes version 4. A reader
 rejects unsupported versions and unknown fields so that it cannot quietly
 reinterpret a future material.
 
@@ -217,3 +240,5 @@ migration to version 4.
 
 The portable entry points are `paperweight::parsePmat` and
 `paperweight::serialisePmat` in `include/paperweight/pmat.hpp`.
+The graph model, compiler, and validator are declared in
+`include/paperweight/graph.hpp`.
