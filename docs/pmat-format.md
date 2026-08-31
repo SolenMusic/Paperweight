@@ -170,6 +170,9 @@ layer.0.brick.mortar_width = 0.01m
 
 This produces eight columns and six rows. Mortar is evaluated as a true 10mm
 distance on both axes rather than as a percentage of differently shaped cells.
+The native editor presents those derived column and row counts explicitly. When
+an author changes the brick size or count, it recalculates `material.width` and
+`material.height` automatically so the saved definition remains seamless.
 
 Every layer in versions 3 through 6 also has this coordinate-transform group:
 

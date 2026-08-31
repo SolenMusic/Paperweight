@@ -48,7 +48,10 @@ export behave as before. Preview work remains cancellable and off AppKit's event
 thread, and continuous sliders retain direct mouse tracking. The visible layer
 stack matches bottom-to-top evaluation. Compact repeat-size and preview-coverage
 controls use metres, while brick layers can switch between relative sizing and
-friendly metre fields.
+friendly metre fields. In physical brick mode, the editor exposes columns and
+rows alongside brick dimensions and calculates the seamless repeat size as
+`brick size × count`; authors never need to guess which dimensions divide an
+existing repeat.
 
 Format-version-1 through version-5 `.pmat` files still open with their
 historical output intact; saving migrates them to canonical format version 6.

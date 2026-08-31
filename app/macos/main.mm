@@ -209,6 +209,7 @@
 @property(nonatomic, strong) NSTextField* physicalBrickHeightField;
 @property(nonatomic, strong) NSStackView* physicalBrickMortarRow;
 @property(nonatomic, strong) NSTextField* physicalBrickMortarField;
+@property(nonatomic, strong) NSTextField* physicalBrickSummary;
 @property(nonatomic, strong) NSStackView* patternDirectionRow;
 @property(nonatomic, strong) NSSegmentedControl* patternDirectionControl;
 @property(nonatomic, strong) NSStackView* patternSeedRow;
@@ -466,6 +467,33 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
         return nullptr;
     }
     return &material.layers[static_cast<std::size_t>(index)];
+}
+
+bool materialUsesPhysicalBricks(const paperweight::Material& material)
+{
+    return std::any_of(
+        material.layers.begin(),
+        material.layers.end(),
+        [](const paperweight::MaterialLayer& layer) {
+            const auto* brick = std::get_if<paperweight::BrickGridOperation>(
+                &layer.operation);
+            return brick != nullptr && brick->physicalDimensions.has_value();
+        });
+}
+
+double resizedCoverageExtent(
+    double oldCoverage,
+    double oldRepeat,
+    double newRepeat)
+{
+    const double repeats = oldCoverage / oldRepeat;
+    const double rounded = std::round(repeats);
+    const double tolerance = 1.0e-9 * std::max(1.0, std::abs(repeats));
+    if (std::isfinite(repeats) && std::abs(repeats - rounded) <= tolerance &&
+        rounded >= 1.0 && rounded <= paperweight::PhysicalLimits::maximumRepeats) {
+        return newRepeat * rounded;
+    }
+    return newRepeat;
 }
 
 double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
@@ -1079,6 +1107,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @selector(structuralParameterChanged:));
     self.physicalBrickWidthField = static_cast<NSTextField*>(
         self.physicalBrickWidthRow.views[1]);
+    self.physicalBrickWidthField.toolTip =
+        @"Enter the real width of one brick. The seamless repeat is recalculated automatically.";
     self.physicalBrickHeightRow = makeMetreFieldRow(
         @"Brick height",
         0.075,
@@ -1086,6 +1116,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @selector(structuralParameterChanged:));
     self.physicalBrickHeightField = static_cast<NSTextField*>(
         self.physicalBrickHeightRow.views[1]);
+    self.physicalBrickHeightField.toolTip =
+        @"Enter the real height of one brick. The seamless repeat is recalculated automatically.";
     self.physicalBrickMortarRow = makeMetreFieldRow(
         @"Mortar",
         0.01,
@@ -1093,6 +1125,15 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @selector(structuralParameterChanged:));
     self.physicalBrickMortarField = static_cast<NSTextField*>(
         self.physicalBrickMortarRow.views[1]);
+    self.physicalBrickMortarField.toolTip =
+        @"Enter one real mortar width used equally in both directions.";
+    self.physicalBrickSummary = makeLabel(@"");
+    self.physicalBrickSummary.font = [NSFont systemFontOfSize:11.0];
+    self.physicalBrickSummary.textColor = NSColor.secondaryLabelColor;
+    self.physicalBrickSummary.lineBreakMode = NSLineBreakByWordWrapping;
+    self.physicalBrickSummary.maximumNumberOfLines = 2;
+    self.physicalBrickSummary.toolTip =
+        @"Paperweight calculates the seamless repeat from brick size multiplied by columns and rows.";
 
     auto* directionLabel = makeLabel(@"Direction");
     [directionLabel.widthAnchor constraintEqualToConstant:72.0].active = YES;
@@ -1150,6 +1191,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.physicalBrickMortarRow,
         self.patternCountXRow,
         self.patternCountYRow,
+        self.physicalBrickSummary,
         self.patternValueOneRow,
         self.patternValueTwoRow,
         self.patternValueThreeRow,
@@ -1332,6 +1374,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         [self.physicalBrickWidthRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.physicalBrickHeightRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.physicalBrickMortarRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.physicalBrickSummary.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.patternCountXRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.patternCountYRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.patternValueOneRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
@@ -1448,6 +1491,15 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 
 - (void)refreshLayerInspector
 {
+    const bool repeatIsDerived = materialUsesPhysicalBricks(material_);
+    self.materialWidthField.editable = !repeatIsDerived;
+    self.materialHeightField.editable = !repeatIsDerived;
+    NSString* repeatToolTip = repeatIsDerived
+        ? @"Calculated automatically from physical brick size multiplied by columns and rows."
+        : @"The physical size of one seamless material repeat.";
+    self.materialWidthField.toolTip = repeatToolTip;
+    self.materialHeightField.toolTip = repeatToolTip;
+
     auto* layer = layerAt(material_, selectedLayer_);
     const BOOL hasLayer = layer != nullptr;
     self.removeLayerButton.enabled = material_.layers.size() > 1;
@@ -1476,6 +1528,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.physicalBrickWidthRow.hidden = YES;
         self.physicalBrickHeightRow.hidden = YES;
         self.physicalBrickMortarRow.hidden = YES;
+        self.physicalBrickSummary.hidden = YES;
         self.patternDirectionRow.hidden = YES;
         self.patternSeedRow.hidden = YES;
         [self updateLayerInspectorTabVisibility];
@@ -1528,6 +1581,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.physicalBrickWidthRow.hidden = YES;
     self.physicalBrickHeightRow.hidden = YES;
     self.physicalBrickMortarRow.hidden = YES;
+    self.physicalBrickSummary.hidden = YES;
     self.patternDirectionRow.hidden = YES;
     self.patternSeedRow.hidden = YES;
 
@@ -1589,12 +1643,35 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
             self.physicalBrickWidthRow.hidden = NO;
             self.physicalBrickHeightRow.hidden = NO;
             self.physicalBrickMortarRow.hidden = NO;
+            self.physicalBrickSummary.hidden = NO;
             self.physicalBrickWidthField.stringValue = [NSString
                 stringWithFormat:@"%.6g", brick->physicalDimensions->widthMetres];
             self.physicalBrickHeightField.stringValue = [NSString
                 stringWithFormat:@"%.6g", brick->physicalDimensions->heightMetres];
             self.physicalBrickMortarField.stringValue = [NSString
                 stringWithFormat:@"%.6g", brick->physicalDimensions->mortarMetres];
+            const auto columns = static_cast<std::uint32_t>(std::clamp(
+                std::llround(
+                    material_.physicalSize.widthMetres /
+                    brick->physicalDimensions->widthMetres),
+                static_cast<long long>(paperweight::LayerLimits::minimumPatternCount),
+                static_cast<long long>(paperweight::LayerLimits::maximumPatternCount)));
+            const auto rows = static_cast<std::uint32_t>(std::clamp(
+                std::llround(
+                    material_.physicalSize.heightMetres /
+                    brick->physicalDimensions->heightMetres),
+                static_cast<long long>(paperweight::LayerLimits::minimumPatternCount),
+                static_cast<long long>(paperweight::LayerLimits::maximumPatternCount)));
+            showCount(self.patternCountXRow, self.patternCountXLabel,
+                      self.patternCountXSlider, self.patternCountXValue, @"Columns", columns);
+            showCount(self.patternCountYRow, self.patternCountYLabel,
+                      self.patternCountYSlider, self.patternCountYValue, @"Rows", rows);
+            self.physicalBrickSummary.stringValue = [NSString stringWithFormat:
+                @"%u × %u bricks → %.6g × %.6g m seamless repeat",
+                columns,
+                rows,
+                material_.physicalSize.widthMetres,
+                material_.physicalSize.heightMetres];
         } else {
             const bool equalWidth =
                 brick->mortarSpace == paperweight::BrickMortarSpace::texture;
@@ -2082,6 +2159,39 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
                 *height,
                 *mortar,
             };
+            brick->columns = countX;
+            brick->rows = countY;
+
+            const auto oldRepeat = material_.physicalSize;
+            const paperweight::PhysicalSize newRepeat{
+                *width * static_cast<double>(countX),
+                *height * static_cast<double>(countY),
+            };
+            previewCoverage_ = {
+                resizedCoverageExtent(
+                    previewCoverage_.widthMetres,
+                    oldRepeat.widthMetres,
+                    newRepeat.widthMetres),
+                resizedCoverageExtent(
+                    previewCoverage_.heightMetres,
+                    oldRepeat.heightMetres,
+                    newRepeat.heightMetres),
+            };
+            material_.physicalSize = newRepeat;
+            self.materialWidthField.stringValue = [NSString
+                stringWithFormat:@"%.6g", newRepeat.widthMetres];
+            self.materialHeightField.stringValue = [NSString
+                stringWithFormat:@"%.6g", newRepeat.heightMetres];
+            self.coverageWidthField.stringValue = [NSString
+                stringWithFormat:@"%.6g", previewCoverage_.widthMetres];
+            self.coverageHeightField.stringValue = [NSString
+                stringWithFormat:@"%.6g", previewCoverage_.heightMetres];
+            self.physicalBrickSummary.stringValue = [NSString stringWithFormat:
+                @"%u × %u bricks → %.6g × %.6g m seamless repeat",
+                countX,
+                countY,
+                newRepeat.widthMetres,
+                newRepeat.heightMetres];
         } else {
             const auto previousMortarSpace = brick->mortarSpace;
             const auto previousMaximumCount = std::max(brick->columns, brick->rows);
@@ -2219,6 +2329,16 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 - (void)materialSizeChanged:(id)sender
 {
     static_cast<void>(sender);
+    if (materialUsesPhysicalBricks(material_)) {
+        self.materialWidthField.stringValue = [NSString
+            stringWithFormat:@"%.6g", material_.physicalSize.widthMetres];
+        self.materialHeightField.stringValue = [NSString
+            stringWithFormat:@"%.6g", material_.physicalSize.heightMetres];
+        self.statusLabel.stringValue =
+            @"Repeat size is calculated from physical brick size × columns and rows.";
+        self.statusLabel.textColor = NSColor.secondaryLabelColor;
+        return;
+    }
     const auto width = positiveDecimal(self.materialWidthField);
     const auto height = positiveDecimal(self.materialHeightField);
     if (!width || !height) {
