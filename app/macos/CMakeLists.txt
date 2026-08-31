@@ -1,4 +1,15 @@
 find_library(APPKIT_FRAMEWORK AppKit REQUIRED)
+find_library(METAL_FRAMEWORK Metal REQUIRED)
+find_library(METALKIT_FRAMEWORK MetalKit REQUIRED)
+find_library(QUARTZCORE_FRAMEWORK QuartzCore REQUIRED)
+
+set(PAPERWEIGHT_METAL_SHADER
+    "${CMAKE_CURRENT_SOURCE_DIR}/Material3DPreviewShaders.metal"
+)
+set_source_files_properties(${PAPERWEIGHT_METAL_SHADER} PROPERTIES
+    HEADER_FILE_ONLY TRUE
+    MACOSX_PACKAGE_LOCATION "Resources/Shaders"
+)
 
 set(PAPERWEIGHT_SHOWCASE_MATERIALS
     "${PROJECT_SOURCE_DIR}/examples/materials/default.pmat"
@@ -20,13 +31,19 @@ add_executable(Paperweight MACOSX_BUNDLE
     BenchmarkWindowController.hpp
     BenchmarkWindowController.mm
     ImageBridge.mm
+    Material3DPreviewView.hpp
+    Material3DPreviewView.mm
     main.mm
+    ${PAPERWEIGHT_METAL_SHADER}
     ${PAPERWEIGHT_SHOWCASE_MATERIALS}
 )
 
 target_link_libraries(Paperweight PRIVATE
     Paperweight::Core
     ${APPKIT_FRAMEWORK}
+    ${METAL_FRAMEWORK}
+    ${METALKIT_FRAMEWORK}
+    ${QUARTZCORE_FRAMEWORK}
 )
 target_compile_features(Paperweight PRIVATE cxx_std_20)
 target_compile_options(Paperweight PRIVATE -fobjc-arc)

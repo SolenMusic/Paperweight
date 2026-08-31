@@ -81,10 +81,14 @@ core material model or add dependencies to a CPU-only library build.
 
 ## v0.0.10 - 3D Material Preview
 
-Add a lit 3D preview that can select a simple shape, configure lighting, and
-animate either automatically at a chosen speed or manually one step at a time.
-It should inspect colour, height-derived normals, and roughness together without
-moving procedural evaluation into the platform renderer.
+Add a native MetalKit 3D preview with plane, sphere, cube, and cylinder inspection
+shapes. It combines colour, height, normal, and roughness maps, while allowing
+each map to be isolated. Camera orbit and zoom, lighting presets and controls,
+manual light phase, and configurable automatic animation are included. Map
+generation stays cancellable and off the UI thread; only the newest complete
+four-map set is published. Metal is presentation-only and remains outside the
+portable core. A compatible Metal device enables 3D; the full 2D editor remains
+available otherwise.
 
 ## v0.1.0 - Game Library
 

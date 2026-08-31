@@ -112,9 +112,9 @@ paperweight::Material materialWithNoiseParameters(
 
 void testVersion()
 {
-    constexpr paperweight::Version expected{0, 0, 9};
+    constexpr paperweight::Version expected{0, 0, 10};
     static_assert(paperweight::currentVersion == expected);
-    expect(paperweight::versionString() == "0.0.9", "version string is 0.0.9");
+    expect(paperweight::versionString() == "0.0.10", "version string is 0.0.10");
 }
 
 void testImage()
@@ -1721,7 +1721,7 @@ void testPmat()
         ShowcaseGolden{
             "marble-veins.pmat",
             {13633835698441808217ULL, 14785178712321867342ULL,
-             17786982241078725417ULL, 15280871892137859466ULL}},
+             15115531734586865140ULL, 15280871892137859466ULL}},
         ShowcaseGolden{
             "eroded-terrain.pmat",
             {2672928488154530846ULL, 11242585904416509996ULL,

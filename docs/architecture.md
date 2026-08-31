@@ -148,6 +148,14 @@ in Objective-C++ and consumes the portable core's RGBA8 buffer without exposing
 AppKit types to the core. The same bridge encodes PNG data. Native file panels
 handle paths, while parsing and serialisation remain in portable C++.
 
+The optional 3D preview is an AppKit-hosted MetalKit renderer. It receives four
+completed RGBA8 core images and uses them as colour, displacement, tangent-space
+normal, and roughness textures on built-in inspection meshes. Shape, camera,
+lighting, map switches, and animation are display state only. The Metal shader
+is bundled with the application and compiled at runtime, avoiding a separate
+shader-toolchain requirement for ordinary CMake builds. A missing compatible
+Metal device disables only the 3D mode.
+
 Live previews use a serial background queue and a snapshot of the current
 material. Continuous UI changes are briefly coalesced and cooperatively cancel
 the active core generation between scanlines. For sufficiently large images,
@@ -171,7 +179,7 @@ hit rate and bounded memory without altering the cancellation contract.
 `.pmat` is a human-readable, versioned text format. Parsing and serialisation live in the portable core. Round trips should be stable and errors should identify useful source locations.
 
 The format version is deliberately independent of the application version.
-Paperweight v0.0.9 reads `.pmat` format versions 1 through 7 and writes version 7.
+Paperweight v0.0.10 reads `.pmat` format versions 1 through 7 and writes version 7.
 Unknown keys and unsupported format versions fail explicitly instead of being
 silently ignored. Version 1 maps to the original implicit FBM source; adding an
 explicit base noise layer produces byte-identical output. Version-2 layers map
@@ -215,4 +223,5 @@ See [pmat-format.md](pmat-format.md).
 
 Visual node-canvas authoring, graph-specific text persistence, WebAssembly
 bindings, game-engine adapters, complete PBR authoring, arbitrary-angle
-rotation, and GPU backends remain outside v0.0.9.
+rotation, and procedural GPU backends remain outside v0.0.10. MetalKit in
+v0.0.10 presents CPU-generated images; it is not a generator backend.
