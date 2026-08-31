@@ -1,5 +1,6 @@
 #include <paperweight/material.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <type_traits>
@@ -26,10 +27,38 @@ bool validSoftness(double value)
         LayerLimits::maximumSoftness);
 }
 
+bool validPhysicalMetres(double value)
+{
+    return validRange(
+        value,
+        PhysicalLimits::minimumMetres,
+        PhysicalLimits::maximumMetres);
+}
+
+std::optional<std::uint32_t> exactRepeatCount(double extent, double unit)
+{
+    if (!validPhysicalMetres(extent) || !validPhysicalMetres(unit)) {
+        return std::nullopt;
+    }
+    const double repeats = extent / unit;
+    const double rounded = std::round(repeats);
+    const double tolerance = 1.0e-9 * std::max(1.0, std::abs(repeats));
+    if (std::abs(repeats - rounded) > tolerance ||
+        rounded < LayerLimits::minimumPatternCount ||
+        rounded > LayerLimits::maximumPatternCount) {
+        return std::nullopt;
+    }
+    return static_cast<std::uint32_t>(rounded);
+}
+
 } // namespace
 
 std::optional<std::string> validateMaterial(const Material& material)
 {
+    if (!validPhysicalMetres(material.physicalSize.widthMetres) ||
+        !validPhysicalMetres(material.physicalSize.heightMetres)) {
+        return "material physical width and height must be finite and between 0.000001m and 1000000m";
+    }
     if (material.frequency < MaterialLimits::minimumFrequency ||
         material.frequency > MaterialLimits::maximumFrequency) {
         return "frequency must be between 1 and 64";
@@ -121,7 +150,7 @@ std::optional<std::string> validateMaterial(const Material& material)
                 "mask input range must be finite, within 0 to 1, and increasing";
         }
         const auto operationError = std::visit(
-            [&prefix](const auto& operation) -> std::optional<std::string> {
+            [&prefix, &material](const auto& operation) -> std::optional<std::string> {
                 using Operation = std::decay_t<decltype(operation)>;
                 if constexpr (std::is_same_v<Operation, LevelsOperation>) {
                     if (!std::isfinite(operation.inputLow) ||
@@ -144,22 +173,44 @@ std::optional<std::string> validateMaterial(const Material& material)
                         return prefix + "threshold must be finite and between 0 and 1";
                     }
                 } else if constexpr (std::is_same_v<Operation, BrickGridOperation>) {
-                    if (!validPatternCount(operation.columns) ||
-                        !validPatternCount(operation.rows)) {
-                        return prefix + "brick columns and rows must be between 1 and 64";
-                    }
-                    if (!validRange(
-                            operation.mortar,
-                            LayerLimits::minimumGap,
-                            LayerLimits::maximumGap)) {
-                        return prefix + "brick mortar must be finite and between 0 and 0.95";
-                    }
-                    switch (operation.mortarSpace) {
-                    case BrickMortarSpace::cell:
-                    case BrickMortarSpace::texture:
-                        break;
-                    default:
-                        return prefix + "brick mortar space is not supported";
+                    if (operation.physicalDimensions) {
+                        const auto& physical = *operation.physicalDimensions;
+                        if (!validPhysicalMetres(physical.widthMetres) ||
+                            !validPhysicalMetres(physical.heightMetres) ||
+                            !std::isfinite(physical.mortarMetres) ||
+                            physical.mortarMetres < 0.0 ||
+                            physical.mortarMetres >=
+                                std::min(physical.widthMetres, physical.heightMetres)) {
+                            return prefix +
+                                "physical brick width and height must be positive metre values, and mortar must be smaller than both";
+                        }
+                        if (!exactRepeatCount(
+                                material.physicalSize.widthMetres,
+                                physical.widthMetres) ||
+                            !exactRepeatCount(
+                                material.physicalSize.heightMetres,
+                                physical.heightMetres)) {
+                            return prefix +
+                                "physical brick width and height must divide the material repeat into 1 to 64 whole bricks";
+                        }
+                    } else {
+                        if (!validPatternCount(operation.columns) ||
+                            !validPatternCount(operation.rows)) {
+                            return prefix + "brick columns and rows must be between 1 and 64";
+                        }
+                        if (!validRange(
+                                operation.mortar,
+                                LayerLimits::minimumGap,
+                                LayerLimits::maximumGap)) {
+                            return prefix + "brick mortar must be finite and between 0 and 0.95";
+                        }
+                        switch (operation.mortarSpace) {
+                        case BrickMortarSpace::cell:
+                        case BrickMortarSpace::texture:
+                            break;
+                        default:
+                            return prefix + "brick mortar space is not supported";
+                        }
                     }
                     if (!validRange(
                             operation.stagger,
@@ -289,6 +340,13 @@ std::optional<std::string> validateMaterialLayer(
     std::string_view prefix)
 {
     Material probe;
+    if (const auto* brick = std::get_if<BrickGridOperation>(&layer.operation);
+        brick != nullptr && brick->physicalDimensions) {
+        probe.physicalSize = {
+            brick->physicalDimensions->widthMetres,
+            brick->physicalDimensions->heightMetres,
+        };
+    }
     probe.layers.push_back(layer);
     auto error = validateMaterial(probe);
     if (!error) {

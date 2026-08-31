@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include <paperweight/layer.hpp>
+#include <paperweight/physical.hpp>
 
 namespace paperweight {
 
@@ -27,6 +28,12 @@ struct RepeatedCoordinate {
 
 [[nodiscard]] double evaluateBrickGrid(
     const BrickGridOperation& operation,
+    double u,
+    double v);
+
+[[nodiscard]] double evaluateBrickGrid(
+    const BrickGridOperation& operation,
+    const PhysicalSize& materialSize,
     double u,
     double v);
 

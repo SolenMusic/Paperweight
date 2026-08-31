@@ -69,6 +69,7 @@ int main()
             128,
             output,
             graph,
+            std::nullopt,
         });
         const auto* image = std::get_if<paperweight::Image>(&result);
         if (image == nullptr) {

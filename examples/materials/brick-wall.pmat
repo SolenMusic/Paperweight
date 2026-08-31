@@ -1,7 +1,9 @@
 # Paperweight procedural material
-pmat.version = 5
+pmat.version = 6
 material.type = fbm
 material.seed = 481516
+material.width = 1.92m
+material.height = 0.45m
 colour.low = 0x241814FF
 colour.high = 0xB84C32FF
 noise.frequency = 5
@@ -16,10 +18,10 @@ layer.0.enabled = true
 layer.0.operation = brick_grid
 layer.0.composite = blend
 layer.0.opacity = 1
-layer.0.brick.columns = 8
-layer.0.brick.rows = 6
-layer.0.brick.mortar = 0.1
-layer.0.brick.mortar_space = cell
+layer.0.brick.sizing = physical
+layer.0.brick.width = 0.24m
+layer.0.brick.height = 0.075m
+layer.0.brick.mortar_width = 0.01m
 layer.0.brick.stagger = 0.5
 layer.0.brick.softness = 0.025
 layer.0.transform.scale_x = 1

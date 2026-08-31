@@ -10,6 +10,7 @@
 #include <paperweight/image.hpp>
 #include <paperweight/material.hpp>
 #include <paperweight/output.hpp>
+#include <paperweight/physical.hpp>
 
 namespace paperweight {
 
@@ -19,6 +20,7 @@ struct GenerationRequest {
     std::uint32_t height{512};
     MaterialOutput output{MaterialOutput::colour};
     std::optional<MaterialGraph> graph;
+    std::optional<PhysicalSize> physicalCoverage;
 };
 
 enum class GenerationErrorCode {
@@ -26,6 +28,7 @@ enum class GenerationErrorCode {
     invalidMaterial,
     invalidGraph,
     invalidOutput,
+    invalidPhysicalCoverage,
     allocationFailure,
     cancelled,
 };

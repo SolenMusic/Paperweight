@@ -20,6 +20,8 @@ enum class Field : std::size_t {
     version,
     type,
     seed,
+    physicalWidth,
+    physicalHeight,
     lowColour,
     highColour,
     frequency,
@@ -37,6 +39,8 @@ constexpr std::array<std::string_view, static_cast<std::size_t>(Field::count)> f
     "pmat.version",
     "material.type",
     "material.seed",
+    "material.width",
+    "material.height",
     "colour.low",
     "colour.high",
     "noise.frequency",
@@ -61,6 +65,11 @@ enum class OperationKind {
     lines,
     rectangles,
     circles,
+};
+
+enum class BrickSizing {
+    relative,
+    physical,
 };
 
 template<typename Value>
@@ -99,6 +108,10 @@ struct LayerBuilder {
     ParsedValue<std::uint32_t> brickRows;
     ParsedValue<double> brickMortar;
     ParsedValue<BrickMortarSpace> brickMortarSpace;
+    ParsedValue<BrickSizing> brickSizing;
+    ParsedValue<double> brickWidthMetres;
+    ParsedValue<double> brickHeightMetres;
+    ParsedValue<double> brickMortarMetres;
     ParsedValue<double> brickStagger;
     ParsedValue<double> brickSoftness;
     ParsedValue<std::uint32_t> tileColumns;
@@ -189,6 +202,15 @@ bool parseDouble(std::string_view value, double& output)
     return stream && stream.peek() == std::char_traits<char>::eof();
 }
 
+bool parseMetres(std::string_view value, double& output)
+{
+    if (value.size() < 2 || value.back() != 'm') {
+        return false;
+    }
+    value.remove_suffix(1);
+    return !value.empty() && parseDouble(value, output);
+}
+
 bool parseBoolean(std::string_view value, bool& output)
 {
     if (value == "true") {
@@ -241,6 +263,12 @@ std::string formatDouble(double value)
         }
     }
     return {};
+}
+
+std::string formatMetres(double value)
+{
+    const auto number = formatDouble(value);
+    return number.empty() ? std::string{} : number + "m";
 }
 
 std::string formatColour(const Rgba8& colour)
@@ -329,6 +357,17 @@ std::optional<BrickMortarSpace> parseBrickMortarSpace(std::string_view value)
     return std::nullopt;
 }
 
+std::optional<BrickSizing> parseBrickSizing(std::string_view value)
+{
+    if (value == "relative") {
+        return BrickSizing::relative;
+    }
+    if (value == "physical") {
+        return BrickSizing::physical;
+    }
+    return std::nullopt;
+}
+
 std::optional<QuarterTurn> parseRotation(std::string_view value)
 {
     std::uint32_t degrees = 0;
@@ -394,9 +433,16 @@ bool hasVersionFiveFields(const LayerBuilder& builder)
     return builder.brickMortarSpace.value.has_value();
 }
 
+bool hasVersionSixFields(const LayerBuilder& builder)
+{
+    return builder.brickSizing.value || builder.brickWidthMetres.value ||
+        builder.brickHeightMetres.value || builder.brickMortarMetres.value;
+}
+
 bool hasStructuralFields(const LayerBuilder& builder)
 {
-    return hasVersionFourFields(builder) || hasVersionFiveFields(builder);
+    return hasVersionFourFields(builder) || hasVersionFiveFields(builder) ||
+        hasVersionSixFields(builder);
 }
 
 template<typename Value>
@@ -526,6 +572,22 @@ ParseResult parsePmat(std::string_view text)
                             lineNumber,
                             valueColumn,
                             "material.seed must be an unsigned integer");
+                    }
+                    break;
+                case Field::physicalWidth:
+                    if (!parseMetres(value, material.physicalSize.widthMetres)) {
+                        return diagnostic(
+                            lineNumber,
+                            valueColumn,
+                            "material.width must be a decimal metre value such as 1.92m");
+                    }
+                    break;
+                case Field::physicalHeight:
+                    if (!parseMetres(value, material.physicalSize.heightMetres)) {
+                        return diagnostic(
+                            lineNumber,
+                            valueColumn,
+                            "material.height must be a decimal metre value such as 0.6m");
                     }
                     break;
                 case Field::lowColour:
@@ -739,6 +801,50 @@ ParseResult parsePmat(std::string_view text)
                             *parsed,
                             lineNumber,
                             valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "brick.sizing") {
+                    const auto parsed = parseBrickSizing(value);
+                    if (!parsed) {
+                        return diagnostic(
+                            lineNumber,
+                            valueColumn,
+                            "brick sizing must be 'relative' or 'physical'");
+                    }
+                    if (!storeValue(builder.brickSizing, *parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "brick.width") {
+                    double parsed = 0.0;
+                    if (!parseMetres(value, parsed)) {
+                        return diagnostic(
+                            lineNumber,
+                            valueColumn,
+                            "brick width must be a decimal metre value such as 0.24m");
+                    }
+                    if (!storeValue(builder.brickWidthMetres, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "brick.height") {
+                    double parsed = 0.0;
+                    if (!parseMetres(value, parsed)) {
+                        return diagnostic(
+                            lineNumber,
+                            valueColumn,
+                            "brick height must be a decimal metre value such as 0.075m");
+                    }
+                    if (!storeValue(builder.brickHeightMetres, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "brick.mortar_width") {
+                    double parsed = 0.0;
+                    if (!parseMetres(value, parsed)) {
+                        return diagnostic(
+                            lineNumber,
+                            valueColumn,
+                            "brick mortar width must be a decimal metre value such as 0.01m");
+                    }
+                    if (!storeValue(builder.brickMortarMetres, parsed, lineNumber, valueColumn)) {
                         return duplicate();
                     }
                 } else if (property == "brick.stagger") {
@@ -1092,12 +1198,24 @@ ParseResult parsePmat(std::string_view text)
             (field == Field::lowColour || field == Field::highColour ||
              field == Field::normalStrength || field == Field::roughnessLow ||
              field == Field::roughnessHigh || field == Field::layerCount);
-        if (!seen[index] && !optionalInVersionOne) {
+        const bool introducedInVersionSix =
+            field == Field::physicalWidth || field == Field::physicalHeight;
+        if (!seen[index] && !optionalInVersionOne &&
+            !(formatVersion < 6 && introducedInVersionSix)) {
             return diagnostic(
                 lineNumber + 1,
                 1,
                 "missing required key '" + std::string(fieldKeys[index]) + "'");
         }
+    }
+
+    if (formatVersion < 6 &&
+        (seen[static_cast<std::size_t>(Field::physicalWidth)] ||
+         seen[static_cast<std::size_t>(Field::physicalHeight)])) {
+        return diagnostic(
+            lineNumber + 1,
+            1,
+            "physical material dimensions require .pmat version 6");
     }
 
     if (formatVersion == 1) {
@@ -1140,6 +1258,13 @@ ParseResult parsePmat(std::string_view text)
                     lineNumber + 1,
                     1,
                     "brick mortar space requires .pmat version 5");
+            }
+
+            if (formatVersion < 6 && hasVersionSixFields(builder)) {
+                return diagnostic(
+                    lineNumber + 1,
+                    1,
+                    "physical brick dimensions require .pmat version 6");
             }
 
             if (formatVersion < 4 &&
@@ -1286,6 +1411,8 @@ ParseResult parsePmat(std::string_view text)
             }
             const bool hasBrickFields = builder.brickColumns.value || builder.brickRows.value ||
                 builder.brickMortar.value || builder.brickMortarSpace.value ||
+                builder.brickSizing.value || builder.brickWidthMetres.value ||
+                builder.brickHeightMetres.value || builder.brickMortarMetres.value ||
                 builder.brickStagger.value || builder.brickSoftness.value;
             const bool hasTileFields = builder.tileColumns.value || builder.tileRows.value ||
                 builder.tileGrout.value || builder.tileSoftness.value;
@@ -1422,17 +1549,8 @@ ParseResult parsePmat(std::string_view text)
                 layer.operation = ThresholdOperation{*builder.threshold.value};
                 break;
             case OperationKind::brickGrid:
-                if (!builder.brickColumns.value) {
-                    return missingLayerField(lineNumber + 1, index, "brick.columns");
-                }
-                if (!builder.brickRows.value) {
-                    return missingLayerField(lineNumber + 1, index, "brick.rows");
-                }
-                if (!builder.brickMortar.value) {
-                    return missingLayerField(lineNumber + 1, index, "brick.mortar");
-                }
-                if (formatVersion >= 5 && !builder.brickMortarSpace.value) {
-                    return missingLayerField(lineNumber + 1, index, "brick.mortar_space");
+                if (formatVersion >= 6 && !builder.brickSizing.value) {
+                    return missingLayerField(lineNumber + 1, index, "brick.sizing");
                 }
                 if (!builder.brickStagger.value) {
                     return missingLayerField(lineNumber + 1, index, "brick.stagger");
@@ -1442,19 +1560,6 @@ ParseResult parsePmat(std::string_view text)
                 }
                 if (hasClassicFields || structuralGroupCount != 1) {
                     return crossOperationError();
-                }
-                if (invalidCount(*builder.brickColumns.value) ||
-                    invalidCount(*builder.brickRows.value)) {
-                    return diagnostic(
-                        builder.brickColumns.line,
-                        builder.brickColumns.column,
-                        "brick columns and rows must be between 1 and 64");
-                }
-                if (outside(*builder.brickMortar.value, 0.0, 0.95)) {
-                    return diagnostic(
-                        builder.brickMortar.line,
-                        builder.brickMortar.column,
-                        "brick mortar must be finite and between 0 and 0.95");
                 }
                 if (outside(*builder.brickStagger.value, 0.0, 1.0)) {
                     return diagnostic(
@@ -1468,14 +1573,87 @@ ParseResult parsePmat(std::string_view text)
                         builder.brickSoftness.column,
                         "brick softness must be finite and between 0 and 0.25");
                 }
-                layer.operation = BrickGridOperation{
-                    *builder.brickColumns.value,
-                    *builder.brickRows.value,
-                    *builder.brickMortar.value,
-                    *builder.brickStagger.value,
-                    *builder.brickSoftness.value,
-                    builder.brickMortarSpace.value.value_or(BrickMortarSpace::cell),
-                };
+                if (builder.brickSizing.value.value_or(BrickSizing::relative) ==
+                    BrickSizing::physical) {
+                    if (!builder.brickWidthMetres.value) {
+                        return missingLayerField(lineNumber + 1, index, "brick.width");
+                    }
+                    if (!builder.brickHeightMetres.value) {
+                        return missingLayerField(lineNumber + 1, index, "brick.height");
+                    }
+                    if (!builder.brickMortarMetres.value) {
+                        return missingLayerField(lineNumber + 1, index, "brick.mortar_width");
+                    }
+                    if (builder.brickColumns.value || builder.brickRows.value ||
+                        builder.brickMortar.value || builder.brickMortarSpace.value) {
+                        return diagnostic(
+                            lineNumber + 1,
+                            1,
+                            "a physically sized brick cannot also declare relative brick fields");
+                    }
+                    const auto width = *builder.brickWidthMetres.value;
+                    const auto height = *builder.brickHeightMetres.value;
+                    const auto mortar = *builder.brickMortarMetres.value;
+                    if (!std::isfinite(width) || !std::isfinite(height) ||
+                        !std::isfinite(mortar) || width <= 0.0 || height <= 0.0 ||
+                        mortar < 0.0 || mortar >= std::min(width, height)) {
+                        return diagnostic(
+                            builder.brickWidthMetres.line,
+                            builder.brickWidthMetres.column,
+                            "physical brick dimensions must be positive and mortar must be smaller than width and height");
+                    }
+                    auto brick = BrickGridOperation{};
+                    brick.stagger = *builder.brickStagger.value;
+                    brick.softness = *builder.brickSoftness.value;
+                    brick.physicalDimensions = BrickGridOperation::PhysicalDimensions{
+                        width,
+                        height,
+                        mortar,
+                    };
+                    layer.operation = brick;
+                } else {
+                    if (!builder.brickColumns.value) {
+                        return missingLayerField(lineNumber + 1, index, "brick.columns");
+                    }
+                    if (!builder.brickRows.value) {
+                        return missingLayerField(lineNumber + 1, index, "brick.rows");
+                    }
+                    if (!builder.brickMortar.value) {
+                        return missingLayerField(lineNumber + 1, index, "brick.mortar");
+                    }
+                    if (formatVersion >= 5 && !builder.brickMortarSpace.value) {
+                        return missingLayerField(lineNumber + 1, index, "brick.mortar_space");
+                    }
+                    if (builder.brickWidthMetres.value || builder.brickHeightMetres.value ||
+                        builder.brickMortarMetres.value) {
+                        return diagnostic(
+                            lineNumber + 1,
+                            1,
+                            "a relatively sized brick cannot also declare physical brick fields");
+                    }
+                    if (invalidCount(*builder.brickColumns.value) ||
+                        invalidCount(*builder.brickRows.value)) {
+                        return diagnostic(
+                            builder.brickColumns.line,
+                            builder.brickColumns.column,
+                            "brick columns and rows must be between 1 and 64");
+                    }
+                    if (outside(*builder.brickMortar.value, 0.0, 0.95)) {
+                        return diagnostic(
+                            builder.brickMortar.line,
+                            builder.brickMortar.column,
+                            "brick mortar must be finite and between 0 and 0.95");
+                    }
+                    layer.operation = BrickGridOperation{
+                        *builder.brickColumns.value,
+                        *builder.brickRows.value,
+                        *builder.brickMortar.value,
+                        *builder.brickStagger.value,
+                        *builder.brickSoftness.value,
+                        builder.brickMortarSpace.value.value_or(BrickMortarSpace::cell),
+                        std::nullopt,
+                    };
+                }
                 break;
             case OperationKind::tileGrid:
                 if (!builder.tileColumns.value) {
@@ -1728,7 +1906,9 @@ ParseResult parsePmat(std::string_view text)
 
     if (const auto error = validateMaterial(material)) {
         Field relevantField = Field::frequency;
-        if (material.frequency >= MaterialLimits::minimumFrequency &&
+        if (error->find("physical") != std::string::npos && formatVersion >= 6) {
+            relevantField = Field::physicalWidth;
+        } else if (material.frequency >= MaterialLimits::minimumFrequency &&
             material.frequency <= MaterialLimits::maximumFrequency) {
             if (material.octaves < MaterialLimits::minimumOctaves ||
                 material.octaves > MaterialLimits::maximumOctaves) {
@@ -1769,7 +1949,10 @@ SerialisationResult serialisePmat(const Material& material)
     const auto normalStrength = formatDouble(material.normalStrength);
     const auto roughnessLow = formatDouble(material.roughnessLow);
     const auto roughnessHigh = formatDouble(material.roughnessHigh);
-    if (gain.empty() || normalStrength.empty() || roughnessLow.empty() || roughnessHigh.empty()) {
+    const auto physicalWidth = formatMetres(material.physicalSize.widthMetres);
+    const auto physicalHeight = formatMetres(material.physicalSize.heightMetres);
+    if (gain.empty() || normalStrength.empty() || roughnessLow.empty() || roughnessHigh.empty() ||
+        physicalWidth.empty() || physicalHeight.empty()) {
         return SerialisationError{"could not format a decimal material parameter"};
     }
 
@@ -1779,6 +1962,8 @@ SerialisationResult serialisePmat(const Material& material)
     output += "pmat.version = " + std::to_string(currentPmatVersion) + "\n";
     output += "material.type = fbm\n";
     output += "material.seed = " + std::to_string(material.seed) + "\n";
+    output += "material.width = " + physicalWidth + "\n";
+    output += "material.height = " + physicalHeight + "\n";
     output += "colour.low = " + formatColour(material.lowColour) + "\n";
     output += "colour.high = " + formatColour(material.highColour) + "\n";
     output += "noise.frequency = " + std::to_string(material.frequency) + "\n";
@@ -1822,19 +2007,36 @@ SerialisationResult serialisePmat(const Material& material)
             }
             output += prefix + "threshold.value = " + value + "\n";
         } else if (const auto* brick = std::get_if<BrickGridOperation>(&layer.operation)) {
-            const auto mortar = formatDouble(brick->mortar);
             const auto stagger = formatDouble(brick->stagger);
             const auto softness = formatDouble(brick->softness);
-            if (mortar.empty() || stagger.empty() || softness.empty()) {
+            if (stagger.empty() || softness.empty()) {
                 return SerialisationError{"could not format brick parameters"};
             }
-            output += prefix + "brick.columns = " + std::to_string(brick->columns) + "\n";
-            output += prefix + "brick.rows = " + std::to_string(brick->rows) + "\n";
-            output += prefix + "brick.mortar = " + mortar + "\n";
-            output += prefix + "brick.mortar_space = " +
-                std::string(
-                    brick->mortarSpace == BrickMortarSpace::texture ? "texture" : "cell") +
-                "\n";
+            if (brick->physicalDimensions) {
+                const auto width = formatMetres(brick->physicalDimensions->widthMetres);
+                const auto height = formatMetres(brick->physicalDimensions->heightMetres);
+                const auto mortar = formatMetres(brick->physicalDimensions->mortarMetres);
+                if (width.empty() || height.empty() || mortar.empty()) {
+                    return SerialisationError{"could not format physical brick parameters"};
+                }
+                output += prefix + "brick.sizing = physical\n";
+                output += prefix + "brick.width = " + width + "\n";
+                output += prefix + "brick.height = " + height + "\n";
+                output += prefix + "brick.mortar_width = " + mortar + "\n";
+            } else {
+                const auto mortar = formatDouble(brick->mortar);
+                if (mortar.empty()) {
+                    return SerialisationError{"could not format brick mortar"};
+                }
+                output += prefix + "brick.sizing = relative\n";
+                output += prefix + "brick.columns = " + std::to_string(brick->columns) + "\n";
+                output += prefix + "brick.rows = " + std::to_string(brick->rows) + "\n";
+                output += prefix + "brick.mortar = " + mortar + "\n";
+                output += prefix + "brick.mortar_space = " +
+                    std::string(
+                        brick->mortarSpace == BrickMortarSpace::texture ? "texture" : "cell") +
+                    "\n";
+            }
             output += prefix + "brick.stagger = " + stagger + "\n";
             output += prefix + "brick.softness = " + softness + "\n";
         } else if (const auto* tile = std::get_if<TileGridOperation>(&layer.operation)) {

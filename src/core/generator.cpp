@@ -9,6 +9,8 @@
 #include <cmath>
 #include <exception>
 #include <limits>
+#include <optional>
+#include <type_traits>
 #include <vector>
 
 namespace paperweight {
@@ -54,6 +56,47 @@ Rgba8 encodeNormal(double derivativeU, double derivativeV, double strength)
     return {signedToUnorm8(x), signedToUnorm8(y), signedToUnorm8(z), 255};
 }
 
+std::optional<std::uint32_t> exactRepeatCount(double coverage, double materialExtent)
+{
+    if (!std::isfinite(coverage) || !std::isfinite(materialExtent) || coverage <= 0.0 ||
+        materialExtent <= 0.0) {
+        return std::nullopt;
+    }
+    const double repeats = coverage / materialExtent;
+    const double rounded = std::round(repeats);
+    const double tolerance = 1.0e-9 * std::max(1.0, std::abs(repeats));
+    if (std::abs(repeats - rounded) > tolerance || rounded < 1.0 ||
+        rounded > PhysicalLimits::maximumRepeats) {
+        return std::nullopt;
+    }
+    return static_cast<std::uint32_t>(rounded);
+}
+
+std::optional<std::string> validateGraphPhysicalScale(
+    const Material& material,
+    const MaterialGraph& graph)
+{
+    for (const auto& node : graph.nodes) {
+        const auto* generator = std::get_if<GeneratorNode>(&node);
+        if (generator == nullptr) {
+            continue;
+        }
+        const auto* brick = std::get_if<BrickGridOperation>(&generator->operation);
+        if (brick == nullptr || !brick->physicalDimensions) {
+            continue;
+        }
+        Material probe = material;
+        probe.layers.clear();
+        auto layer = makeBrickGridLayer();
+        layer.operation = *brick;
+        probe.layers.push_back(layer);
+        if (const auto error = validateMaterial(probe)) {
+            return "graph node " + std::to_string(generator->id) + ": " + *error;
+        }
+    }
+    return std::nullopt;
+}
+
 } // namespace
 
 GenerationResult generate(const GenerationRequest& request)
@@ -85,6 +128,7 @@ GenerationResult generate(
             "output dimensions must be between 1 and 4096 pixels",
         };
     }
+
     switch (request.output) {
     case MaterialOutput::colour:
     case MaterialOutput::height:
@@ -107,6 +151,9 @@ GenerationResult generate(
         if (const auto error = validateMaterialGraph(*request.graph)) {
             return GenerationError{GenerationErrorCode::invalidGraph, error->message};
         }
+        if (const auto error = validateGraphPhysicalScale(request.material, *request.graph)) {
+            return GenerationError{GenerationErrorCode::invalidGraph, *error};
+        }
         graph = &*request.graph;
     } else {
         if (const auto error = validateMaterial(request.material)) {
@@ -120,6 +167,21 @@ GenerationResult generate(
         graph = &compiledGraph;
     }
 
+    const PhysicalSize coverage = request.physicalCoverage.value_or(
+        request.material.physicalSize);
+    const auto horizontalRepeats = exactRepeatCount(
+        coverage.widthMetres,
+        request.material.physicalSize.widthMetres);
+    const auto verticalRepeats = exactRepeatCount(
+        coverage.heightMetres,
+        request.material.physicalSize.heightMetres);
+    if (!horizontalRepeats || !verticalRepeats) {
+        return GenerationError{
+            GenerationErrorCode::invalidPhysicalCoverage,
+            "physical coverage must be finite, positive, and contain 1 to 4096 whole material repeats on each axis",
+        };
+    }
+
     try {
         detail::GraphEvaluator evaluator(request.material, *graph);
         Image image(request.width, request.height);
@@ -130,9 +192,11 @@ GenerationResult generate(
                 if (cancelled()) {
                     return cancellationError();
                 }
-                const double v = (static_cast<double>(y) + 0.5) / request.height;
+                const double v =
+                    (static_cast<double>(y) + 0.5) / request.height * *verticalRepeats;
                 for (std::uint32_t x = 0; x < request.width; ++x) {
-                    const double u = (static_cast<double>(x) + 0.5) / request.width;
+                    const double u =
+                        (static_cast<double>(x) + 0.5) / request.width * *horizontalRepeats;
                     heights[static_cast<std::size_t>(y) * request.width + x] =
                         evaluator.evaluate(MaterialOutput::normal, u, v).scalar;
                 }
@@ -153,10 +217,12 @@ GenerationResult generate(
                     const auto nextX = x + 1 == request.width ? 0 : x + 1;
                     const double derivativeU =
                         (heightAt(nextX, y) - heightAt(previousX, y)) *
-                        static_cast<double>(request.width) * 0.5;
+                        static_cast<double>(request.width) /
+                        coverage.widthMetres * 0.5;
                     const double derivativeV =
                         (heightAt(x, nextY) - heightAt(x, previousY)) *
-                        static_cast<double>(request.height) * 0.5;
+                        static_cast<double>(request.height) /
+                        coverage.heightMetres * 0.5;
                     row[x] = encodeNormal(
                         derivativeU,
                         derivativeV,
@@ -171,9 +237,11 @@ GenerationResult generate(
                 return cancellationError();
             }
             auto row = image.row(y);
-            const double v = (static_cast<double>(y) + 0.5) / request.height;
+            const double v =
+                (static_cast<double>(y) + 0.5) / request.height * *verticalRepeats;
             for (std::uint32_t x = 0; x < request.width; ++x) {
-                const double u = (static_cast<double>(x) + 0.5) / request.width;
+                const double u =
+                    (static_cast<double>(x) + 0.5) / request.width * *horizontalRepeats;
                 const auto sample = evaluator.evaluate(request.output, u, v);
                 switch (request.output) {
                 case MaterialOutput::colour:

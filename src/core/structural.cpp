@@ -71,6 +71,41 @@ double evaluateBrickGrid(
     double u,
     double v)
 {
+    return evaluateBrickGrid(operation, PhysicalSize{}, u, v);
+}
+
+double evaluateBrickGrid(
+    const BrickGridOperation& operation,
+    const PhysicalSize& materialSize,
+    double u,
+    double v)
+{
+    if (operation.physicalDimensions) {
+        const auto& physical = *operation.physicalDimensions;
+        if (physical.mortarMetres == 0.0) {
+            return 1.0;
+        }
+        const auto columns = static_cast<std::uint32_t>(
+            std::llround(materialSize.widthMetres / physical.widthMetres));
+        const auto rows = static_cast<std::uint32_t>(
+            std::llround(materialSize.heightMetres / physical.heightMetres));
+        const auto vertical = repeatedCoordinate(v, rows);
+        const bool offsetRow = (vertical.index % 2) != 0;
+        const double offset = offsetRow
+            ? operation.stagger / static_cast<double>(columns)
+            : 0.0;
+        const auto horizontal = repeatedCoordinate(u - offset, columns);
+        const double distanceX =
+            (0.5 - std::abs(horizontal.local)) * physical.widthMetres -
+            physical.mortarMetres * 0.5;
+        const double distanceY =
+            (0.5 - std::abs(vertical.local)) * physical.heightMetres -
+            physical.mortarMetres * 0.5;
+        const double softnessMetres = operation.softness *
+            std::min(physical.widthMetres, physical.heightMetres);
+        return smoothCoverage(std::min(distanceX, distanceY), softnessMetres);
+    }
+
     if (operation.mortar == 0.0) {
         return 1.0;
     }
