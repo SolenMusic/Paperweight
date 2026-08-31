@@ -6,11 +6,17 @@ if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" AND
         "Minimum macOS version supported by Paperweight")
 endif()
 
-project(Paperweight VERSION 0.0.8 LANGUAGES CXX)
+project(Paperweight VERSION 0.0.9 LANGUAGES CXX)
 
 option(PAPERWEIGHT_BUILD_TESTS "Build the Paperweight test suite" ON)
 option(PAPERWEIGHT_BUILD_MACOS_APP "Build the native macOS application" ${APPLE})
 option(PAPERWEIGHT_BUILD_EXAMPLES "Build Paperweight core examples" ON)
+option(PAPERWEIGHT_BUILD_BENCHMARKS "Build the Paperweight performance benchmarks" OFF)
+set(PAPERWEIGHT_THREADS_DEFAULT ON)
+if(EMSCRIPTEN)
+    set(PAPERWEIGHT_THREADS_DEFAULT OFF)
+endif()
+option(PAPERWEIGHT_ENABLE_THREADS "Enable native multithreaded generation" ${PAPERWEIGHT_THREADS_DEFAULT})
 
 function(paperweight_enable_project_warnings target)
     if(MSVC)
@@ -54,6 +60,14 @@ set_target_properties(paperweight_core PROPERTIES
 )
 paperweight_enable_project_warnings(paperweight_core)
 
+if(PAPERWEIGHT_ENABLE_THREADS)
+    find_package(Threads REQUIRED)
+    target_link_libraries(paperweight_core PRIVATE Threads::Threads)
+    target_compile_definitions(paperweight_core PRIVATE PAPERWEIGHT_ENABLE_THREADS=1)
+else()
+    target_compile_definitions(paperweight_core PRIVATE PAPERWEIGHT_ENABLE_THREADS=0)
+endif()
+
 if(PAPERWEIGHT_BUILD_TESTS)
     include(CTest)
     add_subdirectory(tests)
@@ -61,6 +75,10 @@ endif()
 
 if(PAPERWEIGHT_BUILD_EXAMPLES)
     add_subdirectory(examples)
+endif()
+
+if(PAPERWEIGHT_BUILD_BENCHMARKS)
+    add_subdirectory(benchmarks)
 endif()
 
 if(PAPERWEIGHT_BUILD_MACOS_APP)

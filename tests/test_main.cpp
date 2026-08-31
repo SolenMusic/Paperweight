@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <exception>
@@ -77,6 +78,22 @@ std::uint64_t checksum(std::span<const paperweight::Rgba8> pixels)
     return hash;
 }
 
+void expectChecksum(
+    const paperweight::Image* image,
+    std::uint64_t expected,
+    std::string_view description)
+{
+    if (image == nullptr) {
+        expect(false, description);
+        return;
+    }
+    const auto actual = checksum(image->pixels());
+    if (actual != expected) {
+        std::cerr << "Expected checksum " << expected << ", got " << actual << '\n';
+    }
+    expect(actual == expected, description);
+}
+
 paperweight::Material materialWithNoiseParameters(
     std::uint64_t seed,
     std::uint32_t frequency,
@@ -95,9 +112,9 @@ paperweight::Material materialWithNoiseParameters(
 
 void testVersion()
 {
-    constexpr paperweight::Version expected{0, 0, 8};
+    constexpr paperweight::Version expected{0, 0, 9};
     static_assert(paperweight::currentVersion == expected);
-    expect(paperweight::versionString() == "0.0.8", "version string is 0.0.8");
+    expect(paperweight::versionString() == "0.0.9", "version string is 0.0.9");
 }
 
 void testImage()
@@ -1433,6 +1450,25 @@ void testGenerator()
                std::get<paperweight::GenerationError>(cancelledBeforeStart).code ==
                    paperweight::GenerationErrorCode::cancelled,
            "normal generation honours cancellation before allocating its height field");
+
+    std::atomic_size_t parallelCancellationChecks{0};
+    const auto cancelledParallel = paperweight::generate(
+        paperweight::GenerationRequest{
+            paperweight::Material{},
+            512,
+            512,
+            paperweight::MaterialOutput::colour,
+            std::nullopt,
+            std::nullopt,
+            4},
+        [&parallelCancellationChecks]() {
+            return parallelCancellationChecks.fetch_add(1, std::memory_order_relaxed) >= 3;
+        });
+    expect(
+        std::holds_alternative<paperweight::GenerationError>(cancelledParallel) &&
+            std::get<paperweight::GenerationError>(cancelledParallel).code ==
+                paperweight::GenerationErrorCode::cancelled,
+        "parallel generation cooperatively cancels without publishing a partial image");
 }
 
 void testPhysicalScale()
@@ -1661,38 +1697,74 @@ void testPmat()
     const auto cobblestoneExample = paperweight::parsePmat(readExample("cobblestone.pmat"));
     const auto* brickMaterial = std::get_if<paperweight::Material>(&brickExample);
     const auto* cobblestoneMaterial = std::get_if<paperweight::Material>(&cobblestoneExample);
-    for (const auto* showcase : {
-             "cracked-stone.pmat",
-             "weathered-metal.pmat",
-             "mossy-pebbles.pmat",
-             "knotty-wood.pmat",
-             "marble-veins.pmat",
-             "eroded-terrain.pmat",
-         }) {
-        const auto parsedShowcase = paperweight::parsePmat(readExample(showcase));
+    struct ShowcaseGolden {
+        const char* path;
+        std::array<std::uint64_t, 4> checksums;
+    };
+    const std::array showcaseGoldens{
+        ShowcaseGolden{
+            "cracked-stone.pmat",
+            {453475275262207741ULL, 6649105402743347056ULL,
+             15147693073214695067ULL, 9368147851651855704ULL}},
+        ShowcaseGolden{
+            "weathered-metal.pmat",
+            {13463650236222189030ULL, 9329744494422625172ULL,
+             2788820147528998608ULL, 15949878050082813124ULL}},
+        ShowcaseGolden{
+            "mossy-pebbles.pmat",
+            {8080888395645452509ULL, 16597892231079792016ULL,
+             3236852364673261450ULL, 1390090805517284749ULL}},
+        ShowcaseGolden{
+            "knotty-wood.pmat",
+            {6841059652416222609ULL, 12398796720431777282ULL,
+             5991626458110427586ULL, 5389682451365612905ULL}},
+        ShowcaseGolden{
+            "marble-veins.pmat",
+            {13633835698441808217ULL, 14785178712321867342ULL,
+             17786982241078725417ULL, 15280871892137859466ULL}},
+        ShowcaseGolden{
+            "eroded-terrain.pmat",
+            {2672928488154530846ULL, 11242585904416509996ULL,
+             693934066486834851ULL, 17089152962988358180ULL}},
+    };
+    constexpr std::array outputs{
+        paperweight::MaterialOutput::colour,
+        paperweight::MaterialOutput::height,
+        paperweight::MaterialOutput::normal,
+        paperweight::MaterialOutput::roughness,
+    };
+    for (const auto& showcase : showcaseGoldens) {
+        const auto parsedShowcase = paperweight::parsePmat(readExample(showcase.path));
         const auto* showcaseMaterial = std::get_if<paperweight::Material>(&parsedShowcase);
         expect(showcaseMaterial != nullptr,
                "checked-in advanced surface showcase parses");
         if (showcaseMaterial != nullptr) {
-            const auto first = paperweight::generate(
-                {*showcaseMaterial,
-                 48,
-                 48,
-                 paperweight::MaterialOutput::colour,
-                 std::nullopt,
-                 std::nullopt});
-            const auto second = paperweight::generate(
-                {*showcaseMaterial,
-                 48,
-                 48,
-                 paperweight::MaterialOutput::colour,
-                 std::nullopt,
-                 std::nullopt});
-            const auto* firstImage = std::get_if<paperweight::Image>(&first);
-            const auto* secondImage = std::get_if<paperweight::Image>(&second);
-            expect(firstImage != nullptr && secondImage != nullptr &&
-                       checksum(firstImage->pixels()) == checksum(secondImage->pixels()),
-                   "checked-in advanced surface showcase generates deterministically");
+            for (std::size_t outputIndex = 0; outputIndex < outputs.size(); ++outputIndex) {
+                paperweight::GenerationRequest request{
+                    *showcaseMaterial,
+                    32,
+                    32,
+                    outputs[outputIndex],
+                    std::nullopt,
+                    std::nullopt,
+                    1};
+                const auto serial = paperweight::generate(request);
+                request.workerCount = 4;
+                const auto parallel = paperweight::generate(request);
+                const auto* image = std::get_if<paperweight::Image>(&serial);
+                const auto* parallelImage = std::get_if<paperweight::Image>(&parallel);
+                expectChecksum(
+                    image,
+                    showcase.checksums[outputIndex],
+                    "showcase output matches its byte-exact golden checksum");
+                expect(
+                    image != nullptr && parallelImage != nullptr &&
+                        std::equal(
+                            image->pixels().begin(),
+                            image->pixels().end(),
+                            parallelImage->pixels().begin()),
+                    "serial and four-worker showcase output is byte-identical");
+            }
         }
     }
     expect(brickMaterial != nullptr && !brickMaterial->layers.empty() &&

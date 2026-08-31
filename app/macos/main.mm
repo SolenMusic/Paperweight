@@ -1,6 +1,7 @@
 #import <AppKit/AppKit.h>
 #import <dispatch/dispatch.h>
 
+#include "BenchmarkWindowController.hpp"
 #include "ImageBridge.hpp"
 
 #include <paperweight/generator.hpp>
@@ -121,6 +122,7 @@
 @interface AppDelegate : NSObject <NSApplicationDelegate, NSWindowDelegate>
 
 @property(nonatomic, strong) NSWindow* window;
+@property(nonatomic, strong) BenchmarkWindowController* benchmarkWindowController;
 @property(nonatomic, strong) MaterialPreviewView* previewView;
 @property(nonatomic, strong) NSVisualEffectView* previewLoadingPanel;
 @property(nonatomic, strong) NSProgressIndicator* previewProgressIndicator;
@@ -672,7 +674,27 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     [editMenu addItemWithTitle:@"Select All" action:@selector(selectAll:) keyEquivalent:@"a"];
     editMenuItem.submenu = editMenu;
 
+    auto* toolsMenuItem = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
+    [mainMenu addItem:toolsMenuItem];
+    auto* toolsMenu = [[NSMenu alloc] initWithTitle:@"Tools"];
+    auto* benchmarkItem = [toolsMenu addItemWithTitle:@"Performance Benchmark…"
+                                               action:@selector(showPerformanceBenchmark:)
+                                        keyEquivalent:@"b"];
+    benchmarkItem.target = self;
+    benchmarkItem.keyEquivalentModifierMask =
+        NSEventModifierFlagCommand | NSEventModifierFlagOption;
+    toolsMenuItem.submenu = toolsMenu;
+
     NSApp.mainMenu = mainMenu;
+}
+
+- (void)showPerformanceBenchmark:(id)sender
+{
+    static_cast<void>(sender);
+    if (self.benchmarkWindowController == nil) {
+        self.benchmarkWindowController = [[BenchmarkWindowController alloc] init];
+    }
+    [self.benchmarkWindowController showBenchmarkWindow];
 }
 
 - (void)buildWindow

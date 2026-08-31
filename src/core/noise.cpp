@@ -2,6 +2,8 @@
 
 #include <paperweight/hash.hpp>
 
+#include "noise_internal.hpp"
+
 #include <cmath>
 #include <stdexcept>
 
@@ -37,20 +39,13 @@ double latticeValue(
 
 } // namespace
 
-double periodicValueNoise2D(
+double detail::periodicValueNoise2DUnchecked(
     double x,
     double y,
     std::uint32_t periodX,
     std::uint32_t periodY,
     std::uint64_t seed)
 {
-    if (periodX == 0 || periodY == 0) {
-        throw std::invalid_argument("noise periods must be greater than zero");
-    }
-    if (!std::isfinite(x) || !std::isfinite(y)) {
-        throw std::invalid_argument("noise coordinates must be finite");
-    }
-
     const auto x0 = static_cast<std::int64_t>(std::floor(x));
     const auto y0 = static_cast<std::int64_t>(std::floor(y));
     const double tx = fade(x - static_cast<double>(x0));
@@ -67,6 +62,22 @@ double periodicValueNoise2D(
     return lerp(top, bottom, ty);
 }
 
+double periodicValueNoise2D(
+    double x,
+    double y,
+    std::uint32_t periodX,
+    std::uint32_t periodY,
+    std::uint64_t seed)
+{
+    if (periodX == 0 || periodY == 0) {
+        throw std::invalid_argument("noise periods must be greater than zero");
+    }
+    if (!std::isfinite(x) || !std::isfinite(y)) {
+        throw std::invalid_argument("noise coordinates must be finite");
+    }
+    return detail::periodicValueNoise2DUnchecked(x, y, periodX, periodY, seed);
+}
+
 double periodicFbm2D(double u, double v, const Material& material)
 {
     return periodicFbm2D(u, v, material, material.seed);
@@ -81,6 +92,15 @@ double periodicFbm2D(double u, double v, const Material& material, std::uint64_t
         throw std::invalid_argument("FBM coordinates must be finite");
     }
 
+    return detail::periodicFbm2DUnchecked(u, v, material, seed);
+}
+
+double detail::periodicFbm2DUnchecked(
+    double u,
+    double v,
+    const Material& material,
+    std::uint64_t seed)
+{
     double total = 0.0;
     double amplitude = 1.0;
     double amplitudeSum = 0.0;
@@ -88,7 +108,7 @@ double periodicFbm2D(double u, double v, const Material& material, std::uint64_t
 
     for (std::uint32_t octave = 0; octave < material.octaves; ++octave) {
         const auto octaveSeed = mixBits(seed ^ static_cast<std::uint64_t>(octave));
-        total += periodicValueNoise2D(
+        total += periodicValueNoise2DUnchecked(
             u * frequency,
             v * frequency,
             frequency,

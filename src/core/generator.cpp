@@ -6,10 +6,17 @@
 #include "graph_evaluator.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <exception>
 #include <limits>
+#if PAPERWEIGHT_ENABLE_THREADS
+#include <mutex>
+#endif
 #include <optional>
+#if PAPERWEIGHT_ENABLE_THREADS
+#include <thread>
+#endif
 #include <type_traits>
 #include <vector>
 
@@ -17,6 +24,127 @@ namespace paperweight {
 namespace {
 
 constexpr std::uint32_t maximumDimension = 4096;
+#if PAPERWEIGHT_ENABLE_THREADS
+constexpr std::uint32_t maximumWorkerCount = 32;
+constexpr std::uint64_t automaticParallelPixelThreshold = 32U * 1024U;
+#endif
+
+class CancellationState {
+public:
+    explicit CancellationState(const GenerationCancellationCheck& check)
+        : check_(check)
+    {
+    }
+
+    bool cancelled()
+    {
+        if (stopped_.load(std::memory_order_relaxed)) {
+            return true;
+        }
+        if (!check_) {
+            return false;
+        }
+#if PAPERWEIGHT_ENABLE_THREADS
+        const std::lock_guard lock(checkMutex_);
+#endif
+        if (stopped_.load(std::memory_order_relaxed)) {
+            return true;
+        }
+        if (check_()) {
+            stopped_.store(true, std::memory_order_relaxed);
+            return true;
+        }
+        return false;
+    }
+
+    void requestStop() noexcept
+    {
+        stopped_.store(true, std::memory_order_relaxed);
+    }
+
+    bool stopped() const noexcept
+    {
+        return stopped_.load(std::memory_order_relaxed);
+    }
+
+private:
+    const GenerationCancellationCheck& check_;
+    std::atomic_bool stopped_{false};
+#if PAPERWEIGHT_ENABLE_THREADS
+    std::mutex checkMutex_;
+#endif
+};
+
+std::uint32_t resolvedWorkerCount(const GenerationRequest& request)
+{
+    std::uint32_t count = request.workerCount;
+#if PAPERWEIGHT_ENABLE_THREADS
+    const auto pixels = static_cast<std::uint64_t>(request.width) * request.height;
+    if (count == 0) {
+        count = pixels < automaticParallelPixelThreshold
+            ? 1U
+            : std::max(1U, std::thread::hardware_concurrency());
+    }
+    return std::min({count, maximumWorkerCount, request.height});
+#else
+    static_cast<void>(count);
+    return 1;
+#endif
+}
+
+template<typename Function>
+bool forEachRow(
+    std::uint32_t height,
+    std::uint32_t workerCount,
+    CancellationState& cancellation,
+    Function&& function)
+{
+    if (workerCount <= 1) {
+        for (std::uint32_t y = 0; y < height; ++y) {
+            if (cancellation.cancelled()) {
+                return false;
+            }
+            function(0, y);
+        }
+        return true;
+    }
+
+#if PAPERWEIGHT_ENABLE_THREADS
+    std::atomic<std::uint32_t> nextRow{0};
+    std::exception_ptr failure;
+    std::mutex failureMutex;
+    {
+        std::vector<std::jthread> workers;
+        workers.reserve(workerCount);
+        for (std::uint32_t workerIndex = 0; workerIndex < workerCount; ++workerIndex) {
+            workers.emplace_back([&, workerIndex]() {
+                try {
+                    while (!cancellation.cancelled()) {
+                        const auto y = nextRow.fetch_add(1, std::memory_order_relaxed);
+                        if (y >= height) {
+                            return;
+                        }
+                        function(workerIndex, y);
+                    }
+                } catch (...) {
+                    const std::lock_guard lock(failureMutex);
+                    if (failure == nullptr) {
+                        failure = std::current_exception();
+                    }
+                    cancellation.requestStop();
+                }
+            });
+        }
+    }
+    if (failure != nullptr) {
+        std::rethrow_exception(failure);
+    }
+    return !cancellation.stopped();
+#else
+    static_cast<void>(function);
+    return false;
+#endif
+}
 
 std::uint8_t toUnorm8(double value)
 {
@@ -108,9 +236,7 @@ GenerationResult generate(
     const GenerationRequest& request,
     const GenerationCancellationCheck& isCancelled)
 {
-    const auto cancelled = [&isCancelled]() {
-        return isCancelled && isCancelled();
-    };
+    CancellationState cancellation(isCancelled);
     const auto cancellationError = []() {
         return GenerationError{
             GenerationErrorCode::cancelled,
@@ -118,7 +244,7 @@ GenerationResult generate(
         };
     };
 
-    if (cancelled()) {
+    if (cancellation.cancelled()) {
         return cancellationError();
     }
     if (request.width == 0 || request.height == 0 || request.width > maximumDimension ||
@@ -183,32 +309,42 @@ GenerationResult generate(
     }
 
     try {
-        detail::GraphEvaluator evaluator(request.material, *graph);
+        const auto workerCount = resolvedWorkerCount(request);
+        std::vector<detail::GraphEvaluator> evaluators;
+        evaluators.reserve(workerCount);
+        for (std::uint32_t worker = 0; worker < workerCount; ++worker) {
+            evaluators.emplace_back(request.material, *graph);
+        }
         Image image(request.width, request.height);
         if (request.output == MaterialOutput::normal) {
             std::vector<double> heights(
                 static_cast<std::size_t>(request.width) * request.height);
-            for (std::uint32_t y = 0; y < request.height; ++y) {
-                if (cancelled()) {
-                    return cancellationError();
-                }
+            const bool heightsComplete = forEachRow(
+                request.height,
+                workerCount,
+                cancellation,
+                [&](std::uint32_t worker, std::uint32_t y) {
                 const double v =
                     (static_cast<double>(y) + 0.5) / request.height * *verticalRepeats;
                 for (std::uint32_t x = 0; x < request.width; ++x) {
                     const double u =
                         (static_cast<double>(x) + 0.5) / request.width * *horizontalRepeats;
                     heights[static_cast<std::size_t>(y) * request.width + x] =
-                        evaluator.evaluate(MaterialOutput::normal, u, v).scalar;
+                        evaluators[worker].evaluate(MaterialOutput::normal, u, v).scalar;
                 }
+            });
+            if (!heightsComplete) {
+                return cancellationError();
             }
 
             const auto heightAt = [&](std::uint32_t x, std::uint32_t y) {
                 return heights[static_cast<std::size_t>(y) * request.width + x];
             };
-            for (std::uint32_t y = 0; y < request.height; ++y) {
-                if (cancelled()) {
-                    return cancellationError();
-                }
+            const bool normalsComplete = forEachRow(
+                request.height,
+                workerCount,
+                cancellation,
+                [&](std::uint32_t, std::uint32_t y) {
                 auto row = image.row(y);
                 const auto previousY = y == 0 ? request.height - 1 : y - 1;
                 const auto nextY = y + 1 == request.height ? 0 : y + 1;
@@ -228,21 +364,25 @@ GenerationResult generate(
                         derivativeV,
                         request.material.normalStrength);
                 }
+            });
+            if (!normalsComplete) {
+                return cancellationError();
             }
             return image;
         }
 
-        for (std::uint32_t y = 0; y < request.height; ++y) {
-            if (cancelled()) {
-                return cancellationError();
-            }
+        const bool generationComplete = forEachRow(
+            request.height,
+            workerCount,
+            cancellation,
+            [&](std::uint32_t worker, std::uint32_t y) {
             auto row = image.row(y);
             const double v =
                 (static_cast<double>(y) + 0.5) / request.height * *verticalRepeats;
             for (std::uint32_t x = 0; x < request.width; ++x) {
                 const double u =
                     (static_cast<double>(x) + 0.5) / request.width * *horizontalRepeats;
-                const auto sample = evaluator.evaluate(request.output, u, v);
+                const auto sample = evaluators[worker].evaluate(request.output, u, v);
                 switch (request.output) {
                 case MaterialOutput::colour:
                     row[x] = encodeColour(sample);
@@ -258,12 +398,11 @@ GenerationResult generate(
                     break;
                 case MaterialOutput::normal:
                     break;
-                default:
-                    return GenerationError{
-                        GenerationErrorCode::invalidOutput,
-                        "the requested material output is not supported"};
                 }
             }
+        });
+        if (!generationComplete) {
+            return cancellationError();
         }
         return image;
     } catch (const std::exception& exception) {
