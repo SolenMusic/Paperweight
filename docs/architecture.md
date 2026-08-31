@@ -26,19 +26,33 @@ the generator API, leaving room for greyscale, higher precision, floating-point,
 and non-colour data formats later.
 
 The generator combines platform-stable integer hashing, periodic 2D value
-noise, and normalised periodic FBM. In v0.0.3, reusable evaluation objects
-produce both normalised RGBA colour and a scalar value. An ordered layer stack
-composites those paired results, so colour, height, tangent-space normal, and
-roughness all continue to describe the same procedural surface. Texture samples
-are taken at pixel centres over one mathematical period. Normal-map finite
-differences wrap both axes; no output copies or repairs image edges.
+noise, and normalised periodic FBM. Reusable evaluation objects produce both
+normalised RGBA colour and a scalar value. An ordered layer stack composites
+those paired results, so colour, height, tangent-space normal, and roughness all
+continue to describe the same procedural surface. Texture samples are taken at
+pixel centres over one mathematical period. Normal-map finite differences wrap
+both axes; no output copies or repairs image edges.
 
 The initial operation variants are noise, solid colour, levels, and threshold.
 Every `MaterialLayer` also owns an enabled flag, opacity, and blend, add, or
 multiply composite mode. Levels and threshold process the accumulated input;
 noise and solid colour generate new samples. The evaluator itself has no UI or
-platform dependency, and the variant boundary can evolve into the reusable
-evaluation objects needed by later masks, layers, and graph work.
+platform dependency, and the variant boundary can evolve into the graph model
+planned for a later release.
+
+In v0.0.4, a layer also owns its coordinate transform and optional mask. The
+evaluator rotates by 0, 90, 180, or 270 degrees, applies positive integer X/Y
+scale, and then applies continuous offsets. An optional two-channel periodic
+FBM field displaces those coordinates before the layer operation runs. The
+mask is a separate deterministic periodic FBM field with its own seed,
+low/high remapping, and inversion; its value multiplies the layer opacity.
+
+The integer-scale and quarter-turn restrictions are part of the seamlessness
+contract, not UI shortcuts. Moving either input coordinate by one tile always
+moves transformed coordinates by whole periods. Periodic warp and mask fields
+therefore remain periodic under the same shift. Arbitrary-angle toroidal
+resampling may be explored later, but v0.0.4 never offers a transform that can
+quietly break a tile edge.
 
 `GenerationRequest::output` selects one portable RGBA8 result. The colour map
 interpolates two RGBA endpoints, height and roughness use explicit linear
@@ -68,31 +82,37 @@ handle paths, while parsing and serialisation remain in portable C++.
 `.pmat` is a human-readable, versioned text format. Parsing and serialisation live in the portable core. Round trips should be stable and errors should identify useful source locations.
 
 The format version is deliberately independent of the application version.
-Paperweight v0.0.3 reads `.pmat` format versions 1 and 2 and writes version 2.
+Paperweight v0.0.4 reads `.pmat` format versions 1, 2, and 3 and writes version 3.
 Unknown keys and unsupported format versions fail explicitly instead of being
 silently ignored. Version 1 maps to the original implicit FBM source; adding an
-explicit base noise layer produces byte-identical output.
+explicit base noise layer produces byte-identical output. Version-2 layers map
+to identity transforms with warp and masks disabled, also preserving their
+historical output exactly.
 See [pmat-format.md](pmat-format.md).
 
 ## Initial data flow
 
 ```text
-.pmat text -> parser -> material + ordered operation layers
-                    ^                   |
-                    |             portable evaluator
-                serialiser        (RGBA + scalar)
-                                        |
-                             +----------+----------+---------+
-                             |          |          |         |
-                           colour    height     normal   roughness
-                             |          |          |         |
-                             +----------+----------+---------+
-                                            |
-                                      preview / PNG
+.pmat text -> parser -> material + ordered layers
+                    ^               |
+                    |         transform + warp
+                serialiser           |
+                              operation evaluation
+                                      |
+                                mask + composite
+                                (RGBA + scalar)
+                                      |
+                           +----------+----------+---------+
+                           |          |          |         |
+                         colour    height     normal   roughness
+                           |          |          |         |
+                           +----------+----------+---------+
+                                          |
+                                    preview / PNG
 ```
 
 ## Deferred architecture
 
-Masks, warping, specialised generators, material graphs, WebAssembly bindings,
-game-engine adapters, complete PBR authoring, and GPU backends remain outside
-v0.0.3.
+Specialised generators, material graphs, WebAssembly bindings, game-engine
+adapters, complete PBR authoring, arbitrary-angle rotation, and GPU backends
+remain outside v0.0.4.

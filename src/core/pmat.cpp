@@ -74,6 +74,20 @@ struct LayerBuilder {
     ParsedValue<double> levelsHigh;
     ParsedValue<double> levelsGamma;
     ParsedValue<double> threshold;
+    ParsedValue<std::uint32_t> scaleX;
+    ParsedValue<std::uint32_t> scaleY;
+    ParsedValue<double> offsetX;
+    ParsedValue<double> offsetY;
+    ParsedValue<QuarterTurn> rotation;
+    ParsedValue<bool> warpEnabled;
+    ParsedValue<double> warpStrength;
+    ParsedValue<std::uint32_t> warpFrequency;
+    ParsedValue<std::uint64_t> warpSeedOffset;
+    ParsedValue<bool> maskEnabled;
+    ParsedValue<bool> maskInverted;
+    ParsedValue<std::uint64_t> maskSeedOffset;
+    ParsedValue<double> maskLow;
+    ParsedValue<double> maskHigh;
 };
 
 std::string_view trim(std::string_view value)
@@ -232,6 +246,36 @@ std::optional<OperationKind> parseOperationKind(std::string_view value)
         return OperationKind::threshold;
     }
     return std::nullopt;
+}
+
+std::optional<QuarterTurn> parseRotation(std::string_view value)
+{
+    std::uint32_t degrees = 0;
+    if (!parseInteger(value, degrees)) {
+        return std::nullopt;
+    }
+    switch (degrees) {
+    case 0:
+        return QuarterTurn::none;
+    case 90:
+        return QuarterTurn::clockwise90;
+    case 180:
+        return QuarterTurn::clockwise180;
+    case 270:
+        return QuarterTurn::clockwise270;
+    default:
+        return std::nullopt;
+    }
+}
+
+bool hasVersionThreeFields(const LayerBuilder& builder)
+{
+    return builder.scaleX.value || builder.scaleY.value || builder.offsetX.value ||
+        builder.offsetY.value || builder.rotation.value || builder.warpEnabled.value ||
+        builder.warpStrength.value || builder.warpFrequency.value ||
+        builder.warpSeedOffset.value || builder.maskEnabled.value ||
+        builder.maskInverted.value || builder.maskSeedOffset.value ||
+        builder.maskLow.value || builder.maskHigh.value;
 }
 
 template<typename Value>
@@ -537,6 +581,121 @@ ParseResult parsePmat(std::string_view text)
                     if (!storeValue(builder.threshold, parsed, lineNumber, valueColumn)) {
                         return duplicate();
                     }
+                } else if (property == "transform.scale_x") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "transform scale X must be an integer");
+                    }
+                    if (!storeValue(builder.scaleX, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "transform.scale_y") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "transform scale Y must be an integer");
+                    }
+                    if (!storeValue(builder.scaleY, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "transform.offset_x") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "transform offset X must be a decimal number");
+                    }
+                    if (!storeValue(builder.offsetX, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "transform.offset_y") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "transform offset Y must be a decimal number");
+                    }
+                    if (!storeValue(builder.offsetY, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "transform.rotation") {
+                    const auto parsed = parseRotation(value);
+                    if (!parsed) {
+                        return diagnostic(
+                            lineNumber,
+                            valueColumn,
+                            "transform rotation must be 0, 90, 180, or 270");
+                    }
+                    if (!storeValue(builder.rotation, *parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "warp.enabled") {
+                    bool parsed = false;
+                    if (!parseBoolean(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "warp enabled must be true or false");
+                    }
+                    if (!storeValue(builder.warpEnabled, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "warp.strength") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "warp strength must be a decimal number");
+                    }
+                    if (!storeValue(builder.warpStrength, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "warp.frequency") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "warp frequency must be an integer");
+                    }
+                    if (!storeValue(builder.warpFrequency, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "warp.seed_offset") {
+                    std::uint64_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "warp seed offset must be an unsigned integer");
+                    }
+                    if (!storeValue(builder.warpSeedOffset, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "mask.enabled") {
+                    bool parsed = false;
+                    if (!parseBoolean(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "mask enabled must be true or false");
+                    }
+                    if (!storeValue(builder.maskEnabled, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "mask.inverted") {
+                    bool parsed = false;
+                    if (!parseBoolean(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "mask inverted must be true or false");
+                    }
+                    if (!storeValue(builder.maskInverted, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "mask.seed_offset") {
+                    std::uint64_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "mask seed offset must be an unsigned integer");
+                    }
+                    if (!storeValue(builder.maskSeedOffset, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "mask.input_low") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "mask input low must be a decimal number");
+                    }
+                    if (!storeValue(builder.maskLow, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "mask.input_high") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "mask input high must be a decimal number");
+                    }
+                    if (!storeValue(builder.maskHigh, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
                 } else {
                     return diagnostic(lineNumber, 1, "unknown layer key '" + std::string(key) + "'");
                 }
@@ -600,12 +759,139 @@ ParseResult parsePmat(std::string_view text)
                     "layer opacity must be finite and between 0 and 1");
             }
 
+            if (formatVersion < 3 && hasVersionThreeFields(builder)) {
+                return diagnostic(
+                    lineNumber + 1,
+                    1,
+                    "coordinate transforms, warp, and masks require .pmat version 3");
+            }
+            if (formatVersion >= 3) {
+                if (!builder.scaleX.value) {
+                    return missingLayerField(lineNumber + 1, index, "transform.scale_x");
+                }
+                if (!builder.scaleY.value) {
+                    return missingLayerField(lineNumber + 1, index, "transform.scale_y");
+                }
+                if (!builder.offsetX.value) {
+                    return missingLayerField(lineNumber + 1, index, "transform.offset_x");
+                }
+                if (!builder.offsetY.value) {
+                    return missingLayerField(lineNumber + 1, index, "transform.offset_y");
+                }
+                if (!builder.rotation.value) {
+                    return missingLayerField(lineNumber + 1, index, "transform.rotation");
+                }
+                if (!builder.warpEnabled.value) {
+                    return missingLayerField(lineNumber + 1, index, "warp.enabled");
+                }
+                if (!builder.warpStrength.value) {
+                    return missingLayerField(lineNumber + 1, index, "warp.strength");
+                }
+                if (!builder.warpFrequency.value) {
+                    return missingLayerField(lineNumber + 1, index, "warp.frequency");
+                }
+                if (!builder.warpSeedOffset.value) {
+                    return missingLayerField(lineNumber + 1, index, "warp.seed_offset");
+                }
+                if (!builder.maskEnabled.value) {
+                    return missingLayerField(lineNumber + 1, index, "mask.enabled");
+                }
+                if (!builder.maskInverted.value) {
+                    return missingLayerField(lineNumber + 1, index, "mask.inverted");
+                }
+                if (!builder.maskSeedOffset.value) {
+                    return missingLayerField(lineNumber + 1, index, "mask.seed_offset");
+                }
+                if (!builder.maskLow.value) {
+                    return missingLayerField(lineNumber + 1, index, "mask.input_low");
+                }
+                if (!builder.maskHigh.value) {
+                    return missingLayerField(lineNumber + 1, index, "mask.input_high");
+                }
+
+                if (*builder.scaleX.value < LayerLimits::minimumScale ||
+                    *builder.scaleX.value > LayerLimits::maximumScale) {
+                    return diagnostic(
+                        builder.scaleX.line,
+                        builder.scaleX.column,
+                        "transform scale X must be between 1 and 16");
+                }
+                if (*builder.scaleY.value < LayerLimits::minimumScale ||
+                    *builder.scaleY.value > LayerLimits::maximumScale) {
+                    return diagnostic(
+                        builder.scaleY.line,
+                        builder.scaleY.column,
+                        "transform scale Y must be between 1 and 16");
+                }
+                if (!std::isfinite(*builder.offsetX.value) ||
+                    std::abs(*builder.offsetX.value) > LayerLimits::maximumOffsetMagnitude) {
+                    return diagnostic(
+                        builder.offsetX.line,
+                        builder.offsetX.column,
+                        "transform offset X must be finite and between -1024 and 1024");
+                }
+                if (!std::isfinite(*builder.offsetY.value) ||
+                    std::abs(*builder.offsetY.value) > LayerLimits::maximumOffsetMagnitude) {
+                    return diagnostic(
+                        builder.offsetY.line,
+                        builder.offsetY.column,
+                        "transform offset Y must be finite and between -1024 and 1024");
+                }
+                if (!std::isfinite(*builder.warpStrength.value) ||
+                    *builder.warpStrength.value < LayerLimits::minimumWarpStrength ||
+                    *builder.warpStrength.value > LayerLimits::maximumWarpStrength) {
+                    return diagnostic(
+                        builder.warpStrength.line,
+                        builder.warpStrength.column,
+                        "warp strength must be finite and between 0 and 1");
+                }
+                if (*builder.warpFrequency.value < LayerLimits::minimumWarpFrequency ||
+                    *builder.warpFrequency.value > LayerLimits::maximumWarpFrequency) {
+                    return diagnostic(
+                        builder.warpFrequency.line,
+                        builder.warpFrequency.column,
+                        "warp frequency must be between 1 and 16");
+                }
+                if (!std::isfinite(*builder.maskLow.value) ||
+                    !std::isfinite(*builder.maskHigh.value) ||
+                    *builder.maskLow.value < LayerLimits::minimumLevel ||
+                    *builder.maskHigh.value > LayerLimits::maximumLevel ||
+                    *builder.maskLow.value >= *builder.maskHigh.value) {
+                    return diagnostic(
+                        builder.maskHigh.line,
+                        builder.maskHigh.column,
+                        "mask input range must be finite, within 0 to 1, and increasing");
+                }
+            }
+
             MaterialLayer layer{
                 *builder.enabled.value,
                 *builder.opacity.value,
                 *builder.compositeMode.value,
                 NoiseOperation{},
+                {},
+                {},
             };
+            if (formatVersion >= 3) {
+                layer.transform = CoordinateTransform{
+                    *builder.scaleX.value,
+                    *builder.scaleY.value,
+                    *builder.offsetX.value,
+                    *builder.offsetY.value,
+                    *builder.rotation.value,
+                    *builder.warpEnabled.value,
+                    *builder.warpStrength.value,
+                    *builder.warpFrequency.value,
+                    *builder.warpSeedOffset.value,
+                };
+                layer.mask = LayerMask{
+                    *builder.maskEnabled.value,
+                    *builder.maskInverted.value,
+                    *builder.maskSeedOffset.value,
+                    *builder.maskLow.value,
+                    *builder.maskHigh.value,
+                };
+            }
             switch (*builder.operation.value) {
             case OperationKind::noise:
                 if (!builder.seedOffset.value) {
@@ -754,7 +1040,7 @@ SerialisationResult serialisePmat(const Material& material)
     }
 
     std::string output;
-    output.reserve(320 + material.layers.size() * 192);
+    output.reserve(320 + material.layers.size() * 640);
     output += "# Paperweight procedural material\n";
     output += "pmat.version = " + std::to_string(currentPmatVersion) + "\n";
     output += "material.type = fbm\n";
@@ -802,6 +1088,34 @@ SerialisationResult serialisePmat(const Material& material)
             }
             output += prefix + "threshold.value = " + value + "\n";
         }
+
+        const auto offsetX = formatDouble(layer.transform.offsetX);
+        const auto offsetY = formatDouble(layer.transform.offsetY);
+        const auto warpStrength = formatDouble(layer.transform.warpStrength);
+        const auto maskLow = formatDouble(layer.mask.inputLow);
+        const auto maskHigh = formatDouble(layer.mask.inputHigh);
+        if (offsetX.empty() || offsetY.empty() || warpStrength.empty() ||
+            maskLow.empty() || maskHigh.empty()) {
+            return SerialisationError{"could not format transform or mask parameters"};
+        }
+        output += prefix + "transform.scale_x = " + std::to_string(layer.transform.scaleX) + "\n";
+        output += prefix + "transform.scale_y = " + std::to_string(layer.transform.scaleY) + "\n";
+        output += prefix + "transform.offset_x = " + offsetX + "\n";
+        output += prefix + "transform.offset_y = " + offsetY + "\n";
+        output += prefix + "transform.rotation = " +
+            std::to_string(rotationDegrees(layer.transform.rotation)) + "\n";
+        output += prefix + "warp.enabled = " +
+            (layer.transform.warpEnabled ? "true\n" : "false\n");
+        output += prefix + "warp.strength = " + warpStrength + "\n";
+        output += prefix + "warp.frequency = " +
+            std::to_string(layer.transform.warpFrequency) + "\n";
+        output += prefix + "warp.seed_offset = " +
+            std::to_string(layer.transform.warpSeedOffset) + "\n";
+        output += prefix + "mask.enabled = " + (layer.mask.enabled ? "true\n" : "false\n");
+        output += prefix + "mask.inverted = " + (layer.mask.inverted ? "true\n" : "false\n");
+        output += prefix + "mask.seed_offset = " + std::to_string(layer.mask.seedOffset) + "\n";
+        output += prefix + "mask.input_low = " + maskLow + "\n";
+        output += prefix + "mask.input_high = " + maskHigh + "\n";
     }
     return output;
 }

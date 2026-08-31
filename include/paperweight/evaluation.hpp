@@ -21,6 +21,23 @@ struct EvaluationContext {
     double v;
 };
 
+struct EvaluatedCoordinates {
+    double u;
+    double v;
+
+    friend constexpr bool operator==(
+        const EvaluatedCoordinates&,
+        const EvaluatedCoordinates&) = default;
+};
+
+[[nodiscard]] EvaluatedCoordinates transformCoordinates(
+    const CoordinateTransform& transform,
+    const EvaluationContext& context);
+
+[[nodiscard]] double evaluateLayerMask(
+    const LayerMask& mask,
+    const EvaluationContext& context);
+
 [[nodiscard]] EvaluatedSample evaluateOperation(
     const LayerOperation& operation,
     const EvaluationContext& context,

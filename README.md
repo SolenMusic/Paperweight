@@ -13,11 +13,11 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-v0.0.3 is the current Layers release. An ordered stack now combines reusable
-noise, solid-colour, levels, and threshold operations with blend, add, and
-multiply compositing. Every layer has its own enabled state and opacity. Colour,
-height, tangent-space normal, and roughness continue to derive from the same
-deterministic, seamless evaluation result.
+v0.0.4 is the current Masks and Warping release. Every layer can now transform
+its coordinates with independent integer scale, continuous periodic offset, and
+quarter-turn rotation, then apply deterministic periodic distortion and a
+remappable noise mask. Colour, height, tangent-space normal, and roughness still
+derive from the same deterministic, mathematically seamless evaluation result.
 
 The staged work is tracked in [GitHub Issues](https://github.com/SolenMusic/Paperweight/issues).
 
@@ -26,7 +26,8 @@ The staged work is tracked in [GitHub Issues](https://github.com/SolenMusic/Pape
 ```text
 Portable C++20 core
   image buffers, deterministic primitives, periodic noise,
-  reusable layer evaluation, generator API, .pmat parsing/serialisation
+  layer transforms, masks and evaluation, generator API,
+  .pmat parsing/serialisation
              |
              +-- Native builds and game embedding
              +-- Future WebAssembly build
@@ -39,15 +40,16 @@ See [docs/architecture.md](docs/architecture.md) and [docs/roadmap.md](docs/road
 
 ## Current scope
 
-The current release adds a native layer editor with add, remove, reorder,
-enable/disable, composite-mode, opacity, and operation-specific controls. The
-portable evaluator applies the same stack for all four material outputs, and
-format-version-2 `.pmat` files preserve it exactly. Format-version-1 files still
-open and retain their output; saving migrates them to the current format.
+The current release adds Layer, Transform, and Mask inspector tabs to the native
+editor. Scale, offset, rotation, warp strength/frequency/seed, and mask
+enable/invert/seed/remapping all regenerate the preview live. The portable
+evaluator applies the same stack for all four material outputs. Format-version-1
+and version-2 `.pmat` files still open with their historical output intact;
+saving migrates them to format version 3.
 
-Masks and warping, structural generators, a material graph, physical scale,
-advanced surface tools, performance work, and the stable game library follow
-in the documented roadmap.
+Structural generators, a material graph, physical scale, advanced surface
+tools, performance work, and the stable game library follow in the documented
+roadmap.
 
 ## Repository layout
 
@@ -93,7 +95,8 @@ open build/app/macos/Paperweight.app
 
 In the app, use File > Open to load a `.pmat` definition, File > Save or Save As
 to store one, build a stack in the Layer Stack panel, choose a material output,
-and use File > Export PNG to write that 512x512 RGBA8 tile. The stack is shown
+and use File > Export PNG to write that 512x512 RGBA8 tile. Select a layer and
+use the Layer, Transform, and Mask tabs to shape it. The stack is shown
 bottom-to-top, matching evaluation order.
 See [the `.pmat` format reference](docs/pmat-format.md) for the text format.
 

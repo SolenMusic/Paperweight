@@ -82,9 +82,9 @@ paperweight::Material materialWithNoiseParameters(
 
 void testVersion()
 {
-    constexpr paperweight::Version expected{0, 0, 3};
+    constexpr paperweight::Version expected{0, 0, 4};
     static_assert(paperweight::currentVersion == expected);
-    expect(paperweight::versionString() == "0.0.3", "version string is 0.0.3");
+    expect(paperweight::versionString() == "0.0.4", "version string is 0.0.4");
 }
 
 void testImage()
@@ -272,7 +272,9 @@ void testLayerEvaluation()
             false,
             1.0,
             paperweight::CompositeMode::blend,
-            paperweight::SolidColourOperation{{255, 255, 255, 255}}},
+            paperweight::SolidColourOperation{{255, 255, 255, 255}},
+            {},
+            {}},
     };
     const auto withoutDisabled = disabled;
     auto baseOnly = withoutDisabled;
@@ -288,7 +290,9 @@ void testLayerEvaluation()
             true,
             0.5,
             paperweight::CompositeMode::blend,
-            paperweight::SolidColourOperation{{0, 0, 255, 255}}},
+            paperweight::SolidColourOperation{{0, 0, 255, 255}},
+            {},
+            {}},
     };
     auto reversed = ordered;
     std::reverse(reversed.layers.begin(), reversed.layers.end());
@@ -303,7 +307,9 @@ void testLayerEvaluation()
             true,
             1.0,
             paperweight::CompositeMode::blend,
-            paperweight::LevelsOperation{0.0, 1.0, 2.0}},
+            paperweight::LevelsOperation{0.0, 1.0, 2.0},
+            {},
+            {}},
     };
     const auto levelled = paperweight::evaluateMaterialSample(adjusted, 0.0, 0.0);
     expectNear(levelled.red, std::sqrt(64.0 / 255.0), 1.0e-12,
@@ -326,7 +332,9 @@ void testLayerEvaluation()
         true,
         0.0,
         paperweight::CompositeMode::blend,
-        paperweight::SolidColourOperation{{255, 0, 0, 255}}});
+        paperweight::SolidColourOperation{{255, 0, 0, 255}},
+        {},
+        {}});
     expect(paperweight::evaluateMaterialSample(adjusted, 0.0, 0.0) == beforeTransparentLayer,
            "zero-opacity layers are exact no-ops");
 
@@ -338,6 +346,144 @@ void testLayerEvaluation()
     invalid.layers.back().operation = paperweight::LevelsOperation{0.8, 0.2, 1.0};
     expect(paperweight::validateMaterial(invalid).has_value(),
            "invalid levels bounds are diagnosed");
+}
+
+void testMasksAndWarping()
+{
+    paperweight::Material material;
+    material.layers = {paperweight::makeNoiseLayer()};
+    const auto identity = paperweight::evaluateMaterialSample(material, 0.23, 0.71);
+    expect(identity == paperweight::evaluateMaterialSample(paperweight::Material{}, 0.23, 0.71),
+           "the default v0.0.4 transform and mask preserve legacy evaluation exactly");
+
+    paperweight::CoordinateTransform transform;
+    transform.scaleX = 2;
+    transform.scaleY = 3;
+    transform.offsetX = 0.1;
+    transform.offsetY = -0.2;
+    transform.rotation = paperweight::QuarterTurn::clockwise90;
+    const auto coordinates = paperweight::transformCoordinates(
+        transform, paperweight::EvaluationContext{material, 0.25, 0.75});
+    expectNear(coordinates.u, -1.4, 1.0e-12,
+               "coordinate rotation, X scale, and X offset compose predictably");
+    expectNear(coordinates.v, 0.55, 1.0e-12,
+               "coordinate rotation, Y scale, and Y offset compose predictably");
+
+    for (const auto rotation : std::array{
+             paperweight::QuarterTurn::none,
+             paperweight::QuarterTurn::clockwise90,
+             paperweight::QuarterTurn::clockwise180,
+             paperweight::QuarterTurn::clockwise270,
+         }) {
+        material.layers.front().transform = transform;
+        material.layers.front().transform.rotation = rotation;
+        const auto sample = paperweight::evaluateMaterialSample(material, -0.37, 0.58);
+        expectNear(
+            sample.scalar,
+            paperweight::evaluateMaterialSample(material, 0.63, 0.58).scalar,
+            1.0e-12,
+            "scaled quarter-turn evaluation repeats on x");
+        expectNear(
+            sample.scalar,
+            paperweight::evaluateMaterialSample(material, -0.37, 1.58).scalar,
+            1.0e-12,
+            "scaled quarter-turn evaluation repeats on y");
+    }
+
+    auto offsetMaterial = paperweight::Material{};
+    offsetMaterial.layers = {paperweight::makeNoiseLayer()};
+    const auto unshifted = paperweight::evaluateMaterialSample(offsetMaterial, 0.31, 0.47);
+    offsetMaterial.layers.front().transform.offsetX = 0.125;
+    offsetMaterial.layers.front().transform.offsetY = -0.375;
+    const auto shifted = paperweight::evaluateMaterialSample(offsetMaterial, 0.31, 0.47);
+    expect(shifted != unshifted, "continuous coordinate offsets change the sampled material");
+    expectNear(
+        shifted.scalar,
+        paperweight::evaluateMaterialSample(offsetMaterial, 1.31, 0.47).scalar,
+        1.0e-12,
+        "offset evaluation remains periodic");
+
+    auto warped = offsetMaterial;
+    warped.layers.front().transform.warpEnabled = true;
+    warped.layers.front().transform.warpStrength = 0.3;
+    warped.layers.front().transform.warpFrequency = 3;
+    warped.layers.front().transform.warpSeedOffset = 91;
+    const auto warpedSample = paperweight::evaluateMaterialSample(warped, 0.31, 0.47);
+    expect(warpedSample != shifted, "enabled non-zero warp distorts the sampled material");
+    expect(warpedSample == paperweight::evaluateMaterialSample(warped, 0.31, 0.47),
+           "coordinate warp is deterministic");
+    expectNear(
+        warpedSample.scalar,
+        paperweight::evaluateMaterialSample(warped, 1.31, 0.47).scalar,
+        1.0e-12,
+        "warped evaluation repeats on x");
+    expectNear(
+        warpedSample.scalar,
+        paperweight::evaluateMaterialSample(warped, 0.31, 1.47).scalar,
+        1.0e-12,
+        "warped evaluation repeats on y");
+    auto zeroWarp = warped;
+    zeroWarp.layers.front().transform.warpStrength = 0.0;
+    expect(paperweight::evaluateMaterialSample(zeroWarp, 0.31, 0.47) == shifted,
+           "zero-strength warp is an exact no-op");
+    auto disabledWarp = warped;
+    disabledWarp.layers.front().transform.warpEnabled = false;
+    expect(paperweight::evaluateMaterialSample(disabledWarp, 0.31, 0.47) == shifted,
+           "disabled warp preserves its parameters without affecting output");
+    auto alternateWarp = warped;
+    alternateWarp.layers.front().transform.warpSeedOffset += 1;
+    expect(paperweight::evaluateMaterialSample(alternateWarp, 0.31, 0.47) != warpedSample,
+           "warp seed offsets select distinct deterministic distortion fields");
+
+    paperweight::Material masked;
+    masked.layers = {paperweight::makeSolidColourLayer({255, 255, 255, 255})};
+    const paperweight::EvaluationContext maskContext{masked, 0.17, 0.83};
+    expect(paperweight::evaluateLayerMask(masked.layers.front().mask, maskContext) == 1.0,
+           "a disabled layer mask is an exact no-op");
+    masked.layers.front().mask.enabled = true;
+    masked.layers.front().mask.seedOffset = 123;
+    masked.layers.front().mask.inputLow = 0.2;
+    masked.layers.front().mask.inputHigh = 0.8;
+    const double maskValue = paperweight::evaluateLayerMask(
+        masked.layers.front().mask, maskContext);
+    expect(maskValue >= 0.0 && maskValue <= 1.0, "mask remapping remains normalised");
+    const auto maskedSample = paperweight::evaluateMaterialSample(masked, 0.17, 0.83);
+    expectNear(maskedSample.scalar, maskValue, 1.0e-12,
+               "a mask modulates the layer's scalar and colour through effective opacity");
+    auto invertedMask = masked.layers.front().mask;
+    invertedMask.inverted = true;
+    expectNear(
+        paperweight::evaluateLayerMask(invertedMask, maskContext),
+        1.0 - maskValue,
+        1.0e-12,
+        "mask inversion complements the remapped value");
+    expectNear(
+        maskValue,
+        paperweight::evaluateLayerMask(
+            masked.layers.front().mask,
+            paperweight::EvaluationContext{masked, 1.17, 0.83}),
+        1.0e-12,
+        "mask evaluation repeats on x");
+
+    auto invalid = material;
+    invalid.layers.front().transform.scaleX = 0;
+    expect(paperweight::validateMaterial(invalid).has_value(), "zero transform scale is diagnosed");
+    invalid = material;
+    invalid.layers.front().transform.rotation = static_cast<paperweight::QuarterTurn>(99);
+    expect(paperweight::validateMaterial(invalid).has_value(), "unknown rotation is diagnosed");
+    invalid = material;
+    invalid.layers.front().transform.offsetY = std::numeric_limits<double>::infinity();
+    expect(paperweight::validateMaterial(invalid).has_value(), "non-finite offset is diagnosed");
+    invalid = material;
+    invalid.layers.front().transform.warpStrength = 1.1;
+    expect(paperweight::validateMaterial(invalid).has_value(), "invalid warp strength is diagnosed");
+    invalid = material;
+    invalid.layers.front().transform.warpFrequency = 0;
+    expect(paperweight::validateMaterial(invalid).has_value(), "invalid warp frequency is diagnosed");
+    invalid = material;
+    invalid.layers.front().mask.inputLow = 0.9;
+    invalid.layers.front().mask.inputHigh = 0.1;
+    expect(paperweight::validateMaterial(invalid).has_value(), "invalid mask range is diagnosed");
 }
 
 void testGenerator()
@@ -508,13 +654,27 @@ void testGenerator()
             true,
             1.0,
             paperweight::CompositeMode::blend,
-            paperweight::LevelsOperation{0.15, 0.85, 1.2}},
+            paperweight::LevelsOperation{0.15, 0.85, 1.2},
+            {},
+            {}},
         paperweight::MaterialLayer{
             true,
             0.3,
             paperweight::CompositeMode::multiply,
-            paperweight::SolidColourOperation{{220, 120, 80, 255}}},
+            paperweight::SolidColourOperation{{220, 120, 80, 255}},
+            {},
+            {}},
     };
+    layeredMaterial.layers.front().transform.scaleX = 2;
+    layeredMaterial.layers.front().transform.rotation =
+        paperweight::QuarterTurn::clockwise270;
+    layeredMaterial.layers.front().transform.warpEnabled = true;
+    layeredMaterial.layers.front().transform.warpStrength = 0.2;
+    layeredMaterial.layers.front().transform.warpFrequency = 2;
+    layeredMaterial.layers.back().mask.enabled = true;
+    layeredMaterial.layers.back().mask.seedOffset = 47;
+    layeredMaterial.layers.back().mask.inputLow = 0.1;
+    layeredMaterial.layers.back().mask.inputHigh = 0.9;
     for (const auto output : std::array{
              paperweight::MaterialOutput::colour,
              paperweight::MaterialOutput::height,
@@ -573,7 +733,7 @@ void testPmat()
 {
     constexpr std::string_view canonical =
         "# Paperweight procedural material\n"
-        "pmat.version = 2\n"
+        "pmat.version = 3\n"
         "material.type = fbm\n"
         "material.seed = 18431\n"
         "colour.low = 0x000000FF\n"
@@ -631,6 +791,14 @@ void testPmat()
                emberMaterial->highColour == paperweight::Rgba8{255, 179, 71, 255},
            "checked-in coloured example parses with its expected endpoints");
     if (emberMaterial != nullptr) {
+        expect(emberMaterial->layers.size() == 4 &&
+                   emberMaterial->layers.front().transform.scaleX == 2 &&
+                   emberMaterial->layers.front().transform.scaleY == 2 &&
+                   emberMaterial->layers.front().transform.warpEnabled &&
+                   emberMaterial->layers.front().transform.warpStrength == 0.18 &&
+                   emberMaterial->layers[1].mask.enabled &&
+                   emberMaterial->layers[1].mask.seedOffset == 77,
+               "checked-in coloured example exercises transforms, warp, and masks");
         const auto firstEmber = paperweight::generate({*emberMaterial, 37, 29});
         const auto secondEmber = paperweight::generate({*emberMaterial, 37, 29});
         const auto* firstImage = std::get_if<paperweight::Image>(&firstEmber);
@@ -650,17 +818,41 @@ void testPmat()
             false,
             0.35,
             paperweight::CompositeMode::add,
-            paperweight::SolidColourOperation{{12, 34, 56, 78}}},
+            paperweight::SolidColourOperation{{12, 34, 56, 78}},
+            {},
+            {}},
         paperweight::MaterialLayer{
             true,
             0.8,
             paperweight::CompositeMode::multiply,
-            paperweight::LevelsOperation{0.15, 0.9, 1.25}},
+            paperweight::LevelsOperation{0.15, 0.9, 1.25},
+            {},
+            {}},
         paperweight::MaterialLayer{
             true,
             0.6,
             paperweight::CompositeMode::blend,
-            paperweight::ThresholdOperation{0.42}},
+            paperweight::ThresholdOperation{0.42},
+            {},
+            {}},
+    };
+    layeredRoundTrip.layers.front().transform = paperweight::CoordinateTransform{
+        3,
+        2,
+        0.125,
+        -0.375,
+        paperweight::QuarterTurn::clockwise90,
+        true,
+        0.27,
+        4,
+        9821,
+    };
+    layeredRoundTrip.layers[1].mask = paperweight::LayerMask{
+        true,
+        true,
+        771,
+        0.2,
+        0.75,
     };
     const std::array roundTripMaterials{
         materialWithNoiseParameters(0, 1, 1, 1, 0.1),
@@ -729,6 +921,38 @@ void testPmat()
                "v0.0.1 files retain the v0.0.2 output defaults");
     }
 
+    constexpr std::string_view versionTwo =
+        "pmat.version = 2\n"
+        "material.type = fbm\n"
+        "material.seed = 18431\n"
+        "colour.low = 0x000000FF\n"
+        "colour.high = 0xFFFFFFFF\n"
+        "noise.frequency = 4\n"
+        "noise.octaves = 5\n"
+        "noise.lacunarity = 2\n"
+        "noise.gain = 0.5\n"
+        "normal.strength = 1\n"
+        "roughness.low = 0.25\n"
+        "roughness.high = 0.85\n"
+        "layers.count = 1\n"
+        "layer.0.enabled = true\n"
+        "layer.0.operation = noise\n"
+        "layer.0.composite = blend\n"
+        "layer.0.opacity = 1\n"
+        "layer.0.noise.seed_offset = 0\n";
+    const auto versionTwoResult = paperweight::parsePmat(versionTwo);
+    const auto* versionTwoMaterial = std::get_if<paperweight::Material>(&versionTwoResult);
+    expect(versionTwoMaterial != nullptr && versionTwoMaterial->layers.size() == 1 &&
+               versionTwoMaterial->layers.front().transform == paperweight::CoordinateTransform{} &&
+               versionTwoMaterial->layers.front().mask == paperweight::LayerMask{},
+           "v0.0.3 .pmat files migrate to identity transforms and disabled masks");
+    if (versionTwoMaterial != nullptr) {
+        const auto generated = paperweight::generate({*versionTwoMaterial, 48, 32});
+        const auto* image = std::get_if<paperweight::Image>(&generated);
+        expect(image != nullptr && checksum(image->pixels()) == 4981563472745378647ULL,
+               "v0.0.3 .pmat migration preserves its exact generated pixels");
+    }
+
     const auto expectDiagnostic = [](std::string_view text, std::size_t line, std::string_view phrase) {
         const auto result = paperweight::parsePmat(text);
         expect(std::holds_alternative<paperweight::ParseDiagnostic>(result),
@@ -744,7 +968,7 @@ void testPmat()
         }
     };
 
-    expectDiagnostic("pmat.version = 3\n", 1, "unsupported");
+    expectDiagnostic("pmat.version = 4\n", 1, "unsupported");
     expectDiagnostic("unknown.key = 1\n", 1, "unknown key");
     expectDiagnostic("pmat.version = 1\npmat.version = 1\n", 2, "duplicate");
     expectDiagnostic("pmat.version = nope\n", 1, "integer");
@@ -765,6 +989,23 @@ void testPmat()
         std::string(canonical) + "layer.0.enabled = true\n",
         17,
         "exceeds layers.count");
+    expectDiagnostic(
+        std::string(versionTwo) + "layer.0.transform.scale_x = 2\n",
+        21,
+        "require .pmat version 3");
+
+    auto missingV3Field = std::get<std::string>(
+        paperweight::serialisePmat(paperweight::Material{
+            18431, 4, 5, 2, 0.5, {0, 0, 0, 255}, {255, 255, 255, 255},
+            1.0, 0.25, 0.85, {paperweight::makeNoiseLayer()}}));
+    const auto maskHighPosition = missingV3Field.find("layer.0.mask.input_high = 1\n");
+    expect(maskHighPosition != std::string::npos, "v3 fixture contains its mask high field");
+    if (maskHighPosition != std::string::npos) {
+        missingV3Field.erase(
+            maskHighPosition,
+            std::string("layer.0.mask.input_high = 1\n").size());
+        expectDiagnostic(missingV3Field, 34, "mask.input_high");
+    }
 
     auto invalidLevelsMaterial = paperweight::Material{};
     invalidLevelsMaterial.layers = {paperweight::makeLevelsLayer()};
@@ -811,6 +1052,7 @@ int main()
     testPeriodicNoise();
     testMaterialAndFbm();
     testLayerEvaluation();
+    testMasksAndWarping();
     testGenerator();
     testPmat();
 

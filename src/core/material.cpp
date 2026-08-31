@@ -60,6 +60,44 @@ std::optional<std::string> validateMaterial(const Material& material)
         if (layer.operation.valueless_by_exception()) {
             return prefix + "operation has no value";
         }
+        if (layer.transform.scaleX < LayerLimits::minimumScale ||
+            layer.transform.scaleX > LayerLimits::maximumScale ||
+            layer.transform.scaleY < LayerLimits::minimumScale ||
+            layer.transform.scaleY > LayerLimits::maximumScale) {
+            return prefix + "coordinate scale must be an integer between 1 and 16";
+        }
+        switch (layer.transform.rotation) {
+        case QuarterTurn::none:
+        case QuarterTurn::clockwise90:
+        case QuarterTurn::clockwise180:
+        case QuarterTurn::clockwise270:
+            break;
+        default:
+            return prefix + "coordinate rotation must be 0, 90, 180, or 270 degrees";
+        }
+        if (!std::isfinite(layer.transform.offsetX) ||
+            !std::isfinite(layer.transform.offsetY) ||
+            std::abs(layer.transform.offsetX) > LayerLimits::maximumOffsetMagnitude ||
+            std::abs(layer.transform.offsetY) > LayerLimits::maximumOffsetMagnitude) {
+            return prefix + "coordinate offsets must be finite and between -1024 and 1024";
+        }
+        if (!std::isfinite(layer.transform.warpStrength) ||
+            layer.transform.warpStrength < LayerLimits::minimumWarpStrength ||
+            layer.transform.warpStrength > LayerLimits::maximumWarpStrength) {
+            return prefix + "warp strength must be finite and between 0 and 1";
+        }
+        if (layer.transform.warpFrequency < LayerLimits::minimumWarpFrequency ||
+            layer.transform.warpFrequency > LayerLimits::maximumWarpFrequency) {
+            return prefix + "warp frequency must be an integer between 1 and 16";
+        }
+        if (!std::isfinite(layer.mask.inputLow) ||
+            !std::isfinite(layer.mask.inputHigh) ||
+            layer.mask.inputLow < LayerLimits::minimumLevel ||
+            layer.mask.inputHigh > LayerLimits::maximumLevel ||
+            layer.mask.inputLow >= layer.mask.inputHigh) {
+            return prefix +
+                "mask input range must be finite, within 0 to 1, and increasing";
+        }
         const auto operationError = std::visit(
             [&prefix](const auto& operation) -> std::optional<std::string> {
                 using Operation = std::decay_t<decltype(operation)>;

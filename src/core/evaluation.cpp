@@ -107,7 +107,88 @@ double compositeChannel(double background, double source, CompositeMode mode, do
     throw std::invalid_argument("unknown layer composite mode");
 }
 
+std::uint64_t domainSeed(
+    std::uint64_t materialSeed,
+    std::uint64_t seedOffset,
+    std::uint64_t domain)
+{
+    return mixBits(materialSeed ^ mixBits(seedOffset) ^ domain);
+}
+
+EvaluatedCoordinates rotateCoordinates(double u, double v, QuarterTurn rotation)
+{
+    switch (rotation) {
+    case QuarterTurn::none:
+        return {u, v};
+    case QuarterTurn::clockwise90:
+        return {-v, u};
+    case QuarterTurn::clockwise180:
+        return {-u, -v};
+    case QuarterTurn::clockwise270:
+        return {v, -u};
+    }
+    throw std::invalid_argument("unknown coordinate rotation");
+}
+
 } // namespace
+
+EvaluatedCoordinates transformCoordinates(
+    const CoordinateTransform& transform,
+    const EvaluationContext& context)
+{
+    auto coordinates = rotateCoordinates(context.u, context.v, transform.rotation);
+    coordinates.u = coordinates.u * static_cast<double>(transform.scaleX) + transform.offsetX;
+    coordinates.v = coordinates.v * static_cast<double>(transform.scaleY) + transform.offsetY;
+
+    if (!transform.warpEnabled || transform.warpStrength == 0.0) {
+        return coordinates;
+    }
+
+    const double warpU = coordinates.u * static_cast<double>(transform.warpFrequency);
+    const double warpV = coordinates.v * static_cast<double>(transform.warpFrequency);
+    constexpr std::uint64_t xDomain = 0x5a17c9e3d4b2816fULL;
+    constexpr std::uint64_t yDomain = 0xc3e5a7912b4d680fULL;
+    const double displacementX = periodicFbm2D(
+        warpU,
+        warpV,
+        context.material,
+        domainSeed(
+            context.material.seed,
+            transform.warpSeedOffset,
+            xDomain));
+    const double displacementY = periodicFbm2D(
+        warpU,
+        warpV,
+        context.material,
+        domainSeed(
+            context.material.seed,
+            transform.warpSeedOffset,
+            yDomain));
+    coordinates.u += (displacementX * 2.0 - 1.0) * transform.warpStrength;
+    coordinates.v += (displacementY * 2.0 - 1.0) * transform.warpStrength;
+    return coordinates;
+}
+
+double evaluateLayerMask(const LayerMask& mask, const EvaluationContext& context)
+{
+    if (!mask.enabled) {
+        return 1.0;
+    }
+    constexpr std::uint64_t maskDomain = 0x8f31b6d2c5a479e0ULL;
+    const double source = periodicFbm2D(
+        context.u,
+        context.v,
+        context.material,
+        domainSeed(context.material.seed, mask.seedOffset, maskDomain));
+    double value = std::clamp(
+        (source - mask.inputLow) / (mask.inputHigh - mask.inputLow),
+        0.0,
+        1.0);
+    if (mask.inverted) {
+        value = 1.0 - value;
+    }
+    return value;
+}
 
 EvaluatedSample evaluateOperation(
     const LayerOperation& operation,
@@ -167,12 +248,15 @@ EvaluatedSample evaluateMaterialSample(const Material& material, double u, doubl
         if (!layer.enabled) {
             continue;
         }
-        const auto source = evaluateOperation(layer.operation, context, accumulated);
+        const auto transformed = transformCoordinates(layer.transform, context);
+        const EvaluationContext layerContext{material, transformed.u, transformed.v};
+        const auto source = evaluateOperation(layer.operation, layerContext, accumulated);
+        const double effectiveOpacity = layer.opacity * evaluateLayerMask(layer.mask, layerContext);
         accumulated = compositeSamples(
             accumulated,
             source,
             layer.compositeMode,
-            layer.opacity);
+            effectiveOpacity);
     }
     return accumulated;
 }
