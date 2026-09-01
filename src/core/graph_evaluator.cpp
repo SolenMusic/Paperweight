@@ -46,6 +46,21 @@ struct ThresholdPlan {
     ThresholdOperation parameters;
 };
 
+struct PosterisePlan {
+    std::size_t input;
+    PosteriseOperation parameters;
+};
+
+struct ColourRampPlan {
+    std::size_t input;
+    ColourRampOperation parameters;
+};
+
+struct PalettePlan {
+    std::size_t input;
+    PaletteOperation parameters;
+};
+
 struct CompositePlan {
     std::size_t background;
     std::size_t source;
@@ -57,6 +72,11 @@ struct CompositePlan {
 struct SurfaceFilterPlan {
     std::size_t input;
     SurfaceFilterOperation parameters;
+};
+
+struct InkContourPlan {
+    std::size_t input;
+    InkContourOperation parameters;
 };
 
 struct MaskPlan {
@@ -72,10 +92,35 @@ using EvaluationPlan = std::variant<
     GeneratorPlan,
     LevelsPlan,
     ThresholdPlan,
+    PosterisePlan,
+    ColourRampPlan,
+    PalettePlan,
     CompositePlan,
     SurfaceFilterPlan,
+    InkContourPlan,
     MaskPlan,
     OutputPlan>;
+
+bool affectsColour(ProcessingTarget target)
+{
+    return target == ProcessingTarget::colour ||
+        target == ProcessingTarget::colourAndScalar;
+}
+
+bool affectsScalar(ProcessingTarget target)
+{
+    return target == ProcessingTarget::scalar ||
+        target == ProcessingTarget::colourAndScalar;
+}
+
+double smoothStep(double edge0, double edge1, double value)
+{
+    if (edge0 == edge1) {
+        return value >= edge1 ? 1.0 : 0.0;
+    }
+    const double amount = std::clamp((value - edge0) / (edge1 - edge0), 0.0, 1.0);
+    return amount * amount * (3.0 - 2.0 * amount);
+}
 
 } // namespace
 
@@ -120,6 +165,24 @@ public:
                                         threshold.parameters,
                                     };
                                 },
+                                [&indexOf](const PosteriseProcessing& posterise) -> EvaluationPlan {
+                                    return PosterisePlan{
+                                        indexOf(posterise.input),
+                                        posterise.parameters,
+                                    };
+                                },
+                                [&indexOf](const ColourRampProcessing& ramp) -> EvaluationPlan {
+                                    return ColourRampPlan{
+                                        indexOf(ramp.input),
+                                        ramp.parameters,
+                                    };
+                                },
+                                [&indexOf](const PaletteProcessing& palette) -> EvaluationPlan {
+                                    return PalettePlan{
+                                        indexOf(palette.input),
+                                        palette.parameters,
+                                    };
+                                },
                                 [&indexOf](const CompositeProcessing& composite) -> EvaluationPlan {
                                     return CompositePlan{
                                         indexOf(composite.background),
@@ -136,6 +199,13 @@ public:
                                     return SurfaceFilterPlan{
                                         indexOf(filter.input),
                                         filter.parameters,
+                                    };
+                                },
+                                [&indexOf](
+                                    const InkContourProcessing& contour) -> EvaluationPlan {
+                                    return InkContourPlan{
+                                        indexOf(contour.input),
+                                        contour.parameters,
                                     };
                                 },
                             },
@@ -211,6 +281,27 @@ private:
                         context,
                         input);
                 },
+                [this, &context, cacheResult](const PosterisePlan& posterise) {
+                    const auto input = evaluateNode(posterise.input, context, cacheResult);
+                    return evaluateOperation(
+                        LayerOperation{posterise.parameters},
+                        context,
+                        input);
+                },
+                [this, &context, cacheResult](const ColourRampPlan& ramp) {
+                    const auto input = evaluateNode(ramp.input, context, cacheResult);
+                    return evaluateOperation(
+                        LayerOperation{ramp.parameters},
+                        context,
+                        input);
+                },
+                [this, &context, cacheResult](const PalettePlan& palette) {
+                    const auto input = evaluateNode(palette.input, context, cacheResult);
+                    return evaluateOperation(
+                        LayerOperation{palette.parameters},
+                        context,
+                        input);
+                },
                 [this, &context, cacheResult](const CompositePlan& composite) {
                     const auto background = evaluateNode(
                         composite.background,
@@ -279,10 +370,76 @@ private:
                         return evaluateSurfaceFilter(filter.parameters, neighbourhood);
                     };
                     return EvaluatedSample{
-                        channel(&EvaluatedSample::scalar),
-                        channel(&EvaluatedSample::red),
-                        channel(&EvaluatedSample::green),
-                        channel(&EvaluatedSample::blue),
+                        affectsScalar(filter.parameters.target)
+                            ? channel(&EvaluatedSample::scalar)
+                            : centre.scalar,
+                        affectsColour(filter.parameters.target)
+                            ? channel(&EvaluatedSample::red)
+                            : centre.red,
+                        affectsColour(filter.parameters.target)
+                            ? channel(&EvaluatedSample::green)
+                            : centre.green,
+                        affectsColour(filter.parameters.target)
+                            ? channel(&EvaluatedSample::blue)
+                            : centre.blue,
+                        centre.alpha,
+                    };
+                },
+                [this, &context, cacheResult](const InkContourPlan& contour) {
+                    const auto centre = evaluateNode(contour.input, context, cacheResult);
+                    std::array<double, 9> scalarSamples{};
+                    scalarSamples[0] = centre.scalar;
+                    if (contour.parameters.radius == 0.0) {
+                        std::fill(scalarSamples.begin() + 1, scalarSamples.end(), centre.scalar);
+                    } else {
+                        const double radius = contour.parameters.radius;
+                        const std::array<std::pair<double, double>, 8> offsets{
+                            std::pair{-radius, 0.0},
+                            std::pair{radius, 0.0},
+                            std::pair{0.0, -radius},
+                            std::pair{0.0, radius},
+                            std::pair{-radius, -radius},
+                            std::pair{radius, -radius},
+                            std::pair{-radius, radius},
+                            std::pair{radius, radius},
+                        };
+                        for (std::size_t sampleIndex = 0;
+                             sampleIndex < offsets.size();
+                             ++sampleIndex) {
+                            const auto [offsetU, offsetV] = offsets[sampleIndex];
+                            const EvaluationContext neighbour{
+                                context.material,
+                                context.u + offsetU,
+                                context.v + offsetV,
+                            };
+                            scalarSamples[sampleIndex + 1] = evaluateNode(
+                                contour.input,
+                                neighbour,
+                                false).scalar;
+                        }
+                    }
+                    const double edge = *std::max_element(
+                        scalarSamples.begin(), scalarSamples.end()) -
+                        *std::min_element(scalarSamples.begin(), scalarSamples.end());
+                    const double halfSoftness = contour.parameters.softness * 0.5;
+                    double amount = smoothStep(
+                        contour.parameters.threshold - halfSoftness,
+                        contour.parameters.threshold + halfSoftness,
+                        edge);
+                    if (contour.parameters.inverted) {
+                        amount = 1.0 - amount;
+                    }
+                    amount *= contour.parameters.strength *
+                        (static_cast<double>(contour.parameters.colour.alpha) / 255.0);
+                    const auto blend = [amount](double from, std::uint8_t to) {
+                        const double target = static_cast<double>(to) / 255.0;
+                        return from + (target - from) * amount;
+                    };
+                    return EvaluatedSample{
+                        centre.scalar,
+                        blend(centre.red, contour.parameters.colour.red),
+                        blend(centre.green, contour.parameters.colour.green),
+                        blend(centre.blue, contour.parameters.colour.blue),
                         centre.alpha,
                     };
                 },

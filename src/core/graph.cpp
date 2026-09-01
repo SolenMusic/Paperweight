@@ -49,7 +49,11 @@ std::optional<GeneratorOperation> generatorOperation(const LayerOperation& opera
             using Operation = std::decay_t<decltype(value)>;
             if constexpr (std::is_same_v<Operation, LevelsOperation> ||
                           std::is_same_v<Operation, ThresholdOperation> ||
-                          std::is_same_v<Operation, SurfaceFilterOperation>) {
+                          std::is_same_v<Operation, SurfaceFilterOperation> ||
+                          std::is_same_v<Operation, PosteriseOperation> ||
+                          std::is_same_v<Operation, ColourRampOperation> ||
+                          std::is_same_v<Operation, PaletteOperation> ||
+                          std::is_same_v<Operation, InkContourOperation>) {
                 return std::nullopt;
             } else {
                 return GeneratorOperation{value};
@@ -85,12 +89,24 @@ std::optional<std::string> validateProcessingNode(const ProcessingNode& node)
             [&layer](const ThresholdProcessing& threshold) {
                 layer.operation = threshold.parameters;
             },
+            [&layer](const PosteriseProcessing& posterise) {
+                layer.operation = posterise.parameters;
+            },
+            [&layer](const ColourRampProcessing& ramp) {
+                layer.operation = ramp.parameters;
+            },
+            [&layer](const PaletteProcessing& palette) {
+                layer.operation = palette.parameters;
+            },
             [&layer](const CompositeProcessing& composite) {
                 layer.compositeMode = composite.mode;
                 layer.opacity = composite.opacity;
             },
             [&layer](const SurfaceFilterProcessing& filter) {
                 layer.operation = filter.parameters;
+            },
+            [&layer](const InkContourProcessing& contour) {
+                layer.operation = contour.parameters;
             },
         },
         node.operation);
@@ -129,6 +145,15 @@ std::vector<GraphNodeId> dependencies(const GraphNode& node)
                         [](const ThresholdProcessing& threshold) {
                             return std::vector<GraphNodeId>{threshold.input};
                         },
+                        [](const PosteriseProcessing& posterise) {
+                            return std::vector<GraphNodeId>{posterise.input};
+                        },
+                        [](const ColourRampProcessing& ramp) {
+                            return std::vector<GraphNodeId>{ramp.input};
+                        },
+                        [](const PaletteProcessing& palette) {
+                            return std::vector<GraphNodeId>{palette.input};
+                        },
                         [](const CompositeProcessing& composite) {
                             std::vector<GraphNodeId> result{
                                 composite.background,
@@ -141,6 +166,9 @@ std::vector<GraphNodeId> dependencies(const GraphNode& node)
                         },
                         [](const SurfaceFilterProcessing& filter) {
                             return std::vector<GraphNodeId>{filter.input};
+                        },
+                        [](const InkContourProcessing& contour) {
+                            return std::vector<GraphNodeId>{contour.input};
                         },
                     },
                     processing.operation);
@@ -292,6 +320,15 @@ std::optional<GraphError> validateMaterialGraph(const MaterialGraph& graph)
                             [&checkInput](const ThresholdProcessing& threshold) {
                                 return checkInput(threshold.input, GraphNodeCategory::generator);
                             },
+                            [&checkInput](const PosteriseProcessing& posterise) {
+                                return checkInput(posterise.input, GraphNodeCategory::generator);
+                            },
+                            [&checkInput](const ColourRampProcessing& ramp) {
+                                return checkInput(ramp.input, GraphNodeCategory::generator);
+                            },
+                            [&checkInput](const PaletteProcessing& palette) {
+                                return checkInput(palette.input, GraphNodeCategory::generator);
+                            },
                             [&checkInput](const CompositeProcessing& composite) ->
                                 std::optional<GraphError> {
                                 if (auto error = checkInput(
@@ -312,6 +349,11 @@ std::optional<GraphError> validateMaterialGraph(const MaterialGraph& graph)
                             [&checkInput](const SurfaceFilterProcessing& filter) {
                                 return checkInput(
                                     filter.input,
+                                    GraphNodeCategory::generator);
+                            },
+                            [&checkInput](const InkContourProcessing& contour) {
+                                return checkInput(
+                                    contour.input,
                                     GraphNodeCategory::generator);
                             },
                         },
@@ -441,6 +483,26 @@ GraphCompilationResult compileMaterialGraph(const Material& material)
                            std::get_if<SurfaceFilterOperation>(&layer.operation)) {
                 source = addProcessing(
                     SurfaceFilterProcessing{accumulated, *filter},
+                    layerIndex);
+            } else if (const auto* posterise =
+                           std::get_if<PosteriseOperation>(&layer.operation)) {
+                source = addProcessing(
+                    PosteriseProcessing{accumulated, *posterise},
+                    layerIndex);
+            } else if (const auto* ramp =
+                           std::get_if<ColourRampOperation>(&layer.operation)) {
+                source = addProcessing(
+                    ColourRampProcessing{accumulated, *ramp},
+                    layerIndex);
+            } else if (const auto* palette =
+                           std::get_if<PaletteOperation>(&layer.operation)) {
+                source = addProcessing(
+                    PaletteProcessing{accumulated, *palette},
+                    layerIndex);
+            } else if (const auto* contour =
+                           std::get_if<InkContourOperation>(&layer.operation)) {
+                source = addProcessing(
+                    InkContourProcessing{accumulated, *contour},
                     layerIndex);
             } else {
                 const auto operation = generatorOperation(layer.operation);

@@ -27,6 +27,17 @@ bool validSoftness(double value)
         LayerLimits::maximumSoftness);
 }
 
+bool validProcessingTarget(ProcessingTarget target)
+{
+    switch (target) {
+    case ProcessingTarget::colour:
+    case ProcessingTarget::scalar:
+    case ProcessingTarget::colourAndScalar:
+        return true;
+    }
+    return false;
+}
+
 bool validPhysicalMetres(double value)
 {
     return validRange(
@@ -171,6 +182,40 @@ std::optional<std::string> validateMaterial(const Material& material)
                         operation.threshold < LayerLimits::minimumThreshold ||
                         operation.threshold > LayerLimits::maximumThreshold) {
                         return prefix + "threshold must be finite and between 0 and 1";
+                    }
+                } else if constexpr (std::is_same_v<Operation, PosteriseOperation>) {
+                    if (operation.bands < LayerLimits::minimumPosteriseBands ||
+                        operation.bands > LayerLimits::maximumPosteriseBands) {
+                        return prefix + "posterise bands must be between 2 and 16";
+                    }
+                    if (!validProcessingTarget(operation.target)) {
+                        return prefix + "posterise target is not supported";
+                    }
+                } else if constexpr (std::is_same_v<Operation, ColourRampOperation>) {
+                    if (operation.stops.size() < LayerLimits::minimumColourStops ||
+                        operation.stops.size() > LayerLimits::maximumColourStops) {
+                        return prefix + "colour ramp must contain between 2 and 8 stops";
+                    }
+                    switch (operation.mode) {
+                    case ColourRampMode::linear:
+                    case ColourRampMode::stepped:
+                        break;
+                    default:
+                        return prefix + "colour ramp mode is not supported";
+                    }
+                    double previous = -1.0;
+                    for (const auto& stop : operation.stops) {
+                        if (!std::isfinite(stop.position) || stop.position < 0.0 ||
+                            stop.position > 1.0 || stop.position <= previous) {
+                            return prefix +
+                                "colour ramp stop positions must be finite, within 0 to 1, and strictly increasing";
+                        }
+                        previous = stop.position;
+                    }
+                } else if constexpr (std::is_same_v<Operation, PaletteOperation>) {
+                    if (operation.colours.size() < LayerLimits::minimumColourStops ||
+                        operation.colours.size() > LayerLimits::maximumColourStops) {
+                        return prefix + "palette must contain between 2 and 8 colours";
                     }
                 } else if constexpr (std::is_same_v<Operation, BrickGridOperation>) {
                     if (operation.physicalDimensions) {
@@ -357,6 +402,7 @@ std::optional<std::string> validateMaterial(const Material& material)
                     case SurfaceFilterKind::slope:
                     case SurfaceFilterKind::cavity:
                     case SurfaceFilterKind::peaks:
+                    case SurfaceFilterKind::edgeAwareSoften:
                         break;
                     default:
                         return prefix + "surface filter kind is not supported";
@@ -374,6 +420,45 @@ std::optional<std::string> validateMaterial(const Material& material)
                             LayerLimits::maximumSurfaceControl)) {
                         return prefix +
                             "surface filter strength must be finite and between 0 and 1";
+                    }
+                    if (!validRange(
+                            operation.sensitivity,
+                            LayerLimits::minimumFilterSensitivity,
+                            LayerLimits::maximumFilterSensitivity)) {
+                        return prefix +
+                            "surface filter sensitivity must be finite and between 0 and 1";
+                    }
+                    if (!validProcessingTarget(operation.target)) {
+                        return prefix + "surface filter target is not supported";
+                    }
+                } else if constexpr (std::is_same_v<Operation, InkContourOperation>) {
+                    if (!validRange(
+                            operation.radius,
+                            LayerLimits::minimumFilterRadius,
+                            LayerLimits::maximumFilterRadius)) {
+                        return prefix +
+                            "ink contour radius must be finite and between 0 and 0.25";
+                    }
+                    if (!validRange(
+                            operation.threshold,
+                            LayerLimits::minimumThreshold,
+                            LayerLimits::maximumThreshold)) {
+                        return prefix +
+                            "ink contour threshold must be finite and between 0 and 1";
+                    }
+                    if (!validRange(
+                            operation.softness,
+                            LayerLimits::minimumContourSoftness,
+                            LayerLimits::maximumContourSoftness)) {
+                        return prefix +
+                            "ink contour softness must be finite and between 0 and 0.5";
+                    }
+                    if (!validRange(
+                            operation.strength,
+                            LayerLimits::minimumSurfaceControl,
+                            LayerLimits::maximumSurfaceControl)) {
+                        return prefix +
+                            "ink contour strength must be finite and between 0 and 1";
                     }
                 }
                 return std::nullopt;

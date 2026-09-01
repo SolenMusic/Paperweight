@@ -33,6 +33,7 @@ struct PreviewUniforms {
     simd_float4 lightDirection;
     simd_float4 settings;
     simd_float4 mapSettings;
+    simd_float4 toonSettings;
 };
 
 struct MeshData {
@@ -292,6 +293,9 @@ MeshData makeMesh(PWPreviewShape shape)
         _ambientIntensity = 0.18;
         _displacementStrength = 0.04;
         _previewNormalStrength = 1.0;
+        _toonBandCount = 3.0;
+        _toonSpecularThreshold = 0.55;
+        _toonRimStrength = 0.18;
         _animationSpeed = 0.25;
         _colourEnabled = YES;
         _heightEnabled = YES;
@@ -506,6 +510,10 @@ MeshData makeMesh(PWPreviewShape shape)
 - (void)setAmbientIntensity:(double)value { _ambientIntensity = value; [self requestDraw]; }
 - (void)setDisplacementStrength:(double)value { _displacementStrength = value; [self requestDraw]; }
 - (void)setPreviewNormalStrength:(double)value { _previewNormalStrength = value; [self requestDraw]; }
+- (void)setToonLightingEnabled:(BOOL)value { _toonLightingEnabled = value; [self requestDraw]; }
+- (void)setToonBandCount:(double)value { _toonBandCount = value; [self requestDraw]; }
+- (void)setToonSpecularThreshold:(double)value { _toonSpecularThreshold = value; [self requestDraw]; }
+- (void)setToonRimStrength:(double)value { _toonRimStrength = value; [self requestDraw]; }
 - (void)setAnimationPhase:(double)value { _animationPhase = value - std::floor(value); [self requestDraw]; }
 - (void)setAnimationSpeed:(double)value { _animationSpeed = value; }
 - (void)setColourEnabled:(BOOL)value { _colourEnabled = value; [self requestDraw]; }
@@ -614,6 +622,12 @@ MeshData makeMesh(PWPreviewShape shape)
             self.heightEnabled ? 1.0F : 0.0F,
             self.normalEnabled ? 1.0F : 0.0F,
             self.roughnessEnabled ? 1.0F : 0.0F,
+        },
+        {
+            self.toonLightingEnabled ? 1.0F : 0.0F,
+            static_cast<float>(self.toonBandCount),
+            static_cast<float>(self.toonSpecularThreshold),
+            static_cast<float>(self.toonRimStrength),
         },
     };
 

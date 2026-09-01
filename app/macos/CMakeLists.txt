@@ -22,6 +22,9 @@ set(PAPERWEIGHT_SHOWCASE_MATERIALS
     "${PROJECT_SOURCE_DIR}/examples/materials/knotty-wood.pmat"
     "${PROJECT_SOURCE_DIR}/examples/materials/marble-veins.pmat"
     "${PROJECT_SOURCE_DIR}/examples/materials/eroded-terrain.pmat"
+    "${PROJECT_SOURCE_DIR}/examples/materials/toon-dungeon.pmat"
+    "${PROJECT_SOURCE_DIR}/examples/materials/painted-metal.pmat"
+    "${PROJECT_SOURCE_DIR}/examples/materials/graphic-marble.pmat"
 )
 set_source_files_properties(${PAPERWEIGHT_SHOWCASE_MATERIALS} PROPERTIES
     MACOSX_PACKAGE_LOCATION "Resources/Showcases"

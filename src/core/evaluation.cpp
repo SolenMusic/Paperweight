@@ -9,7 +9,9 @@
 #include "noise_internal.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 #include <type_traits>
 
@@ -24,6 +26,24 @@ struct Overloaded : Visitors... {
 double channelToUnit(std::uint8_t channel)
 {
     return static_cast<double>(channel) / 255.0;
+}
+
+std::uint8_t unitToChannel(double value)
+{
+    return static_cast<std::uint8_t>(
+        std::round(std::clamp(value, 0.0, 1.0) * 255.0));
+}
+
+bool affectsColour(ProcessingTarget target)
+{
+    return target == ProcessingTarget::colour ||
+        target == ProcessingTarget::colourAndScalar;
+}
+
+bool affectsScalar(ProcessingTarget target)
+{
+    return target == ProcessingTarget::scalar ||
+        target == ProcessingTarget::colourAndScalar;
 }
 
 EvaluatedSample sampleFromColour(const Rgba8& colour)
@@ -102,6 +122,102 @@ EvaluatedSample thresholdSample(
     auto result = sampleFromColour(context.material.lowColour);
     result.scalar = 0.0;
     return result;
+}
+
+double posteriseValue(double value, std::uint32_t bands)
+{
+    const double intervals = static_cast<double>(bands - 1U);
+    return std::round(std::clamp(value, 0.0, 1.0) * intervals) / intervals;
+}
+
+EvaluatedSample posteriseSample(
+    const EvaluatedSample& input,
+    const PosteriseOperation& operation)
+{
+    auto result = input;
+    if (affectsScalar(operation.target)) {
+        result.scalar = posteriseValue(input.scalar, operation.bands);
+    }
+    if (affectsColour(operation.target)) {
+        result.red = posteriseValue(input.red, operation.bands);
+        result.green = posteriseValue(input.green, operation.bands);
+        result.blue = posteriseValue(input.blue, operation.bands);
+    }
+    return result;
+}
+
+EvaluatedSample colourRampSample(
+    const EvaluatedSample& input,
+    const ColourRampOperation& operation)
+{
+    const auto scalar = std::clamp(input.scalar, 0.0, 1.0);
+    const ColourRampStop* lower = &operation.stops.front();
+    const ColourRampStop* upper = lower;
+    for (const auto& stop : operation.stops) {
+        if (stop.position <= scalar) {
+            lower = &stop;
+        }
+        if (stop.position >= scalar) {
+            upper = &stop;
+            break;
+        }
+        upper = &stop;
+    }
+
+    double amount = 0.0;
+    if (operation.mode == ColourRampMode::linear && upper != lower) {
+        amount = (scalar - lower->position) / (upper->position - lower->position);
+        amount = std::clamp(amount, 0.0, 1.0);
+    }
+    const auto channel = [amount](std::uint8_t from, std::uint8_t to) {
+        return channelToUnit(from) +
+            (channelToUnit(to) - channelToUnit(from)) * amount;
+    };
+    return {
+        input.scalar,
+        channel(lower->colour.red, upper->colour.red),
+        channel(lower->colour.green, upper->colour.green),
+        channel(lower->colour.blue, upper->colour.blue),
+        channel(lower->colour.alpha, upper->colour.alpha),
+    };
+}
+
+EvaluatedSample paletteSample(
+    const EvaluatedSample& input,
+    const PaletteOperation& operation)
+{
+    const std::array<std::uint8_t, 3> source{
+        unitToChannel(input.red),
+        unitToChannel(input.green),
+        unitToChannel(input.blue),
+    };
+    const Rgba8* nearest = &operation.colours.front();
+    std::uint32_t nearestDistance = std::numeric_limits<std::uint32_t>::max();
+    for (const auto& colour : operation.colours) {
+        const std::array<std::uint8_t, 3> candidate{
+            colour.red,
+            colour.green,
+            colour.blue,
+        };
+        std::uint32_t distance = 0;
+        for (std::size_t channelIndex = 0; channelIndex < source.size(); ++channelIndex) {
+            const int difference = static_cast<int>(source[channelIndex]) -
+                static_cast<int>(candidate[channelIndex]);
+            distance += static_cast<std::uint32_t>(difference * difference);
+        }
+        if (distance < nearestDistance) {
+            nearest = &colour;
+            nearestDistance = distance;
+        }
+    }
+    const auto mapped = sampleFromColour(*nearest);
+    return {
+        input.scalar,
+        mapped.red,
+        mapped.green,
+        mapped.blue,
+        mapped.alpha,
+    };
 }
 
 double compositeChannel(double background, double source, CompositeMode mode, double opacity)
@@ -219,6 +335,15 @@ EvaluatedSample evaluateOperation(
             [&input, &context](const ThresholdOperation& threshold) {
                 return thresholdSample(input, context, threshold);
             },
+            [&input](const PosteriseOperation& posterise) {
+                return posteriseSample(input, posterise);
+            },
+            [&input](const ColourRampOperation& ramp) {
+                return colourRampSample(input, ramp);
+            },
+            [&input](const PaletteOperation& palette) {
+                return paletteSample(input, palette);
+            },
             [&context](const BrickGridOperation& brick) {
                 return sampleFromScalar(
                     context.material,
@@ -289,12 +414,17 @@ EvaluatedSample evaluateOperation(
                     return evaluateSurfaceFilter(filter, neighbourhood);
                 };
                 return EvaluatedSample{
-                    evaluateSurfaceFilter(filter, scalar),
-                    apply(input.red),
-                    apply(input.green),
-                    apply(input.blue),
+                    affectsScalar(filter.target)
+                        ? evaluateSurfaceFilter(filter, scalar)
+                        : input.scalar,
+                    affectsColour(filter.target) ? apply(input.red) : input.red,
+                    affectsColour(filter.target) ? apply(input.green) : input.green,
+                    affectsColour(filter.target) ? apply(input.blue) : input.blue,
                     input.alpha,
                 };
+            },
+            [&input](const InkContourOperation&) {
+                return input;
             },
         },
         operation);

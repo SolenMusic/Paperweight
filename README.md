@@ -13,13 +13,13 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-v0.0.10 is the current 3D Material Preview release. Its native MetalKit view
-combines colour, height, normal, and roughness maps on a plane, sphere, cube, or
-cylinder. Authors can orbit and zoom the camera, inspect individual maps, choose
-or customise lighting, and move the light manually or automatically. Procedural
-evaluation remains in the deterministic portable C++ core; Metal presents the
-finished maps and never changes their bytes. The v0.0.9 deterministic
-multithreaded CPU generator and benchmark suite remain intact.
+v0.0.11 is the current Stylised Materials release. The portable core adds
+posterisation, smooth or stepped colour ramps, deterministic palette reduction,
+edge-aware smoothing, and ink contours. Colour-only processing preserves the
+underlying height, normal, and roughness maps, so an illustrated surface need
+not become accidental mountain terrain. The native 3D preview also offers
+display-only cel lighting with discrete light bands, graphic highlights, and
+rim light. All v0.0.9 performance and v0.0.10 3D-preview features remain intact.
 
 The staged work is tracked in [GitHub Issues](https://github.com/SolenMusic/Paperweight/issues).
 
@@ -56,13 +56,13 @@ controls use metres, while brick layers can switch between relative sizing and
 friendly metre fields. In physical brick mode, the editor exposes columns and
 rows alongside brick dimensions and calculates the seamless repeat size as
 `brick size × count`; authors never need to guess which dimensions divide an
-existing repeat. File > New from Showcase loads editable cracked stone,
-weathered metal, mossy pebble, knotty wood, marble, and eroded-terrain recipes.
-These are the practical forerunners of the planned seedless template library.
+existing repeat. File > New from Showcase loads editable realistic and stylised
+recipes, including toon dungeon stone, painted metal, and graphic marble. These
+are the practical forerunners of the planned seedless template library.
 
-Format-version-1 through version-6 `.pmat` files still open with their
-historical output intact; saving migrates them to canonical format version 7.
-Version 7 adds explicit surface-pattern and surface-filter parameter groups.
+Format-version-1 through version-7 `.pmat` files still open with their
+historical output intact; saving migrates them to canonical format version 8.
+Version 8 adds the stylised processors and explicit filter targets.
 The editor does not invent a redundant graph syntax for the existing layer recipe:
 direct graph construction is currently a portable C++ API, while visual graph
 authoring and graph-specific persistence remain later editor work.
@@ -131,7 +131,9 @@ Height and Normal adjust their display strength without modifying the material
 definition or exported maps. Lighting presets, manual phase, and Play Light make
 surface response visible from several directions. Loading a material chooses a
 bounded starting displacement from its authored normal strength; the Height
-control remains a free visual override.
+control remains a free visual override. Enable Toon lighting for a display-only
+cel-shaded inspection; its bands, highlight threshold, and rim light never alter
+saved or exported material data.
 
 Use Tools > Performance Benchmark (Command-Option-B) to run a visible benchmark
 suite at 64, 128, 256, 512, and 1024 pixels. Choose Colour, Height, Normal, or
