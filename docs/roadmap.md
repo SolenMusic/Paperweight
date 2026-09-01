@@ -128,11 +128,14 @@ character. See [roadmap issue #129](https://github.com/SolenMusic/Paperweight/is
 
 ## v0.0.14 - Bevels, Facets and Wear
 
-Construct rounded, chamfered, and hand-cut height profiles from region distance.
-Add seeded planar facets, centre peaks, slopes, chipping, edge wear, and reusable
-cavity, exposed-face, facet, and wear masks. Colour and lighting stay separate
-from surface construction. This should bring cel rock, flagstone, masonry, and
-roof slate into the 90-98 percent range. See
+Implemented: construct rounded, chamfered, and hand-cut height profiles from
+stable region distance. Seeded planar facets, displaced centre peaks,
+directional slopes, chipping, edge wear, and erosion are one reusable graph
+processor rather than named rock or castle generators. The processor can emit
+constructed height or cavity, outer-edge, exposed-face, facet, and wear masks.
+An optional normal-only planar treatment leaves colour, height, and roughness
+unchanged. The native editor exposes every control and includes cel-rock,
+flagstone, masonry, and slate showcases. See
 [roadmap issue #130](https://github.com/SolenMusic/Paperweight/issues/130).
 
 ## v0.0.15 - Shapes and Lattices

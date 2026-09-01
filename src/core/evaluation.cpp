@@ -2,6 +2,7 @@
 
 #include <paperweight/hash.hpp>
 #include <paperweight/noise.hpp>
+#include <paperweight/sculpt.hpp>
 #include <paperweight/structural.hpp>
 #include <paperweight/surface.hpp>
 
@@ -512,6 +513,26 @@ EvaluatedSample evaluateOperation(
             },
             [&input, &context](const RegionFieldOperation& regionField) {
                 return regionFieldSample(input, context, regionField);
+            },
+            [&input, &context](const RegionSurfaceOperation& surface) {
+                const double value = evaluateRegionSurface(
+                    surface,
+                    context.material,
+                    input.region,
+                    input.scalar,
+                    context.u,
+                    context.v,
+                    context.output);
+                auto result = input;
+                if (affectsScalar(surface.target)) {
+                    result.scalar = value;
+                }
+                if (affectsColour(surface.target)) {
+                    result.red = value;
+                    result.green = value;
+                    result.blue = value;
+                }
+                return result;
             },
         },
         operation);

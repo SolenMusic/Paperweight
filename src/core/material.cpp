@@ -568,6 +568,54 @@ std::optional<std::string> validateMaterial(const Material& material)
                     if (!validProcessingTarget(operation.target)) {
                         return prefix + "region field target is not supported";
                     }
+                } else if constexpr (std::is_same_v<Operation, RegionSurfaceOperation>) {
+                    switch (operation.field) {
+                    case RegionSurfaceField::height:
+                    case RegionSurfaceField::cavity:
+                    case RegionSurfaceField::outerEdge:
+                    case RegionSurfaceField::exposedFace:
+                    case RegionSurfaceField::facet:
+                    case RegionSurfaceField::wear:
+                        break;
+                    default:
+                        return prefix + "region surface field is not supported";
+                    }
+                    switch (operation.profile) {
+                    case BevelProfile::rounded:
+                    case BevelProfile::chamfered:
+                    case BevelProfile::handCut:
+                        break;
+                    default:
+                        return prefix + "bevel profile is not supported";
+                    }
+                    if (!validRange(
+                            operation.bevelWidth,
+                            LayerLimits::minimumBevelWidth,
+                            LayerLimits::maximumBevelWidth)) {
+                        return prefix +
+                            "bevel width must be finite and between 0.001 and 1";
+                    }
+                    if (!validRange(operation.bevelHeight, 0.0, 1.0) ||
+                        !validRange(operation.facetStrength, 0.0, 1.0) ||
+                        !validRange(operation.centrePeak, 0.0, 1.0) ||
+                        !validRange(operation.slopeStrength, 0.0, 1.0) ||
+                        !validRange(operation.chipAmount, 0.0, 1.0) ||
+                        !validRange(operation.wearAmount, 0.0, 1.0) ||
+                        !validRange(operation.erosionAmount, 0.0, 1.0)) {
+                        return prefix +
+                            "surface height, facets, peak, slope, chips, wear, and erosion must be finite and between 0 and 1";
+                    }
+                    if (operation.facetCount < LayerLimits::minimumFacetCount ||
+                        operation.facetCount > LayerLimits::maximumFacetCount) {
+                        return prefix + "facet count must be between 3 and 16";
+                    }
+                    if (operation.chipScale < LayerLimits::minimumChipScale ||
+                        operation.chipScale > LayerLimits::maximumChipScale) {
+                        return prefix + "chip scale must be between 1 and 64";
+                    }
+                    if (!validProcessingTarget(operation.target)) {
+                        return prefix + "region surface target is not supported";
+                    }
                 }
                 return std::nullopt;
             },

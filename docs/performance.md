@@ -123,7 +123,8 @@ the output and needs a measured invalidation design rather than a token map.
 
 The core tests contain golden FNV-1a checksums for colour, height, normal, and
 roughness outputs from the detailed surface, stylised, region, and course-layout
-showcases through v0.0.13. They use compact 32 x 32 fixtures so the complete
+showcases through v0.0.14, including constructed surface and mask paths. They
+use compact 32 x 32 fixtures so the complete
 corpus remains practical in CI. Existing historical format fixtures retain
 their earlier golden checksums as well.
 

@@ -23,6 +23,7 @@ struct EvaluationContext {
     const Material& material;
     double u;
     double v;
+    MaterialOutput output{MaterialOutput::colour};
 };
 
 struct EvaluatedCoordinates {
