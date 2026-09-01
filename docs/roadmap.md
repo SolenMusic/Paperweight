@@ -101,6 +101,95 @@ and graphic-marble showcases. The MetalKit preview gains optional display-only
 cel lighting with discrete diffuse bands, a hard highlight threshold, and rim
 light. The preview effect never enters `.pmat` data or exported maps.
 
+## v0.0.12 - Regions and Attributes
+
+Give every structural region a stable integer identity, region-local
+coordinates, boundary and centre distances, and independent seeded random
+channels. Allow these fields to drive colour, scalar height, roughness,
+parameters, and masks without changing region geometry. Identity must remain
+independent of pixels, resolution, worker scheduling, architecture, and
+container traversal. This is the shared foundation for all later layouts and
+instances. See [roadmap issue #128](https://github.com/SolenMusic/Paperweight/issues/128).
+
+## v0.0.13 - Masonry and Courses
+
+Add variable-height courses, variable-width blocks, controlled staggering,
+rectangular slab subdivision, crooked seamless boundaries, and overlapping
+shingle/slate courses. Layouts expose reusable block, mortar, course, and
+overlap fields and retain physical dimensions. This targets castle flagstone,
+realistic and cel masonry, and roof slate at approximately 80-95 percent of the
+supplied references. See [roadmap issue #129](https://github.com/SolenMusic/Paperweight/issues/129).
+
+## v0.0.14 - Bevels, Facets and Wear
+
+Construct rounded, chamfered, and hand-cut height profiles from region distance.
+Add seeded planar facets, centre peaks, slopes, chipping, edge wear, and reusable
+cavity, exposed-face, facet, and wear masks. Colour and lighting stay separate
+from surface construction. This should bring cel rock, flagstone, masonry, and
+roof slate into the 90-98 percent range. See
+[roadmap issue #130](https://github.com/SolenMusic/Paperweight/issues/130).
+
+## v0.0.15 - Shapes and Lattices
+
+Add analytic rounded rectangles, ellipses, capsules, diamonds, and convex
+polygons, together with inset, outline, border, union, intersection, and
+subtraction operations. Bounded instances may rotate freely; global line and
+diamond lattices use tile-compatible winding directions rather than pretending
+that every arbitrary rotation remains seamless. This targets the diamond castle
+window and detailed crate construction. See
+[roadmap issue #131](https://github.com/SolenMusic/Paperweight/issues/131).
+
+## v0.0.16 - Deterministic Instance Scattering
+
+Add mathematically tileable placement with minimum distance, controlled overlap,
+multiple size populations, stable occlusion order, and per-instance scale,
+aspect, rotation, colour, height, and roughness. Candidate and rejection order
+must depend only on stable hashes. Shape primitives become reusable stamps for
+gravel, leaves, nails, chips, and debris. This targets courtyard gravel at
+90-98 percent and establishes the foliage foundation. See
+[roadmap issue #132](https://github.com/SolenMusic/Paperweight/issues/132).
+
+## v0.0.17 - Organic Structures
+
+Build anisotropic bark regions, branching crack networks, parametric leaf
+silhouettes, midrib and vein masks, stable overlapping clusters, and moss or
+lichen accumulation from the preceding general-purpose tools. Named bark and
+foliage results remain editable templates rather than special evaluation paths.
+This targets cel bark at 90-98 percent and dense castle foliage at 80-95 percent.
+See [roadmap issue #133](https://github.com/SolenMusic/Paperweight/issues/133).
+
+## v0.0.18 - Reference Materials and Stylised Baking
+
+Converge all branches into seedless, caller-instantiated templates for the ten
+supplied Blastard reference materials. Add side-by-side comparison and an
+optional portable colour-output lighting bake with explicit direction, diffuse
+bands, highlight threshold, ambient contribution, and rim treatment. Unlit maps
+remain the default for dynamic game lighting. Every template receives golden
+colour, height, normal, and roughness outputs plus seam, resolution, worker, and
+cross-architecture acceptance. See
+[roadmap issue #134](https://github.com/SolenMusic/Paperweight/issues/134) and
+the [cross-version tracker #135](https://github.com/SolenMusic/Paperweight/issues/135).
+
+The intended dependency shape is:
+
+```text
+v0.0.12  Regions and Attributes
+    |-- v0.0.13  Masonry and Courses
+    |       `-- v0.0.14  Bevels, Facets and Wear
+    `-- v0.0.15  Shapes and Lattices
+            `-- v0.0.16  Instance Scattering
+                    `-- v0.0.17  Organic Structures
+
+                 all feed into
+v0.0.18  Reference Materials and Stylised Baking
+```
+
+These releases retain deterministic seeded output, mathematical seamlessness,
+resolution-independent physical scale, byte-identical supported CPU output,
+and portable dependency-free C++20 semantics. Detailed Codex-sized child issues
+are expanded only when a milestone becomes active, allowing implementation
+evidence to shape the local backlog without creating a second roadmap.
+
 ## v0.1.0 - Game Library
 
 Stabilise the embedding API and add material-definition versioning, generator
@@ -112,7 +201,7 @@ launch, load time, or during development-time asset processing.
 ## Unscheduled future work
 
 - Working-folder material libraries with stable IDs, friendly names, and
-  seedless templates built from ordinary recipe properties.
+  browsing or organisation beyond the seedless reference templates in v0.0.18.
 - A measured packed-library export for games, while readable `.pmat` files
   remain the source of truth.
 - Optional Git assistance layered over a working folder.
