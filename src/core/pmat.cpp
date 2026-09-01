@@ -78,6 +78,7 @@ enum class OperationKind {
     shape,
     shapeBoolean,
     lattice,
+    scatter,
 };
 
 enum class BrickSizing {
@@ -90,6 +91,31 @@ struct ParsedValue {
     std::optional<Value> value;
     std::size_t line{};
     std::size_t column{};
+};
+
+struct ScatterPopulationBuilder {
+    ParsedValue<double> weight;
+    ParsedValue<double> minimumScale;
+    ParsedValue<double> maximumScale;
+    ParsedValue<double> minimumAspect;
+    ParsedValue<double> maximumAspect;
+    ParsedValue<double> minimumRotation;
+    ParsedValue<double> maximumRotation;
+    ParsedValue<Rgba8> lowColour;
+    ParsedValue<Rgba8> highColour;
+    ParsedValue<double> minimumHeight;
+    ParsedValue<double> maximumHeight;
+    ParsedValue<double> minimumRoughness;
+    ParsedValue<double> maximumRoughness;
+};
+
+struct ScatterMaskBuilder {
+    ParsedValue<bool> enabled;
+    ParsedValue<bool> inverted;
+    ParsedValue<std::uint32_t> frequency;
+    ParsedValue<double> inputLow;
+    ParsedValue<double> inputHigh;
+    ParsedValue<std::uint64_t> seedOffset;
 };
 
 struct LayerBuilder {
@@ -243,6 +269,20 @@ struct LayerBuilder {
     ParsedValue<double> latticeWidth;
     ParsedValue<double> latticeSoftness;
     ParsedValue<double> latticePhase;
+    ParsedValue<ScatterField> scatterField;
+    ParsedValue<std::uint32_t> scatterColumns;
+    ParsedValue<std::uint32_t> scatterRows;
+    ParsedValue<double> scatterDensity;
+    ParsedValue<double> scatterJitter;
+    ParsedValue<double> scatterMinimumDistance;
+    ParsedValue<ScatterOverlapMode> scatterOverlapMode;
+    ParsedValue<double> scatterMaximumOverlap;
+    ParsedValue<std::uint64_t> scatterSeedOffset;
+    ParsedValue<std::uint32_t> scatterPopulationCount;
+    std::array<ScatterPopulationBuilder, LayerLimits::maximumScatterPopulations>
+        scatterPopulations;
+    ScatterMaskBuilder scatterDensityMask;
+    ScatterMaskBuilder scatterExclusionMask;
 };
 
 std::string_view trim(std::string_view value)
@@ -496,6 +536,46 @@ std::optional<OperationKind> parseOperationKind(std::string_view value)
     }
     if (value == "lattice") {
         return OperationKind::lattice;
+    }
+    if (value == "scatter") {
+        return OperationKind::scatter;
+    }
+    return std::nullopt;
+}
+
+std::optional<ScatterField> parseScatterField(std::string_view value)
+{
+    if (value == "material") {
+        return ScatterField::material;
+    }
+    if (value == "fill") {
+        return ScatterField::fill;
+    }
+    if (value == "instance_random") {
+        return ScatterField::instanceRandom;
+    }
+    if (value == "local_u") {
+        return ScatterField::localU;
+    }
+    if (value == "local_v") {
+        return ScatterField::localV;
+    }
+    if (value == "boundary_distance") {
+        return ScatterField::boundaryDistance;
+    }
+    return std::nullopt;
+}
+
+std::optional<ScatterOverlapMode> parseScatterOverlapMode(std::string_view value)
+{
+    if (value == "forbidden") {
+        return ScatterOverlapMode::forbidden;
+    }
+    if (value == "controlled") {
+        return ScatterOverlapMode::controlled;
+    }
+    if (value == "unrestricted") {
+        return ScatterOverlapMode::unrestricted;
     }
     return std::nullopt;
 }
@@ -804,7 +884,8 @@ bool isStructuralOperation(OperationKind operation)
         operation == OperationKind::circles ||
         operation == OperationKind::courseLayout ||
         operation == OperationKind::shape ||
-        operation == OperationKind::lattice;
+        operation == OperationKind::lattice ||
+        operation == OperationKind::scatter;
 }
 
 bool hasVersionFourFields(const LayerBuilder& builder)
@@ -928,13 +1009,41 @@ bool hasVersionTwelveFields(const LayerBuilder& builder)
         hasVersionTwelveLatticeFields(builder);
 }
 
+bool hasVersionThirteenFields(const LayerBuilder& builder)
+{
+    const auto populationHasFields = [](const ScatterPopulationBuilder& population) {
+        return population.weight.value || population.minimumScale.value ||
+            population.maximumScale.value || population.minimumAspect.value ||
+            population.maximumAspect.value || population.minimumRotation.value ||
+            population.maximumRotation.value || population.lowColour.value ||
+            population.highColour.value || population.minimumHeight.value ||
+            population.maximumHeight.value || population.minimumRoughness.value ||
+            population.maximumRoughness.value;
+    };
+    const auto maskHasFields = [](const ScatterMaskBuilder& mask) {
+        return mask.enabled.value || mask.inverted.value || mask.frequency.value ||
+            mask.inputLow.value || mask.inputHigh.value || mask.seedOffset.value;
+    };
+    return builder.scatterField.value || builder.scatterColumns.value ||
+        builder.scatterRows.value || builder.scatterDensity.value ||
+        builder.scatterJitter.value || builder.scatterMinimumDistance.value ||
+        builder.scatterOverlapMode.value || builder.scatterMaximumOverlap.value ||
+        builder.scatterSeedOffset.value || builder.scatterPopulationCount.value ||
+        std::any_of(
+            builder.scatterPopulations.begin(),
+            builder.scatterPopulations.end(),
+            populationHasFields) ||
+        maskHasFields(builder.scatterDensityMask) ||
+        maskHasFields(builder.scatterExclusionMask);
+}
+
 bool hasStructuralFields(const LayerBuilder& builder)
 {
     return hasVersionFourFields(builder) || hasVersionFiveFields(builder) ||
         hasVersionSixFields(builder) || hasVersionSevenFields(builder) ||
         hasVersionEightFields(builder) || hasVersionNineFields(builder) ||
         hasVersionTenFields(builder) || hasVersionElevenFields(builder) ||
-        hasVersionTwelveFields(builder);
+        hasVersionTwelveFields(builder) || hasVersionThirteenFields(builder);
 }
 
 template<typename Value>
@@ -2331,6 +2440,161 @@ ParseResult parsePmat(std::string_view text)
                     if (!storeValue(builder.latticePhase, parsed, lineNumber, valueColumn)) {
                         return duplicate();
                     }
+                } else if (property == "scatter.field") {
+                    const auto parsed = parseScatterField(value);
+                    if (!parsed) {
+                        return diagnostic(lineNumber, valueColumn, "scatter field must be 'material', 'fill', 'instance_random', 'local_u', 'local_v', or 'boundary_distance'");
+                    }
+                    if (!storeValue(builder.scatterField, *parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "scatter.columns") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "scatter columns must be an integer");
+                    }
+                    if (!storeValue(builder.scatterColumns, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "scatter.rows") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "scatter rows must be an integer");
+                    }
+                    if (!storeValue(builder.scatterRows, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "scatter.density" ||
+                           property == "scatter.jitter" ||
+                           property == "scatter.minimum_distance" ||
+                           property == "scatter.maximum_overlap") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "scatter parameter must be a decimal number");
+                    }
+                    auto* destination = property == "scatter.density"
+                        ? &builder.scatterDensity
+                        : property == "scatter.jitter"
+                            ? &builder.scatterJitter
+                            : property == "scatter.minimum_distance"
+                                ? &builder.scatterMinimumDistance
+                                : &builder.scatterMaximumOverlap;
+                    if (!storeValue(*destination, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "scatter.overlap") {
+                    const auto parsed = parseScatterOverlapMode(value);
+                    if (!parsed) {
+                        return diagnostic(lineNumber, valueColumn, "scatter overlap must be 'forbidden', 'controlled', or 'unrestricted'");
+                    }
+                    if (!storeValue(builder.scatterOverlapMode, *parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "scatter.seed_offset") {
+                    std::uint64_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "scatter seed offset must be an unsigned integer");
+                    }
+                    if (!storeValue(builder.scatterSeedOffset, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "scatter.populations") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "scatter population count must be an integer");
+                    }
+                    if (!storeValue(builder.scatterPopulationCount, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (const auto population =
+                               parseIndexedProperty(property, "scatter.population.")) {
+                    const auto [populationIndex, member] = *population;
+                    if (populationIndex >= LayerLimits::maximumScatterPopulations) {
+                        return diagnostic(lineNumber, valueColumn, "scatter population index is out of range");
+                    }
+                    auto& destination = builder.scatterPopulations[populationIndex];
+                    if (member == "colour_low" || member == "colour_high") {
+                        Rgba8 parsed{};
+                        if (!parseColour(value, parsed)) {
+                            return diagnostic(lineNumber, valueColumn, "scatter population colour must use 0xRRGGBBAA hexadecimal notation");
+                        }
+                        auto& field = member == "colour_low"
+                            ? destination.lowColour
+                            : destination.highColour;
+                        if (!storeValue(field, parsed, lineNumber, valueColumn)) {
+                            return duplicate();
+                        }
+                    } else {
+                        double parsed = 0.0;
+                        if (!parseDouble(value, parsed)) {
+                            return diagnostic(lineNumber, valueColumn, "scatter population parameter must be a decimal number");
+                        }
+                        ParsedValue<double>* field = nullptr;
+                        if (member == "weight") field = &destination.weight;
+                        else if (member == "min_scale") field = &destination.minimumScale;
+                        else if (member == "max_scale") field = &destination.maximumScale;
+                        else if (member == "min_aspect") field = &destination.minimumAspect;
+                        else if (member == "max_aspect") field = &destination.maximumAspect;
+                        else if (member == "min_rotation") field = &destination.minimumRotation;
+                        else if (member == "max_rotation") field = &destination.maximumRotation;
+                        else if (member == "min_height") field = &destination.minimumHeight;
+                        else if (member == "max_height") field = &destination.maximumHeight;
+                        else if (member == "min_roughness") field = &destination.minimumRoughness;
+                        else if (member == "max_roughness") field = &destination.maximumRoughness;
+                        if (field == nullptr) {
+                            return diagnostic(lineNumber, valueColumn, "invalid scatter population property");
+                        }
+                        if (!storeValue(*field, parsed, lineNumber, valueColumn)) {
+                            return duplicate();
+                        }
+                    }
+                } else if (property.starts_with("scatter.density_mask.") ||
+                           property.starts_with("scatter.exclusion_mask.")) {
+                    constexpr std::string_view densityPrefix = "scatter.density_mask.";
+                    constexpr std::string_view exclusionPrefix = "scatter.exclusion_mask.";
+                    const bool isDensity = property.starts_with(densityPrefix);
+                    const auto member = property.substr(
+                        isDensity ? densityPrefix.size() : exclusionPrefix.size());
+                    auto& mask = isDensity
+                        ? builder.scatterDensityMask
+                        : builder.scatterExclusionMask;
+                    if (member == "enabled" || member == "inverted") {
+                        bool parsed = false;
+                        if (!parseBoolean(value, parsed)) {
+                            return diagnostic(lineNumber, valueColumn, "scatter mask flag must be true or false");
+                        }
+                        auto& field = member == "enabled" ? mask.enabled : mask.inverted;
+                        if (!storeValue(field, parsed, lineNumber, valueColumn)) {
+                            return duplicate();
+                        }
+                    } else if (member == "frequency") {
+                        std::uint32_t parsed = 0;
+                        if (!parseInteger(value, parsed)) {
+                            return diagnostic(lineNumber, valueColumn, "scatter mask frequency must be an integer");
+                        }
+                        if (!storeValue(mask.frequency, parsed, lineNumber, valueColumn)) {
+                            return duplicate();
+                        }
+                    } else if (member == "seed_offset") {
+                        std::uint64_t parsed = 0;
+                        if (!parseInteger(value, parsed)) {
+                            return diagnostic(lineNumber, valueColumn, "scatter mask seed offset must be an unsigned integer");
+                        }
+                        if (!storeValue(mask.seedOffset, parsed, lineNumber, valueColumn)) {
+                            return duplicate();
+                        }
+                    } else if (member == "input_low" || member == "input_high") {
+                        double parsed = 0.0;
+                        if (!parseDouble(value, parsed)) {
+                            return diagnostic(lineNumber, valueColumn, "scatter mask threshold must be a decimal number");
+                        }
+                        auto& field = member == "input_low" ? mask.inputLow : mask.inputHigh;
+                        if (!storeValue(field, parsed, lineNumber, valueColumn)) {
+                            return duplicate();
+                        }
+                    } else {
+                        return diagnostic(lineNumber, valueColumn, "invalid scatter mask property");
+                    }
                 } else if (property == "transform.scale_x") {
                     std::uint32_t parsed = 0;
                     if (!parseInteger(value, parsed)) {
@@ -2597,6 +2861,15 @@ ParseResult parsePmat(std::string_view text)
                     "shape primitives and lattices require .pmat version 12");
             }
 
+            if (formatVersion < 13 &&
+                (hasVersionThirteenFields(builder) ||
+                 *builder.operation.value == OperationKind::scatter)) {
+                return diagnostic(
+                    lineNumber + 1,
+                    1,
+                    "deterministic scattering requires .pmat version 13");
+            }
+
             if (formatVersion < 4 &&
                 (hasVersionFourFields(builder) ||
                  isStructuralOperation(*builder.operation.value))) {
@@ -2785,6 +3058,9 @@ ParseResult parsePmat(std::string_view text)
             const bool hasSculptFields = hasVersionElevenFields(builder);
             const bool hasShapeFields = hasVersionTwelveShapeFields(builder);
             const bool hasLatticeFields = hasVersionTwelveLatticeFields(builder);
+            const bool hasScatterFields = hasVersionThirteenFields(builder);
+            const bool shapeBelongsToScatter =
+                *builder.operation.value == OperationKind::scatter;
             const int operationGroupCount = static_cast<int>(hasBrickFields) +
                 static_cast<int>(hasTileFields) + static_cast<int>(hasWorleyFields) +
                 static_cast<int>(hasRandomFields) + static_cast<int>(hasLineFields) +
@@ -2793,8 +3069,11 @@ ParseResult parsePmat(std::string_view text)
                 static_cast<int>(hasPosteriseFields) + static_cast<int>(hasRampFields) +
                 static_cast<int>(hasPaletteFields) + static_cast<int>(hasInkFields) +
                 static_cast<int>(hasRegionFields) + static_cast<int>(hasCourseFields) +
-                static_cast<int>(hasSculptFields) + static_cast<int>(hasShapeFields) +
-                static_cast<int>(hasLatticeFields);
+                static_cast<int>(hasSculptFields) +
+                static_cast<int>(hasShapeFields && !shapeBelongsToScatter) +
+                static_cast<int>(hasLatticeFields) +
+                static_cast<int>(hasScatterFields ||
+                    (shapeBelongsToScatter && hasShapeFields));
 
             const bool hasClassicFields = builder.seedOffset.value || builder.solidColour.value ||
                 builder.levelsLow.value || builder.levelsHigh.value ||
@@ -3408,6 +3687,145 @@ ParseResult parsePmat(std::string_view text)
                         *builder.shapeBooleanTarget.value,
                     };
                 }
+                break;
+            }
+            case OperationKind::scatter: {
+                if (!builder.scatterField.value) return missingLayerField(lineNumber + 1, index, "scatter.field");
+                if (!builder.scatterColumns.value) return missingLayerField(lineNumber + 1, index, "scatter.columns");
+                if (!builder.scatterRows.value) return missingLayerField(lineNumber + 1, index, "scatter.rows");
+                if (!builder.scatterDensity.value) return missingLayerField(lineNumber + 1, index, "scatter.density");
+                if (!builder.scatterJitter.value) return missingLayerField(lineNumber + 1, index, "scatter.jitter");
+                if (!builder.scatterMinimumDistance.value) return missingLayerField(lineNumber + 1, index, "scatter.minimum_distance");
+                if (!builder.scatterOverlapMode.value) return missingLayerField(lineNumber + 1, index, "scatter.overlap");
+                if (!builder.scatterMaximumOverlap.value) return missingLayerField(lineNumber + 1, index, "scatter.maximum_overlap");
+                if (!builder.scatterSeedOffset.value) return missingLayerField(lineNumber + 1, index, "scatter.seed_offset");
+                if (!builder.scatterPopulationCount.value) return missingLayerField(lineNumber + 1, index, "scatter.populations");
+                if (!builder.shapeKind.value) return missingLayerField(lineNumber + 1, index, "shape.kind");
+                if (!builder.shapeField.value) return missingLayerField(lineNumber + 1, index, "shape.field");
+                if (!builder.shapeColumns.value) return missingLayerField(lineNumber + 1, index, "shape.columns");
+                if (!builder.shapeRows.value) return missingLayerField(lineNumber + 1, index, "shape.rows");
+                if (!builder.shapeWidth.value) return missingLayerField(lineNumber + 1, index, "shape.width");
+                if (!builder.shapeHeight.value) return missingLayerField(lineNumber + 1, index, "shape.height");
+                if (!builder.shapeCornerRadius.value) return missingLayerField(lineNumber + 1, index, "shape.corner_radius");
+                if (!builder.shapeInset.value) return missingLayerField(lineNumber + 1, index, "shape.inset");
+                if (!builder.shapeBorderWidth.value) return missingLayerField(lineNumber + 1, index, "shape.border_width");
+                if (!builder.shapeSoftness.value) return missingLayerField(lineNumber + 1, index, "shape.softness");
+                if (!builder.shapeOffsetX.value) return missingLayerField(lineNumber + 1, index, "shape.offset_x");
+                if (!builder.shapeOffsetY.value) return missingLayerField(lineNumber + 1, index, "shape.offset_y");
+                if (!builder.shapeStagger.value) return missingLayerField(lineNumber + 1, index, "shape.stagger");
+                if (!builder.shapeRotation.value) return missingLayerField(lineNumber + 1, index, "shape.rotation");
+                if (!builder.shapeSeedOffset.value) return missingLayerField(lineNumber + 1, index, "shape.seed_offset");
+                if (!builder.shapeVertexCount.value) return missingLayerField(lineNumber + 1, index, "shape.vertices");
+                if (builder.shapeBooleanMode.value || builder.shapeBooleanTarget.value ||
+                    hasClassicFields || operationGroupCount != 1) {
+                    return crossOperationError();
+                }
+
+                const auto requireMask = [&](
+                    const ScatterMaskBuilder& mask,
+                    std::string_view name) -> std::optional<ParseDiagnostic> {
+                    if (!mask.enabled.value) return missingLayerField(lineNumber + 1, index, std::string(name) + ".enabled");
+                    if (!mask.inverted.value) return missingLayerField(lineNumber + 1, index, std::string(name) + ".inverted");
+                    if (!mask.frequency.value) return missingLayerField(lineNumber + 1, index, std::string(name) + ".frequency");
+                    if (!mask.inputLow.value) return missingLayerField(lineNumber + 1, index, std::string(name) + ".input_low");
+                    if (!mask.inputHigh.value) return missingLayerField(lineNumber + 1, index, std::string(name) + ".input_high");
+                    if (!mask.seedOffset.value) return missingLayerField(lineNumber + 1, index, std::string(name) + ".seed_offset");
+                    return std::nullopt;
+                };
+                if (const auto error = requireMask(builder.scatterDensityMask, "scatter.density_mask")) return *error;
+                if (const auto error = requireMask(builder.scatterExclusionMask, "scatter.exclusion_mask")) return *error;
+
+                const auto vertexCount = *builder.shapeVertexCount.value;
+                if (vertexCount < LayerLimits::minimumPolygonVertices ||
+                    vertexCount > LayerLimits::maximumPolygonVertices) {
+                    return diagnostic(builder.shapeVertexCount.line, builder.shapeVertexCount.column, "shape vertex count must be between 3 and 12");
+                }
+                std::vector<ShapePoint> vertices;
+                vertices.reserve(vertexCount);
+                for (std::size_t vertexIndex = 0; vertexIndex < vertexCount; ++vertexIndex) {
+                    if (!builder.shapeVertexX[vertexIndex].value) return missingLayerField(lineNumber + 1, index, "shape.vertex." + std::to_string(vertexIndex) + ".x");
+                    if (!builder.shapeVertexY[vertexIndex].value) return missingLayerField(lineNumber + 1, index, "shape.vertex." + std::to_string(vertexIndex) + ".y");
+                    vertices.push_back({*builder.shapeVertexX[vertexIndex].value, *builder.shapeVertexY[vertexIndex].value});
+                }
+                for (std::size_t vertexIndex = vertexCount; vertexIndex < LayerLimits::maximumPolygonVertices; ++vertexIndex) {
+                    if (builder.shapeVertexX[vertexIndex].value || builder.shapeVertexY[vertexIndex].value) {
+                        return diagnostic(lineNumber + 1, 1, "shape declares a vertex beyond shape.vertices");
+                    }
+                }
+                ShapePrimitiveOperation stamp{
+                    *builder.shapeKind.value, *builder.shapeField.value,
+                    *builder.shapeColumns.value, *builder.shapeRows.value,
+                    *builder.shapeWidth.value, *builder.shapeHeight.value,
+                    *builder.shapeCornerRadius.value, *builder.shapeInset.value,
+                    *builder.shapeBorderWidth.value, *builder.shapeSoftness.value,
+                    *builder.shapeOffsetX.value, *builder.shapeOffsetY.value,
+                    *builder.shapeStagger.value, *builder.shapeRotation.value,
+                    *builder.shapeSeedOffset.value, std::move(vertices),
+                };
+
+                const auto populationCount = *builder.scatterPopulationCount.value;
+                if (populationCount < 1 || populationCount > LayerLimits::maximumScatterPopulations) {
+                    return diagnostic(builder.scatterPopulationCount.line, builder.scatterPopulationCount.column, "scatter population count must be between 1 and 4");
+                }
+                std::vector<ScatterPopulation> populations;
+                populations.reserve(populationCount);
+                const auto populationHasFields = [](const ScatterPopulationBuilder& population) {
+                    return population.weight.value || population.minimumScale.value || population.maximumScale.value ||
+                        population.minimumAspect.value || population.maximumAspect.value ||
+                        population.minimumRotation.value || population.maximumRotation.value ||
+                        population.lowColour.value || population.highColour.value ||
+                        population.minimumHeight.value || population.maximumHeight.value ||
+                        population.minimumRoughness.value || population.maximumRoughness.value;
+                };
+                for (std::size_t populationIndex = 0; populationIndex < populationCount; ++populationIndex) {
+                    const auto& population = builder.scatterPopulations[populationIndex];
+                    const auto populationPrefix = "scatter.population." + std::to_string(populationIndex) + ".";
+                    if (!population.weight.value) return missingLayerField(lineNumber + 1, index, populationPrefix + "weight");
+                    if (!population.minimumScale.value) return missingLayerField(lineNumber + 1, index, populationPrefix + "min_scale");
+                    if (!population.maximumScale.value) return missingLayerField(lineNumber + 1, index, populationPrefix + "max_scale");
+                    if (!population.minimumAspect.value) return missingLayerField(lineNumber + 1, index, populationPrefix + "min_aspect");
+                    if (!population.maximumAspect.value) return missingLayerField(lineNumber + 1, index, populationPrefix + "max_aspect");
+                    if (!population.minimumRotation.value) return missingLayerField(lineNumber + 1, index, populationPrefix + "min_rotation");
+                    if (!population.maximumRotation.value) return missingLayerField(lineNumber + 1, index, populationPrefix + "max_rotation");
+                    if (!population.lowColour.value) return missingLayerField(lineNumber + 1, index, populationPrefix + "colour_low");
+                    if (!population.highColour.value) return missingLayerField(lineNumber + 1, index, populationPrefix + "colour_high");
+                    if (!population.minimumHeight.value) return missingLayerField(lineNumber + 1, index, populationPrefix + "min_height");
+                    if (!population.maximumHeight.value) return missingLayerField(lineNumber + 1, index, populationPrefix + "max_height");
+                    if (!population.minimumRoughness.value) return missingLayerField(lineNumber + 1, index, populationPrefix + "min_roughness");
+                    if (!population.maximumRoughness.value) return missingLayerField(lineNumber + 1, index, populationPrefix + "max_roughness");
+                    populations.push_back({
+                        *population.weight.value,
+                        *population.minimumScale.value, *population.maximumScale.value,
+                        *population.minimumAspect.value, *population.maximumAspect.value,
+                        *population.minimumRotation.value, *population.maximumRotation.value,
+                        *population.lowColour.value, *population.highColour.value,
+                        *population.minimumHeight.value, *population.maximumHeight.value,
+                        *population.minimumRoughness.value, *population.maximumRoughness.value,
+                    });
+                }
+                for (std::size_t populationIndex = populationCount; populationIndex < LayerLimits::maximumScatterPopulations; ++populationIndex) {
+                    if (populationHasFields(builder.scatterPopulations[populationIndex])) {
+                        return diagnostic(lineNumber + 1, 1, "scatter declares a population beyond scatter.populations");
+                    }
+                }
+                const auto makeMask = [](const ScatterMaskBuilder& mask) {
+                    return ScatterMask{
+                        *mask.enabled.value, *mask.inverted.value, *mask.frequency.value,
+                        *mask.inputLow.value, *mask.inputHigh.value, *mask.seedOffset.value,
+                    };
+                };
+                layer.operation = ScatterOperation{
+                    *builder.scatterField.value,
+                    *builder.scatterColumns.value, *builder.scatterRows.value,
+                    *builder.scatterDensity.value, *builder.scatterJitter.value,
+                    *builder.scatterMinimumDistance.value,
+                    *builder.scatterOverlapMode.value,
+                    *builder.scatterMaximumOverlap.value,
+                    *builder.scatterSeedOffset.value,
+                    std::move(stamp), std::move(populations),
+                    makeMask(builder.scatterDensityMask),
+                    makeMask(builder.scatterExclusionMask),
+                };
                 break;
             }
             case OperationKind::lattice:
@@ -4321,6 +4739,88 @@ SerialisationResult serialisePmat(const Material& material)
                 std::string(shapeBooleanModeName(boolean->mode)) + "\n";
             output += prefix + "shape.target = " +
                 std::string(processingTargetName(boolean->target)) + "\n";
+        } else if (const auto* scatter =
+                       std::get_if<ScatterOperation>(&layer.operation)) {
+            if (const auto error = appendShape(scatter->stamp)) {
+                return *error;
+            }
+            const auto density = formatDouble(scatter->density);
+            const auto jitter = formatDouble(scatter->jitter);
+            const auto minimumDistance = formatDouble(scatter->minimumDistance);
+            const auto maximumOverlap = formatDouble(scatter->maximumOverlap);
+            if (density.empty() || jitter.empty() || minimumDistance.empty() ||
+                maximumOverlap.empty()) {
+                return SerialisationError{"could not format scatter placement parameters"};
+            }
+            output += prefix + "scatter.field = " +
+                std::string(scatterFieldName(scatter->field)) + "\n";
+            output += prefix + "scatter.columns = " +
+                std::to_string(scatter->columns) + "\n";
+            output += prefix + "scatter.rows = " +
+                std::to_string(scatter->rows) + "\n";
+            output += prefix + "scatter.density = " + density + "\n";
+            output += prefix + "scatter.jitter = " + jitter + "\n";
+            output += prefix + "scatter.minimum_distance = " + minimumDistance + "\n";
+            output += prefix + "scatter.overlap = " +
+                std::string(scatterOverlapModeName(scatter->overlapMode)) + "\n";
+            output += prefix + "scatter.maximum_overlap = " + maximumOverlap + "\n";
+            output += prefix + "scatter.seed_offset = " +
+                std::to_string(scatter->seedOffset) + "\n";
+            output += prefix + "scatter.populations = " +
+                std::to_string(scatter->populations.size()) + "\n";
+            for (std::size_t populationIndex = 0;
+                 populationIndex < scatter->populations.size();
+                 ++populationIndex) {
+                const auto& population = scatter->populations[populationIndex];
+                const std::array<std::pair<std::string_view, double>, 11> values{{
+                    {"weight", population.weight},
+                    {"min_scale", population.minimumScale},
+                    {"max_scale", population.maximumScale},
+                    {"min_aspect", population.minimumAspect},
+                    {"max_aspect", population.maximumAspect},
+                    {"min_rotation", population.minimumRotation},
+                    {"max_rotation", population.maximumRotation},
+                    {"min_height", population.minimumHeight},
+                    {"max_height", population.maximumHeight},
+                    {"min_roughness", population.minimumRoughness},
+                    {"max_roughness", population.maximumRoughness},
+                }};
+                const auto populationPrefix = prefix + "scatter.population." +
+                    std::to_string(populationIndex) + ".";
+                for (const auto& [name, value] : values) {
+                    const auto formatted = formatDouble(value);
+                    if (formatted.empty()) {
+                        return SerialisationError{"could not format scatter population parameters"};
+                    }
+                    output += populationPrefix + std::string(name) + " = " + formatted + "\n";
+                }
+                output += populationPrefix + "colour_low = " +
+                    formatColour(population.lowColour) + "\n";
+                output += populationPrefix + "colour_high = " +
+                    formatColour(population.highColour) + "\n";
+            }
+            const auto appendScatterMask = [&](std::string_view name, const ScatterMask& mask)
+                -> std::optional<SerialisationError> {
+                const auto inputLow = formatDouble(mask.inputLow);
+                const auto inputHigh = formatDouble(mask.inputHigh);
+                if (inputLow.empty() || inputHigh.empty()) {
+                    return SerialisationError{"could not format scatter mask parameters"};
+                }
+                const auto maskPrefix = prefix + "scatter." + std::string(name) + ".";
+                output += maskPrefix + "enabled = " + (mask.enabled ? "true\n" : "false\n");
+                output += maskPrefix + "inverted = " + (mask.inverted ? "true\n" : "false\n");
+                output += maskPrefix + "frequency = " + std::to_string(mask.frequency) + "\n";
+                output += maskPrefix + "input_low = " + inputLow + "\n";
+                output += maskPrefix + "input_high = " + inputHigh + "\n";
+                output += maskPrefix + "seed_offset = " + std::to_string(mask.seedOffset) + "\n";
+                return std::nullopt;
+            };
+            if (const auto error = appendScatterMask("density_mask", scatter->densityMask)) {
+                return *error;
+            }
+            if (const auto error = appendScatterMask("exclusion_mask", scatter->exclusionMask)) {
+                return *error;
+            }
         } else if (const auto* lattice =
                        std::get_if<LatticeOperation>(&layer.operation)) {
             const auto width = formatDouble(lattice->width);

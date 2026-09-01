@@ -38,6 +38,9 @@ set(PAPERWEIGHT_SHOWCASE_MATERIALS
     "${PROJECT_SOURCE_DIR}/examples/materials/detailed-crate.pmat"
     "${PROJECT_SOURCE_DIR}/examples/materials/decorative-fasteners.pmat"
     "${PROJECT_SOURCE_DIR}/examples/materials/masonry-corner-variation.pmat"
+    "${PROJECT_SOURCE_DIR}/examples/materials/cel-courtyard-gravel.pmat"
+    "${PROJECT_SOURCE_DIR}/examples/materials/scattered-debris.pmat"
+    "${PROJECT_SOURCE_DIR}/examples/materials/foliage-foundation.pmat"
 )
 set_source_files_properties(${PAPERWEIGHT_SHOWCASE_MATERIALS} PROPERTIES
     MACOSX_PACKAGE_LOCATION "Resources/Showcases"

@@ -160,6 +160,151 @@ std::optional<std::string> validateShapePrimitive(
     return std::nullopt;
 }
 
+std::optional<std::string> validateScatterMask(
+    const ScatterMask& mask,
+    std::string_view prefix,
+    std::string_view name)
+{
+    if (!validPatternCount(mask.frequency)) {
+        return std::string(prefix) + std::string(name) +
+            " frequency must be between 1 and 64";
+    }
+    if (!validRange(mask.inputLow, 0.0, 1.0) ||
+        !validRange(mask.inputHigh, 0.0, 1.0) ||
+        mask.inputLow >= mask.inputHigh) {
+        return std::string(prefix) + std::string(name) +
+            " input range must be finite, within 0 to 1, and increasing";
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> validateScatter(
+    const ScatterOperation& operation,
+    std::string_view prefix)
+{
+    switch (operation.field) {
+    case ScatterField::material:
+    case ScatterField::fill:
+    case ScatterField::instanceRandom:
+    case ScatterField::localU:
+    case ScatterField::localV:
+    case ScatterField::boundaryDistance:
+        break;
+    default:
+        return std::string(prefix) + "scatter field is not supported";
+    }
+    switch (operation.overlapMode) {
+    case ScatterOverlapMode::forbidden:
+    case ScatterOverlapMode::controlled:
+    case ScatterOverlapMode::unrestricted:
+        break;
+    default:
+        return std::string(prefix) + "scatter overlap mode is not supported";
+    }
+    if (!validPatternCount(operation.columns) ||
+        !validPatternCount(operation.rows)) {
+        return std::string(prefix) +
+            "scatter candidate columns and rows must be between 1 and 64";
+    }
+    if (!validRange(operation.density, 0.0, 1.0) ||
+        !validRange(operation.jitter, 0.0, 1.0) ||
+        !validRange(
+            operation.minimumDistance,
+            0.0,
+            LayerLimits::maximumScatterDistance) ||
+        !validRange(operation.maximumOverlap, 0.0, 1.0)) {
+        return std::string(prefix) +
+            "scatter density, jitter, minimum distance, or overlap is outside its supported range";
+    }
+    if (const auto error = validateShapePrimitive(operation.stamp, prefix)) {
+        return error;
+    }
+    if (operation.stamp.columns != 1 || operation.stamp.rows != 1 ||
+        operation.stamp.offsetX != 0.0 || operation.stamp.offsetY != 0.0 ||
+        operation.stamp.stagger != 0.0 || operation.stamp.seedOffset != 0) {
+        return std::string(prefix) +
+            "scatter stamps must use one local shape without repeat offsets or a seed offset";
+    }
+    if (operation.populations.empty() ||
+        operation.populations.size() > LayerLimits::maximumScatterPopulations) {
+        return std::string(prefix) +
+            "scatter must contain between 1 and 4 size populations";
+    }
+    double largestScale = 0.0;
+    double largestAspect = 0.0;
+    for (const auto& population : operation.populations) {
+        if (!validRange(population.weight, 0.001, 100.0)) {
+            return std::string(prefix) +
+                "scatter population weight must be finite and between 0.001 and 100";
+        }
+        if (!validRange(
+                population.minimumScale,
+                LayerLimits::minimumScatterScale,
+                LayerLimits::maximumScatterScale) ||
+            !validRange(
+                population.maximumScale,
+                LayerLimits::minimumScatterScale,
+                LayerLimits::maximumScatterScale) ||
+            population.minimumScale > population.maximumScale) {
+            return std::string(prefix) +
+                "scatter population scale range must be increasing and within 0.1 to 4";
+        }
+        if (!validRange(
+                population.minimumAspect,
+                LayerLimits::minimumScatterAspect,
+                LayerLimits::maximumScatterAspect) ||
+            !validRange(
+                population.maximumAspect,
+                LayerLimits::minimumScatterAspect,
+                LayerLimits::maximumScatterAspect) ||
+            population.minimumAspect > population.maximumAspect) {
+            return std::string(prefix) +
+                "scatter population aspect range must be increasing and within 0.25 to 4";
+        }
+        if (!validRange(
+                population.minimumRotation,
+                -LayerLimits::maximumShapeRotation,
+                LayerLimits::maximumShapeRotation) ||
+            !validRange(
+                population.maximumRotation,
+                -LayerLimits::maximumShapeRotation,
+                LayerLimits::maximumShapeRotation) ||
+            population.minimumRotation > population.maximumRotation) {
+            return std::string(prefix) +
+                "scatter population rotation range must be increasing and within -360 to 360";
+        }
+        if (!validRange(population.minimumHeight, 0.0, 1.0) ||
+            !validRange(population.maximumHeight, 0.0, 1.0) ||
+            population.minimumHeight > population.maximumHeight ||
+            !validRange(population.minimumRoughness, 0.0, 1.0) ||
+            !validRange(population.maximumRoughness, 0.0, 1.0) ||
+            population.minimumRoughness > population.maximumRoughness) {
+            return std::string(prefix) +
+                "scatter population height and roughness ranges must be increasing and within 0 to 1";
+        }
+        largestScale = std::max(largestScale, population.maximumScale);
+        largestAspect = std::max(
+            largestAspect,
+            std::max(population.maximumAspect, 1.0 / population.minimumAspect));
+    }
+    const double largestAspectRoot = std::sqrt(largestAspect);
+    if (operation.stamp.width * largestScale * largestAspectRoot > 1.0 ||
+        operation.stamp.height * largestScale * largestAspectRoot > 1.0) {
+        return std::string(prefix) +
+            "scatter population range must keep every wrapped stamp within one tile extent";
+    }
+    if (const auto error = validateScatterMask(
+            operation.densityMask,
+            prefix,
+            "scatter density mask")) {
+        return error;
+    }
+    return validateScatterMask(
+        operation.exclusionMask,
+        prefix,
+        "scatter exclusion mask");
+}
+
 } // namespace
 
 std::optional<std::string> validateMaterial(const Material& material)
@@ -580,6 +725,10 @@ std::optional<std::string> validateMaterial(const Material& material)
                     }
                     if (!validRange(operation.phase, 0.0, 1.0)) {
                         return prefix + "lattice phase must be finite and between 0 and 1";
+                    }
+                } else if constexpr (std::is_same_v<Operation, ScatterOperation>) {
+                    if (const auto error = validateScatter(operation, prefix)) {
+                        return error;
                     }
                 } else if constexpr (
                     std::is_same_v<Operation, SurfacePatternOperation>) {

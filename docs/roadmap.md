@@ -153,12 +153,16 @@ fasteners, and masonry corner variation. See
 
 ## v0.0.16 - Deterministic Instance Scattering
 
-Add mathematically tileable placement with minimum distance, controlled overlap,
-multiple size populations, stable occlusion order, and per-instance scale,
-aspect, rotation, colour, height, and roughness. Candidate and rejection order
-must depend only on stable hashes. Shape primitives become reusable stamps for
-gravel, leaves, nails, chips, and debris. This targets courtyard gravel at
-90-98 percent and establishes the foliage foundation. See
+Implemented: add mathematically tileable placement with minimum distance,
+forbidden, controlled, or unrestricted overlap, multiple weighted populations,
+stable occlusion order, and per-instance scale, aspect, rotation, colour,
+height, and roughness. Candidate selection and rejection depend only on stable
+hashes and candidate-centre masks, never pixels, workers, or container order.
+Shape primitives are reusable stamps for gravel, leaves, nails, chips, and
+debris. Canonical `.pmat` version 13, graph generators, native controls, a
+bounded per-cell lookup, and byte-exact tests cover the complete contract.
+Editable courtyard gravel, debris, and foliage-foundation showcases establish
+the targets for later organic structures. See
 [roadmap issue #132](https://github.com/SolenMusic/Paperweight/issues/132).
 
 ## v0.0.17 - Organic Structures

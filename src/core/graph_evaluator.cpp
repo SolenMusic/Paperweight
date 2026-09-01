@@ -1,5 +1,6 @@
 #include "graph_evaluator.hpp"
 
+#include <paperweight/scatter.hpp>
 #include <paperweight/surface.hpp>
 
 #include <algorithm>
@@ -34,6 +35,12 @@ LayerOperation asLayerOperation(const GeneratorOperation& operation)
 struct GeneratorPlan {
     CoordinateTransform transform;
     LayerOperation operation;
+};
+
+struct ScatterPlan {
+    CoordinateTransform transform;
+    ScatterOperation operation;
+    ScatterLayout layout;
 };
 
 struct LevelsPlan {
@@ -105,6 +112,7 @@ struct OutputPlan {
 
 using EvaluationPlan = std::variant<
     GeneratorPlan,
+    ScatterPlan,
     LevelsPlan,
     ThresholdPlan,
     PosterisePlan,
@@ -165,7 +173,15 @@ public:
         for (const auto& node : graph.nodes) {
             plans_.push_back(std::visit(
                 Overloaded{
-                    [](const GeneratorNode& generator) -> EvaluationPlan {
+                    [this](const GeneratorNode& generator) -> EvaluationPlan {
+                        if (const auto* scatter =
+                                std::get_if<ScatterOperation>(&generator.operation)) {
+                            return ScatterPlan{
+                                generator.transform,
+                                *scatter,
+                                buildScatterLayout(*scatter, material_.seed),
+                            };
+                        }
                         return GeneratorPlan{
                             generator.transform,
                             asLayerOperation(generator.operation),
@@ -306,6 +322,19 @@ private:
                         context.output,
                     };
                     return evaluateOperation(generator.operation, transformed, {});
+                },
+                [&context](const ScatterPlan& scatter) {
+                    const auto coordinates = transformCoordinates(scatter.transform, context);
+                    const EvaluationContext transformed{
+                        context.material,
+                        coordinates.u,
+                        coordinates.v,
+                        context.output,
+                    };
+                    return evaluateScatterOperation(
+                        scatter.operation,
+                        scatter.layout,
+                        transformed);
                 },
                 [this, &context, cacheResult](const LevelsPlan& levels) {
                     const auto input = evaluateNode(levels.input, context, cacheResult);

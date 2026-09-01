@@ -3,6 +3,7 @@
 #include <paperweight/hash.hpp>
 #include <paperweight/noise.hpp>
 #include <paperweight/sculpt.hpp>
+#include <paperweight/scatter.hpp>
 #include <paperweight/shape.hpp>
 #include <paperweight/structural.hpp>
 #include <paperweight/surface.hpp>
@@ -391,6 +392,58 @@ double evaluateLayerMask(const LayerMask& mask, const EvaluationContext& context
     return value;
 }
 
+EvaluatedSample evaluateScatterOperation(
+    const ScatterOperation& operation,
+    const ScatterLayout& layout,
+    const EvaluationContext& context)
+{
+    const auto scatter = evaluateScatter(operation, layout, context.u, context.v);
+    if (!scatter.region.valid) {
+        return sampleFromScalar(context.material, 0.0);
+    }
+
+    double value = scatter.coverage;
+    switch (operation.field) {
+    case ScatterField::material: {
+        const auto background = sampleFromColour(context.material.lowColour);
+        const double amount = scatter.coverage;
+        const auto blend = [amount](double from, std::uint8_t to) {
+            const double target = static_cast<double>(to) / 255.0;
+            return from + (target - from) * amount;
+        };
+        const double attribute = context.output == MaterialOutput::roughness
+            ? scatter.roughness
+            : scatter.height;
+        return EvaluatedSample{
+            attribute * amount,
+            blend(background.red, scatter.colour.red),
+            blend(background.green, scatter.colour.green),
+            blend(background.blue, scatter.colour.blue),
+            blend(background.alpha, scatter.colour.alpha),
+            scatter.region,
+        };
+    }
+    case ScatterField::fill:
+        value = scatter.coverage;
+        break;
+    case ScatterField::instanceRandom:
+        value = scatter.random * scatter.coverage;
+        break;
+    case ScatterField::localU:
+        value = scatter.localU * scatter.coverage;
+        break;
+    case ScatterField::localV:
+        value = scatter.localV * scatter.coverage;
+        break;
+    case ScatterField::boundaryDistance:
+        value = scatter.boundaryDistance * scatter.coverage;
+        break;
+    }
+    auto result = sampleFromScalar(context.material, value);
+    result.region = scatter.region;
+    return result;
+}
+
 EvaluatedSample evaluateOperation(
     const LayerOperation& operation,
     const EvaluationContext& context,
@@ -487,6 +540,10 @@ EvaluatedSample evaluateOperation(
                 return sampleFromStructural(
                     context.material,
                     StructuralSample{sample.value, sample.region});
+            },
+            [&context](const ScatterOperation& scatter) {
+                const auto layout = buildScatterLayout(scatter, context.material.seed);
+                return evaluateScatterOperation(scatter, layout, context);
             },
             [&input, &context](const ShapeBooleanOperation& boolean) {
                 const auto shape = evaluateShapePrimitive(
