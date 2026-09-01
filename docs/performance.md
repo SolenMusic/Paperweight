@@ -119,13 +119,22 @@ intermediate-image caching was likewise deferred: neighbourhood filters sample
 arbitrary material-space offsets, so a useful cache can become much larger than
 the output and needs a measured invalidation design rather than a token map.
 
+v0.0.17 leaf populations are indexed by each leaf's actual wrapped centre. A
+sample visits only grid cells within the maximum analytic leaf radius instead of
+rechecking the source cluster's complete neighbourhood. On the castle-foliage
+showcase at 64 x 64, this reduced representative map generation from roughly
+360-520 ms to 78-81 ms on the development machine while preserving every
+checksum. The optimisation changes neither layout nor occlusion; it rejects only
+cells whose leaves cannot geometrically reach the sample.
+
 ## Exact-output gate
 
 The core tests contain golden FNV-1a checksums for colour, height, normal, and
 roughness outputs from the detailed surface, stylised, region, and course-layout
-showcases through v0.0.16, including constructed surfaces, analytic shapes,
+showcases through v0.0.17, including constructed surfaces, analytic shapes,
 mask Boolean operations, integer-winding lattices, and deterministic scatter
-populations with candidate-centre masks. They
+populations with candidate-centre masks, anisotropic bark regions, branching
+cracks, leaf clusters, and organic accumulation. They
 use compact 32 x 32 fixtures so the complete
 corpus remains practical in CI. Existing historical format fixtures retain
 their earlier golden checksums as well.

@@ -510,6 +510,161 @@ struct ScatterOperation {
     friend bool operator==(const ScatterOperation&, const ScatterOperation&) = default;
 };
 
+enum class OrganicCellField : std::uint8_t {
+    plates = 0,
+    boundaries = 1,
+    cellRandom = 2,
+};
+
+enum class OrganicDirection : std::uint8_t {
+    vertical = 0,
+    horizontal = 1,
+};
+
+struct OrganicCellOperation {
+    OrganicCellField field{OrganicCellField::plates};
+    OrganicDirection direction{OrganicDirection::vertical};
+    std::uint32_t columns{10};
+    std::uint32_t rows{4};
+    double anisotropy{2.5};
+    double jitter{0.72};
+    double irregularity{0.28};
+    double gap{0.12};
+    double softness{0.025};
+    std::uint64_t seedOffset{};
+
+    friend constexpr bool operator==(
+        const OrganicCellOperation&,
+        const OrganicCellOperation&) = default;
+};
+
+enum class OrganicCrackField : std::uint8_t {
+    cracks = 0,
+    trunks = 1,
+    branches = 2,
+    hierarchy = 3,
+    distance = 4,
+};
+
+struct OrganicCrackOperation {
+    OrganicCrackField field{OrganicCrackField::cracks};
+    OrganicDirection direction{OrganicDirection::vertical};
+    std::uint32_t roots{5};
+    std::uint32_t segments{7};
+    std::uint32_t branchLevels{3};
+    double branchProbability{0.58};
+    double bend{0.34};
+    double width{0.018};
+    double taper{0.62};
+    double softness{0.006};
+    std::uint64_t seedOffset{};
+
+    friend constexpr bool operator==(
+        const OrganicCrackOperation&,
+        const OrganicCrackOperation&) = default;
+};
+
+enum class LeafProfile : std::uint8_t {
+    ovate = 0,
+    lanceolate = 1,
+    cordate = 2,
+    lobed = 3,
+};
+
+enum class LeafClusterPattern : std::uint8_t {
+    radial = 0,
+    fan = 1,
+    vine = 2,
+    canopy = 3,
+};
+
+enum class LeafField : std::uint8_t {
+    material = 0,
+    fill = 1,
+    edge = 2,
+    midrib = 3,
+    veins = 4,
+    instanceRandom = 5,
+};
+
+enum class LeafSpecies : std::uint8_t {
+    ivy = 0,
+    laurel = 1,
+    oak = 2,
+    ash = 3,
+};
+
+struct LeafClusterOperation {
+    LeafField field{LeafField::material};
+    LeafProfile profile{LeafProfile::ovate};
+    LeafClusterPattern pattern{LeafClusterPattern::canopy};
+    std::uint32_t columns{5};
+    std::uint32_t rows{5};
+    std::uint32_t leavesPerCluster{7};
+    double density{0.82};
+    double clusterSpread{0.075};
+    double leafLength{0.12};
+    double leafWidth{0.065};
+    double scaleVariation{0.28};
+    double rotationVariation{55.0};
+    double directionDegrees{-18.0};
+    double taper{0.72};
+    double baseNotch{0.12};
+    double curvature{0.14};
+    double serration{0.08};
+    std::uint32_t serrationCount{7};
+    double lobing{0.25};
+    std::uint32_t lobeCount{4};
+    double midribWidth{0.055};
+    std::uint32_t veinPairs{4};
+    double veinWidth{0.032};
+    double edgeWidth{0.075};
+    double softness{0.006};
+    Rgba8 lowColour{42, 76, 35, 255};
+    Rgba8 highColour{104, 142, 66, 255};
+    double minimumHeight{0.42};
+    double maximumHeight{0.92};
+    double minimumRoughness{0.62};
+    double maximumRoughness{0.9};
+    std::uint64_t seedOffset{};
+
+    friend constexpr bool operator==(
+        const LeafClusterOperation&,
+        const LeafClusterOperation&) = default;
+};
+
+enum class OrganicAccumulationKind : std::uint8_t {
+    moss = 0,
+    lichen = 1,
+    colourVariation = 2,
+};
+
+enum class OrganicAccumulationSource : std::uint8_t {
+    cavity = 0,
+    boundary = 1,
+    lowHeight = 2,
+    authoredMask = 3,
+};
+
+struct OrganicAccumulationOperation {
+    OrganicAccumulationKind kind{OrganicAccumulationKind::moss};
+    OrganicAccumulationSource source{OrganicAccumulationSource::cavity};
+    std::uint32_t scale{7};
+    double coverage{0.55};
+    double softness{0.14};
+    double moistureBias{0.6};
+    double breakup{0.45};
+    double variation{0.25};
+    Rgba8 lowColour{35, 61, 28, 255};
+    Rgba8 highColour{95, 118, 54, 255};
+    std::uint64_t seedOffset{};
+    ProcessingTarget target{ProcessingTarget::colour};
+
+    friend constexpr bool operator==(
+        const OrganicAccumulationOperation&,
+        const OrganicAccumulationOperation&) = default;
+};
+
 enum class SurfacePatternKind : std::uint8_t {
     ridgedNoise = 0,
     bands = 1,
@@ -593,7 +748,11 @@ using LayerOperation = std::variant<
     ShapePrimitiveOperation,
     ShapeBooleanOperation,
     LatticeOperation,
-    ScatterOperation>;
+    ScatterOperation,
+    OrganicCellOperation,
+    OrganicCrackOperation,
+    LeafClusterOperation,
+    OrganicAccumulationOperation>;
 
 struct MaterialLayer {
     bool enabled{true};
@@ -677,6 +836,14 @@ struct LayerLimits {
     static constexpr double minimumScatterAspect = 0.25;
     static constexpr double maximumScatterAspect = 4.0;
     static constexpr double maximumScatterDistance = 0.5;
+    static constexpr double minimumOrganicAnisotropy = 1.0;
+    static constexpr double maximumOrganicAnisotropy = 8.0;
+    static constexpr std::uint32_t maximumCrackRoots = 16;
+    static constexpr std::uint32_t maximumCrackSegments = 16;
+    static constexpr std::uint32_t maximumCrackBranchLevels = 5;
+    static constexpr std::uint32_t maximumLeavesPerCluster = 24;
+    static constexpr std::uint32_t maximumLeafDetails = 16;
+    static constexpr double maximumLeafExtent = 0.5;
 };
 
 [[nodiscard]] constexpr MaterialLayer makeNoiseLayer(std::uint64_t seedOffset = 0)
@@ -950,6 +1117,50 @@ struct LayerLimits {
         {}};
 }
 
+[[nodiscard]] constexpr MaterialLayer makeOrganicCellLayer()
+{
+    return MaterialLayer{
+        true,
+        1.0,
+        CompositeMode::blend,
+        OrganicCellOperation{},
+        {},
+        {}};
+}
+
+[[nodiscard]] constexpr MaterialLayer makeOrganicCrackLayer()
+{
+    return MaterialLayer{
+        true,
+        1.0,
+        CompositeMode::blend,
+        OrganicCrackOperation{},
+        {},
+        {}};
+}
+
+[[nodiscard]] constexpr MaterialLayer makeLeafClusterLayer()
+{
+    return MaterialLayer{
+        true,
+        1.0,
+        CompositeMode::blend,
+        LeafClusterOperation{},
+        {},
+        {}};
+}
+
+[[nodiscard]] constexpr MaterialLayer makeOrganicAccumulationLayer()
+{
+    return MaterialLayer{
+        true,
+        1.0,
+        CompositeMode::blend,
+        OrganicAccumulationOperation{},
+        {},
+        {}};
+}
+
 [[nodiscard]] constexpr std::uint32_t rotationDegrees(QuarterTurn rotation)
 {
     return static_cast<std::uint32_t>(rotation) * 90U;
@@ -1019,9 +1230,106 @@ struct LayerLimits {
         return "lattice";
     case 23:
         return "scatter";
+    case 24:
+        return "organic_cells";
+    case 25:
+        return "organic_cracks";
+    case 26:
+        return "leaf_cluster";
+    case 27:
+        return "organic_accumulation";
     default:
         return "unknown";
     }
+}
+
+[[nodiscard]] constexpr std::string_view organicCellFieldName(OrganicCellField field)
+{
+    switch (field) {
+    case OrganicCellField::plates: return "plates";
+    case OrganicCellField::boundaries: return "boundaries";
+    case OrganicCellField::cellRandom: return "cell_random";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view organicDirectionName(OrganicDirection direction)
+{
+    switch (direction) {
+    case OrganicDirection::vertical: return "vertical";
+    case OrganicDirection::horizontal: return "horizontal";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view organicCrackFieldName(OrganicCrackField field)
+{
+    switch (field) {
+    case OrganicCrackField::cracks: return "cracks";
+    case OrganicCrackField::trunks: return "trunks";
+    case OrganicCrackField::branches: return "branches";
+    case OrganicCrackField::hierarchy: return "hierarchy";
+    case OrganicCrackField::distance: return "distance";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view leafProfileName(LeafProfile profile)
+{
+    switch (profile) {
+    case LeafProfile::ovate: return "ovate";
+    case LeafProfile::lanceolate: return "lanceolate";
+    case LeafProfile::cordate: return "cordate";
+    case LeafProfile::lobed: return "lobed";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view leafClusterPatternName(LeafClusterPattern pattern)
+{
+    switch (pattern) {
+    case LeafClusterPattern::radial: return "radial";
+    case LeafClusterPattern::fan: return "fan";
+    case LeafClusterPattern::vine: return "vine";
+    case LeafClusterPattern::canopy: return "canopy";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view leafFieldName(LeafField field)
+{
+    switch (field) {
+    case LeafField::material: return "material";
+    case LeafField::fill: return "fill";
+    case LeafField::edge: return "edge";
+    case LeafField::midrib: return "midrib";
+    case LeafField::veins: return "veins";
+    case LeafField::instanceRandom: return "instance_random";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view organicAccumulationKindName(
+    OrganicAccumulationKind kind)
+{
+    switch (kind) {
+    case OrganicAccumulationKind::moss: return "moss";
+    case OrganicAccumulationKind::lichen: return "lichen";
+    case OrganicAccumulationKind::colourVariation: return "colour_variation";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view organicAccumulationSourceName(
+    OrganicAccumulationSource source)
+{
+    switch (source) {
+    case OrganicAccumulationSource::cavity: return "cavity";
+    case OrganicAccumulationSource::boundary: return "boundary";
+    case OrganicAccumulationSource::lowHeight: return "low_height";
+    case OrganicAccumulationSource::authoredMask: return "authored_mask";
+    }
+    return "unknown";
 }
 
 [[nodiscard]] constexpr std::string_view shapePrimitiveKindName(

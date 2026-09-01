@@ -48,6 +48,8 @@ foreach(showcase IN ITEMS
     cel-courtyard-gravel
     scattered-debris
     foliage-foundation
+    cel-forest-bark
+    castle-foliage
 )
     configure_file(
         "${PROJECT_SOURCE_DIR}/examples/materials/${showcase}.pmat"

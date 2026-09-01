@@ -1,4 +1,4 @@
-# `.pmat` format version 13
+# `.pmat` format version 14
 
 Paperweight material files are UTF-8 text. They are intended to be readable,
 diffable, and small enough to embed alongside game assets.
@@ -7,7 +7,7 @@ diffable, and small enough to embed alongside game assets.
 
 ```text
 # Paperweight procedural material
-pmat.version = 13
+pmat.version = 14
 material.type = fbm
 material.seed = 18431
 material.width = 1m
@@ -68,7 +68,7 @@ no material; it never returns a partially accepted definition.
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
-| `pmat.version` | File-format version | `13` |
+| `pmat.version` | File-format version | `1` through `14`; the serialiser writes `14` |
 | `material.type` | Generator model | `fbm` |
 | `material.seed` | Deterministic seed | Unsigned 64-bit integer |
 | `material.width` | Width of one seamless material repeat | Metre value from `0.000001m` to `1000000m` |
@@ -194,6 +194,46 @@ The operation selects exactly one parameter group:
 | `scatter` | `layer.N.scatter.population.K.min_height`, `max_height` | Ordered decimals from 0 to 1 |
 | `scatter` | `layer.N.scatter.population.K.min_roughness`, `max_roughness` | Ordered decimals from 0 to 1 |
 | `scatter` | `layer.N.scatter.density_mask.*`, `exclusion_mask.*` | Explicit `enabled`, `inverted`, `frequency`, `input_low`, `input_high`, and `seed_offset` fields |
+| `organic_cells` | `layer.N.organic.cell.field` | `plates`, `boundaries`, or `cell_random` |
+| `organic_cells` | `layer.N.organic.cell.direction` | `vertical` or `horizontal` |
+| `organic_cells` | `layer.N.organic.cell.columns`, `rows` | Integers from 1 to 64 |
+| `organic_cells` | `layer.N.organic.cell.anisotropy` | Grain stretch from 1 to 8 |
+| `organic_cells` | `layer.N.organic.cell.jitter`, `irregularity`, `gap` | Decimals from 0 to 1 |
+| `organic_cells` | `layer.N.organic.cell.softness` | Decimal from 0 to 0.25 |
+| `organic_cells` | `layer.N.organic.cell.seed_offset` | Unsigned 64-bit integer |
+| `organic_cracks` | `layer.N.organic.crack.field` | `cracks`, `trunks`, `branches`, `hierarchy`, or `distance` |
+| `organic_cracks` | `layer.N.organic.crack.direction` | `vertical` or `horizontal` |
+| `organic_cracks` | `layer.N.organic.crack.roots` | Integer from 1 to 16 |
+| `organic_cracks` | `layer.N.organic.crack.segments` | Integer from 2 to 16 |
+| `organic_cracks` | `layer.N.organic.crack.branch_levels` | Integer from 0 to 5 |
+| `organic_cracks` | `layer.N.organic.crack.branch_probability`, `bend`, `taper` | Decimals from 0 to 1 |
+| `organic_cracks` | `layer.N.organic.crack.width` | Decimal from 0.001 to 0.25 |
+| `organic_cracks` | `layer.N.organic.crack.softness` | Decimal from 0 to 0.25 |
+| `organic_cracks` | `layer.N.organic.crack.seed_offset` | Unsigned 64-bit integer |
+| `leaf_cluster` | `layer.N.leaf.field` | `material`, `fill`, `edge`, `midrib`, `veins`, or `instance_random` |
+| `leaf_cluster` | `layer.N.leaf.profile` | `ovate`, `lanceolate`, `cordate`, or `lobed` |
+| `leaf_cluster` | `layer.N.leaf.pattern` | `radial`, `fan`, `vine`, or `canopy` |
+| `leaf_cluster` | `layer.N.leaf.columns`, `rows` | Cluster-grid integers from 1 to 64 |
+| `leaf_cluster` | `layer.N.leaf.per_cluster` | Integer from 1 to 24 |
+| `leaf_cluster` | `layer.N.leaf.density` | Decimal from 0 to 1 |
+| `leaf_cluster` | `layer.N.leaf.cluster_spread`, `length`, `width` | Tile-relative extents up to 0.5; length and width are at least 0.001 |
+| `leaf_cluster` | `layer.N.leaf.scale_variation` | Decimal from 0 to 0.9 |
+| `leaf_cluster` | `layer.N.leaf.rotation_variation`, `direction` | Degrees within 0 to 360 and -360 to 360 respectively |
+| `leaf_cluster` | `layer.N.leaf.taper`, `base_notch`, `curvature`, `serration`, `lobing` | Analytic silhouette controls within their validated ranges |
+| `leaf_cluster` | `layer.N.leaf.serration_count`, `lobe_count`, `vein_pairs` | Integers up to 16; serration and lobe counts are at least 1 |
+| `leaf_cluster` | `layer.N.leaf.midrib_width`, `vein_width`, `edge_width` | Leaf-relative widths from 0 to 0.5 |
+| `leaf_cluster` | `layer.N.leaf.softness` | Decimal from 0 to 0.25 |
+| `leaf_cluster` | `layer.N.leaf.colour_low`, `colour_high` | `0xRRGGBBAA` hexadecimal |
+| `leaf_cluster` | `layer.N.leaf.min_height`, `max_height`, `min_roughness`, `max_roughness` | Ordered decimal ranges from 0 to 1 |
+| `leaf_cluster` | `layer.N.leaf.seed_offset` | Unsigned 64-bit integer |
+| `organic_accumulation` | `layer.N.organic.accumulation.kind` | `moss`, `lichen`, or `colour_variation` |
+| `organic_accumulation` | `layer.N.organic.accumulation.source` | `cavity`, `boundary`, `low_height`, or `authored_mask` |
+| `organic_accumulation` | `layer.N.organic.accumulation.scale` | Integer from 1 to 64 |
+| `organic_accumulation` | `layer.N.organic.accumulation.coverage`, `moisture`, `breakup`, `variation` | Decimals from 0 to 1 |
+| `organic_accumulation` | `layer.N.organic.accumulation.softness` | Decimal from 0 to 0.5 |
+| `organic_accumulation` | `layer.N.organic.accumulation.colour_low`, `colour_high` | `0xRRGGBBAA` hexadecimal |
+| `organic_accumulation` | `layer.N.organic.accumulation.seed_offset` | Unsigned 64-bit integer |
+| `organic_accumulation` | `layer.N.organic.accumulation.target` | `colour`, `scalar`, or `all` |
 | `surface_pattern` | `layer.N.surface.kind` | `ridged_noise`, `bands`, `rings`, `scatter`, or `streaks` |
 | `surface_pattern` | `layer.N.surface.scale` | Integer from 1 to 64 |
 | `surface_pattern` | `layer.N.surface.width` | Decimal from 0.001 to 1 |
@@ -281,6 +321,21 @@ crossing one edge continue from the opposite edge. Overlapping stamps select
 the exact highest occlusion priority. `material` output uses each instance's
 colour, height, and roughness on the corresponding output branch; the other
 fields expose reusable masks and local instance coordinates.
+
+Organic cells stretch a periodic cellular metric along the selected grain,
+preserving exact plate identities while exposing faces, boundaries, or one
+stable random value per plate. Organic cracks are laid out once from stable
+hashes as periodic trunks and recursively splitting branches; their field can
+select the complete network, one hierarchy, a hierarchy-weighted mask, or the
+complementary distance field. Leaf clusters similarly build one
+resolution-independent population before pixel evaluation. Ovate, lanceolate,
+cordate, and lobed boundaries are analytic, and fill, edge, midrib, and vein
+masks all address the same visible leaf after stable occlusion. Leaf colour,
+height, roughness, and region identity therefore remain aligned across every
+output. Organic accumulation is a processor: its seamless broad and breakup
+noise is biased by a cavity, boundary, low-height input, or authored mask, then
+applied to the requested channels. Moss, lichen, and colour variation differ in
+composition intent, not in hidden material-specific code.
 
 Course layouts partition the complete repeat into courses and then partition
 each course into blocks. `masonry` varies widths within regular course counts,
@@ -374,7 +429,7 @@ The native editor presents those derived column and row counts explicitly. When
 an author changes the brick size or count, it recalculates `material.width` and
 `material.height` automatically so the saved definition remains seamless.
 
-Every layer in versions 3 through 13 also has this coordinate-transform group:
+Every layer in versions 3 through 14 also has this coordinate-transform group:
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
@@ -393,7 +448,7 @@ Offsets are continuous and wrap naturally. When enabled, warp uses two
 independent periodic FBM channels to displace the transformed coordinates.
 Disabling warp, or setting its strength to zero, is exactly the identity path.
 
-Every layer in versions 3 through 13 also declares its optional mask:
+Every layer in versions 3 through 14 also declares its optional mask:
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
@@ -407,7 +462,7 @@ The mask samples an independent periodic FBM field in the layer's transformed
 coordinates. Its remapped value multiplies the layer opacity, allowing smooth,
 threshold-like, or inverted spatial control without changing the operation.
 Disabled masks evaluate to exactly one. Transform, warp, and mask fields remain
-required in versions 3 through 13 even when their optional features are disabled; this
+required in versions 3 through 14 even when their optional features are disabled; this
 keeps canonical files explicit and round trips unambiguous.
 
 Noise seed offset zero reproduces the original material seed exactly. Other
@@ -423,7 +478,7 @@ formula is applied to scalar, red, green, blue, and alpha channels.
 
 ## Graph compilation
 
-Paperweight v0.0.16 retains the layer syntax, now at version 13, as the compact,
+Paperweight v0.0.17 retains the layer syntax, now at version 14, as the compact,
 human-editable authoring projection. Before generation, the portable core
 compiles it into a directed acyclic material graph:
 
@@ -454,6 +509,10 @@ Format version 12 adds analytic shape generators, shape Boolean processors, and
 integer-winding lattices without introducing graph-specific persistence.
 Format version 13 adds deterministic scatter generators, weighted populations,
 per-instance material attributes, and candidate-centre masks.
+Format version 14 adds organic-cell, branching-crack, and leaf-cluster
+generators plus an organic-accumulation processor. Species presets expand to
+ordinary leaf parameters before serialisation, so no hidden preset state is
+stored.
 
 ## Material outputs
 
@@ -475,7 +534,7 @@ generation wrap mathematically across both tile axes.
 ## Compatibility policy
 
 The `.pmat` format version and Paperweight application version are separate.
-Paperweight v0.0.16 reads versions 1 through 13 and writes version 13. A reader
+Paperweight v0.0.17 reads versions 1 through 14 and writes version 14. A reader
 rejects unsupported versions and unknown fields so that it cannot quietly
 reinterpret a future material.
 
@@ -499,8 +558,9 @@ surface sculpting; versions 1 through 10 retain byte-identical default
 evaluations. Version 12 adds analytic shapes, mask Boolean operations, and
 integer-winding lattices; versions 1 through 11 retain byte-identical default
 evaluations. Version 13 adds deterministic scatter operations; versions 1
-through 12 retain byte-identical default evaluations. Saving any older format
-performs the explicit migration to version 13.
+through 12 retain byte-identical default evaluations. Version 14 adds organic
+structures; versions 1 through 13 retain byte-identical default evaluations.
+Saving any older format performs the explicit migration to version 14.
 
 The portable entry points are `paperweight::parsePmat` and
 `paperweight::serialisePmat` in `include/paperweight/pmat.hpp`.

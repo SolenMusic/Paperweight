@@ -305,6 +305,196 @@ std::optional<std::string> validateScatter(
         "scatter exclusion mask");
 }
 
+std::optional<std::string> validateOrganicCells(
+    const OrganicCellOperation& operation,
+    std::string_view prefix)
+{
+    switch (operation.field) {
+    case OrganicCellField::plates:
+    case OrganicCellField::boundaries:
+    case OrganicCellField::cellRandom:
+        break;
+    default:
+        return std::string(prefix) + "organic cell field is not supported";
+    }
+    switch (operation.direction) {
+    case OrganicDirection::vertical:
+    case OrganicDirection::horizontal:
+        break;
+    default:
+        return std::string(prefix) + "organic direction is not supported";
+    }
+    if (!validPatternCount(operation.columns) || !validPatternCount(operation.rows)) {
+        return std::string(prefix) + "organic cell columns and rows must be between 1 and 64";
+    }
+    if (!validRange(
+            operation.anisotropy,
+            LayerLimits::minimumOrganicAnisotropy,
+            LayerLimits::maximumOrganicAnisotropy) ||
+        !validRange(operation.jitter, 0.0, 1.0) ||
+        !validRange(operation.irregularity, 0.0, 1.0) ||
+        !validRange(operation.gap, 0.0, 1.0) ||
+        !validSoftness(operation.softness)) {
+        return std::string(prefix) +
+            "organic cell anisotropy, jitter, irregularity, gap, or softness is outside its supported range";
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> validateOrganicCracks(
+    const OrganicCrackOperation& operation,
+    std::string_view prefix)
+{
+    switch (operation.field) {
+    case OrganicCrackField::cracks:
+    case OrganicCrackField::trunks:
+    case OrganicCrackField::branches:
+    case OrganicCrackField::hierarchy:
+    case OrganicCrackField::distance:
+        break;
+    default:
+        return std::string(prefix) + "organic crack field is not supported";
+    }
+    switch (operation.direction) {
+    case OrganicDirection::vertical:
+    case OrganicDirection::horizontal:
+        break;
+    default:
+        return std::string(prefix) + "organic crack direction is not supported";
+    }
+    if (operation.roots == 0 || operation.roots > LayerLimits::maximumCrackRoots ||
+        operation.segments < 2 || operation.segments > LayerLimits::maximumCrackSegments ||
+        operation.branchLevels > LayerLimits::maximumCrackBranchLevels) {
+        return std::string(prefix) +
+            "organic cracks require 1 to 16 roots, 2 to 16 segments, and at most 5 branch levels";
+    }
+    if (!validRange(operation.branchProbability, 0.0, 1.0) ||
+        !validRange(operation.bend, 0.0, 1.0) ||
+        !validRange(operation.width, 0.001, 0.25) ||
+        !validRange(operation.taper, 0.0, 1.0) ||
+        !validSoftness(operation.softness)) {
+        return std::string(prefix) +
+            "organic crack probability, bend, width, taper, or softness is outside its supported range";
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> validateLeafCluster(
+    const LeafClusterOperation& operation,
+    std::string_view prefix)
+{
+    switch (operation.field) {
+    case LeafField::material:
+    case LeafField::fill:
+    case LeafField::edge:
+    case LeafField::midrib:
+    case LeafField::veins:
+    case LeafField::instanceRandom:
+        break;
+    default:
+        return std::string(prefix) + "leaf field is not supported";
+    }
+    switch (operation.profile) {
+    case LeafProfile::ovate:
+    case LeafProfile::lanceolate:
+    case LeafProfile::cordate:
+    case LeafProfile::lobed:
+        break;
+    default:
+        return std::string(prefix) + "leaf profile is not supported";
+    }
+    switch (operation.pattern) {
+    case LeafClusterPattern::radial:
+    case LeafClusterPattern::fan:
+    case LeafClusterPattern::vine:
+    case LeafClusterPattern::canopy:
+        break;
+    default:
+        return std::string(prefix) + "leaf cluster pattern is not supported";
+    }
+    if (!validPatternCount(operation.columns) || !validPatternCount(operation.rows) ||
+        operation.leavesPerCluster == 0 ||
+        operation.leavesPerCluster > LayerLimits::maximumLeavesPerCluster) {
+        return std::string(prefix) +
+            "leaf clusters require 1 to 64 columns and rows and 1 to 24 leaves per cluster";
+    }
+    if (!validRange(operation.density, 0.0, 1.0) ||
+        !validRange(operation.clusterSpread, 0.0, LayerLimits::maximumLeafExtent) ||
+        !validRange(operation.leafLength, 0.001, LayerLimits::maximumLeafExtent) ||
+        !validRange(operation.leafWidth, 0.001, LayerLimits::maximumLeafExtent) ||
+        !validRange(operation.scaleVariation, 0.0, 0.9) ||
+        !validRange(operation.rotationVariation, 0.0, 360.0) ||
+        !validRange(operation.directionDegrees, -360.0, 360.0)) {
+        return std::string(prefix) +
+            "leaf density, spread, dimensions, variation, or direction is outside its supported range";
+    }
+    if (!validRange(operation.taper, 0.2, 2.0) ||
+        !validRange(operation.baseNotch, 0.0, 1.0) ||
+        !validRange(operation.curvature, -1.0, 1.0) ||
+        !validRange(operation.serration, 0.0, 0.8) ||
+        operation.serrationCount == 0 ||
+        operation.serrationCount > LayerLimits::maximumLeafDetails ||
+        !validRange(operation.lobing, 0.0, 0.8) ||
+        operation.lobeCount == 0 || operation.lobeCount > LayerLimits::maximumLeafDetails ||
+        !validRange(operation.midribWidth, 0.0, 0.5) ||
+        operation.veinPairs > LayerLimits::maximumLeafDetails ||
+        !validRange(operation.veinWidth, 0.0, 0.5) ||
+        !validRange(operation.edgeWidth, 0.0, 0.5) ||
+        !validSoftness(operation.softness)) {
+        return std::string(prefix) +
+            "leaf silhouette, serration, lobe, rib, vein, edge, or softness parameter is outside its supported range";
+    }
+    if (!validRange(operation.minimumHeight, 0.0, 1.0) ||
+        !validRange(operation.maximumHeight, 0.0, 1.0) ||
+        operation.minimumHeight > operation.maximumHeight ||
+        !validRange(operation.minimumRoughness, 0.0, 1.0) ||
+        !validRange(operation.maximumRoughness, 0.0, 1.0) ||
+        operation.minimumRoughness > operation.maximumRoughness) {
+        return std::string(prefix) +
+            "leaf height and roughness ranges must be increasing and within 0 to 1";
+    }
+    if (operation.clusterSpread +
+            std::hypot(operation.leafLength, operation.leafWidth) * 0.95 > 0.75) {
+        return std::string(prefix) +
+            "leaf cluster extent must stay bounded below one wrapped tile";
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> validateOrganicAccumulation(
+    const OrganicAccumulationOperation& operation,
+    std::string_view prefix)
+{
+    switch (operation.kind) {
+    case OrganicAccumulationKind::moss:
+    case OrganicAccumulationKind::lichen:
+    case OrganicAccumulationKind::colourVariation:
+        break;
+    default:
+        return std::string(prefix) + "organic accumulation kind is not supported";
+    }
+    switch (operation.source) {
+    case OrganicAccumulationSource::cavity:
+    case OrganicAccumulationSource::boundary:
+    case OrganicAccumulationSource::lowHeight:
+    case OrganicAccumulationSource::authoredMask:
+        break;
+    default:
+        return std::string(prefix) + "organic accumulation source is not supported";
+    }
+    if (!validPatternCount(operation.scale) ||
+        !validRange(operation.coverage, 0.0, 1.0) ||
+        !validRange(operation.softness, 0.0, 0.5) ||
+        !validRange(operation.moistureBias, 0.0, 1.0) ||
+        !validRange(operation.breakup, 0.0, 1.0) ||
+        !validRange(operation.variation, 0.0, 1.0) ||
+        !validProcessingTarget(operation.target)) {
+        return std::string(prefix) +
+            "organic accumulation scale, coverage, softness, moisture, breakup, variation, or target is outside its supported range";
+    }
+    return std::nullopt;
+}
+
 } // namespace
 
 std::optional<std::string> validateMaterial(const Material& material)
@@ -728,6 +918,23 @@ std::optional<std::string> validateMaterial(const Material& material)
                     }
                 } else if constexpr (std::is_same_v<Operation, ScatterOperation>) {
                     if (const auto error = validateScatter(operation, prefix)) {
+                        return error;
+                    }
+                } else if constexpr (std::is_same_v<Operation, OrganicCellOperation>) {
+                    if (const auto error = validateOrganicCells(operation, prefix)) {
+                        return error;
+                    }
+                } else if constexpr (std::is_same_v<Operation, OrganicCrackOperation>) {
+                    if (const auto error = validateOrganicCracks(operation, prefix)) {
+                        return error;
+                    }
+                } else if constexpr (std::is_same_v<Operation, LeafClusterOperation>) {
+                    if (const auto error = validateLeafCluster(operation, prefix)) {
+                        return error;
+                    }
+                } else if constexpr (
+                    std::is_same_v<Operation, OrganicAccumulationOperation>) {
+                    if (const auto error = validateOrganicAccumulation(operation, prefix)) {
                         return error;
                     }
                 } else if constexpr (
