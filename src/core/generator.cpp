@@ -210,16 +210,26 @@ std::optional<std::string> validateGraphPhysicalScale(
             continue;
         }
         const auto* brick = std::get_if<BrickGridOperation>(&generator->operation);
-        if (brick == nullptr || !brick->physicalDimensions) {
-            continue;
+        if (brick != nullptr && brick->physicalDimensions) {
+            Material probe = material;
+            probe.layers.clear();
+            auto layer = makeBrickGridLayer();
+            layer.operation = *brick;
+            probe.layers.push_back(layer);
+            if (const auto error = validateMaterial(probe)) {
+                return "graph node " + std::to_string(generator->id) + ": " + *error;
+            }
         }
-        Material probe = material;
-        probe.layers.clear();
-        auto layer = makeBrickGridLayer();
-        layer.operation = *brick;
-        probe.layers.push_back(layer);
-        if (const auto error = validateMaterial(probe)) {
-            return "graph node " + std::to_string(generator->id) + ": " + *error;
+        const auto* course = std::get_if<CourseLayoutOperation>(&generator->operation);
+        if (course != nullptr && course->physicalDimensions) {
+            Material probe = material;
+            probe.layers.clear();
+            auto layer = makeCourseLayoutLayer();
+            layer.operation = *course;
+            probe.layers.push_back(layer);
+            if (const auto error = validateMaterial(probe)) {
+                return "graph node " + std::to_string(generator->id) + ": " + *error;
+            }
         }
     }
     return std::nullopt;

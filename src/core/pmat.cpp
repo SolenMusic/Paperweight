@@ -73,6 +73,7 @@ enum class OperationKind {
     palette,
     inkContour,
     regionField,
+    courseLayout,
 };
 
 enum class BrickSizing {
@@ -180,6 +181,23 @@ struct LayerBuilder {
     ParsedValue<double> regionOutputHigh;
     ParsedValue<bool> regionInverted;
     ParsedValue<ProcessingTarget> regionTarget;
+    ParsedValue<CourseLayoutProfile> courseProfile;
+    ParsedValue<CourseLayoutField> courseField;
+    ParsedValue<BrickSizing> courseSizing;
+    ParsedValue<std::uint32_t> courseBlocks;
+    ParsedValue<std::uint32_t> courseCount;
+    ParsedValue<double> courseBlockVariation;
+    ParsedValue<double> courseHeightVariation;
+    ParsedValue<double> courseStagger;
+    ParsedValue<double> courseCrookedness;
+    ParsedValue<double> courseGap;
+    ParsedValue<double> courseSoftness;
+    ParsedValue<double> courseOverlap;
+    ParsedValue<std::uint64_t> courseSeedOffset;
+    ParsedValue<double> courseBlockWidthMetres;
+    ParsedValue<double> courseHeightMetres;
+    ParsedValue<double> courseGapMetres;
+    ParsedValue<double> courseOverlapMetres;
 };
 
 std::string_view trim(std::string_view value)
@@ -419,6 +437,9 @@ std::optional<OperationKind> parseOperationKind(std::string_view value)
     if (value == "region_field") {
         return OperationKind::regionField;
     }
+    if (value == "course_layout") {
+        return OperationKind::courseLayout;
+    }
     return std::nullopt;
 }
 
@@ -505,6 +526,40 @@ std::optional<RegionFieldKind> parseRegionFieldKind(std::string_view value)
     if (value == "boundary_distance") {
         return RegionFieldKind::boundaryDistance;
     }
+    if (value == "course_random") {
+        return RegionFieldKind::courseRandom;
+    }
+    return std::nullopt;
+}
+
+std::optional<CourseLayoutProfile> parseCourseLayoutProfile(std::string_view value)
+{
+    if (value == "masonry") {
+        return CourseLayoutProfile::masonry;
+    }
+    if (value == "slabs") {
+        return CourseLayoutProfile::slabs;
+    }
+    if (value == "slates") {
+        return CourseLayoutProfile::slates;
+    }
+    return std::nullopt;
+}
+
+std::optional<CourseLayoutField> parseCourseLayoutField(std::string_view value)
+{
+    if (value == "blocks") {
+        return CourseLayoutField::blocks;
+    }
+    if (value == "mortar") {
+        return CourseLayoutField::mortar;
+    }
+    if (value == "course") {
+        return CourseLayoutField::course;
+    }
+    if (value == "overlap") {
+        return CourseLayoutField::overlap;
+    }
     return std::nullopt;
 }
 
@@ -590,7 +645,8 @@ bool isStructuralOperation(OperationKind operation)
         operation == OperationKind::randomCells ||
         operation == OperationKind::lines ||
         operation == OperationKind::rectangles ||
-        operation == OperationKind::circles;
+        operation == OperationKind::circles ||
+        operation == OperationKind::courseLayout;
 }
 
 bool hasVersionFourFields(const LayerBuilder& builder)
@@ -657,11 +713,25 @@ bool hasVersionNineFields(const LayerBuilder& builder)
         builder.regionTarget.value;
 }
 
+bool hasVersionTenFields(const LayerBuilder& builder)
+{
+    return builder.courseProfile.value || builder.courseField.value ||
+        builder.courseSizing.value || builder.courseBlocks.value ||
+        builder.courseCount.value || builder.courseBlockVariation.value ||
+        builder.courseHeightVariation.value || builder.courseStagger.value ||
+        builder.courseCrookedness.value || builder.courseGap.value ||
+        builder.courseSoftness.value || builder.courseOverlap.value ||
+        builder.courseSeedOffset.value || builder.courseBlockWidthMetres.value ||
+        builder.courseHeightMetres.value || builder.courseGapMetres.value ||
+        builder.courseOverlapMetres.value;
+}
+
 bool hasStructuralFields(const LayerBuilder& builder)
 {
     return hasVersionFourFields(builder) || hasVersionFiveFields(builder) ||
         hasVersionSixFields(builder) || hasVersionSevenFields(builder) ||
-        hasVersionEightFields(builder) || hasVersionNineFields(builder);
+        hasVersionEightFields(builder) || hasVersionNineFields(builder) ||
+        hasVersionTenFields(builder);
 }
 
 template<typename Value>
@@ -1510,13 +1580,158 @@ ParseResult parsePmat(std::string_view text)
                     if (!storeValue(builder.inkInverted, parsed, lineNumber, valueColumn)) {
                         return duplicate();
                     }
+                } else if (property == "course.profile") {
+                    const auto parsed = parseCourseLayoutProfile(value);
+                    if (!parsed) {
+                        return diagnostic(
+                            lineNumber,
+                            valueColumn,
+                            "course profile must be 'masonry', 'slabs', or 'slates'");
+                    }
+                    if (!storeValue(builder.courseProfile, *parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "course.field") {
+                    const auto parsed = parseCourseLayoutField(value);
+                    if (!parsed) {
+                        return diagnostic(
+                            lineNumber,
+                            valueColumn,
+                            "course field must be 'blocks', 'mortar', 'course', or 'overlap'");
+                    }
+                    if (!storeValue(builder.courseField, *parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "course.sizing") {
+                    const auto parsed = parseBrickSizing(value);
+                    if (!parsed) {
+                        return diagnostic(
+                            lineNumber,
+                            valueColumn,
+                            "course sizing must be 'relative' or 'physical'");
+                    }
+                    if (!storeValue(builder.courseSizing, *parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "course.blocks") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "course blocks must be an integer");
+                    }
+                    if (!storeValue(builder.courseBlocks, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "course.courses") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "course count must be an integer");
+                    }
+                    if (!storeValue(builder.courseCount, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "course.block_variation") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "course block variation must be a decimal number");
+                    }
+                    if (!storeValue(builder.courseBlockVariation, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "course.height_variation") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "course height variation must be a decimal number");
+                    }
+                    if (!storeValue(builder.courseHeightVariation, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "course.stagger") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "course stagger must be a decimal number");
+                    }
+                    if (!storeValue(builder.courseStagger, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "course.crookedness") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "course crookedness must be a decimal number");
+                    }
+                    if (!storeValue(builder.courseCrookedness, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "course.gap") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "course gap must be a decimal number");
+                    }
+                    if (!storeValue(builder.courseGap, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "course.softness") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "course softness must be a decimal number");
+                    }
+                    if (!storeValue(builder.courseSoftness, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "course.overlap") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "course overlap must be a decimal number");
+                    }
+                    if (!storeValue(builder.courseOverlap, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "course.seed_offset") {
+                    std::uint64_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "course seed offset must be an unsigned integer");
+                    }
+                    if (!storeValue(builder.courseSeedOffset, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "course.block_width") {
+                    double parsed = 0.0;
+                    if (!parseMetres(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "course block width must be a decimal metre value");
+                    }
+                    if (!storeValue(builder.courseBlockWidthMetres, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "course.course_height") {
+                    double parsed = 0.0;
+                    if (!parseMetres(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "course height must be a decimal metre value");
+                    }
+                    if (!storeValue(builder.courseHeightMetres, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "course.gap_width") {
+                    double parsed = 0.0;
+                    if (!parseMetres(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "course gap width must be a decimal metre value");
+                    }
+                    if (!storeValue(builder.courseGapMetres, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "course.overlap_depth") {
+                    double parsed = 0.0;
+                    if (!parseMetres(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "course overlap depth must be a decimal metre value");
+                    }
+                    if (!storeValue(builder.courseOverlapMetres, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
                 } else if (property == "region.field") {
                     const auto parsed = parseRegionFieldKind(value);
                     if (!parsed) {
                         return diagnostic(
                             lineNumber,
                             valueColumn,
-                            "region field must be 'random', 'local_u', 'local_v', 'centre_distance', or 'boundary_distance'");
+                            "region field must be 'random', 'local_u', 'local_v', 'centre_distance', 'boundary_distance', or 'course_random'");
                     }
                     if (!storeValue(builder.regionField, *parsed, lineNumber, valueColumn)) {
                         return duplicate();
@@ -1804,6 +2019,17 @@ ParseResult parsePmat(std::string_view text)
                     "region fields require .pmat version 9");
             }
 
+            if (formatVersion < 10 &&
+                (hasVersionTenFields(builder) ||
+                 *builder.operation.value == OperationKind::courseLayout ||
+                 (builder.regionField.value &&
+                  *builder.regionField.value == RegionFieldKind::courseRandom))) {
+                return diagnostic(
+                    lineNumber + 1,
+                    1,
+                    "course layouts and course-random fields require .pmat version 10");
+            }
+
             if (formatVersion < 4 &&
                 (hasVersionFourFields(builder) ||
                  isStructuralOperation(*builder.operation.value))) {
@@ -1988,6 +2214,7 @@ ParseResult parsePmat(std::string_view text)
                 builder.inkThreshold.value || builder.inkSoftness.value ||
                 builder.inkStrength.value || builder.inkInverted.value;
             const bool hasRegionFields = hasVersionNineFields(builder);
+            const bool hasCourseFields = hasVersionTenFields(builder);
             const int operationGroupCount = static_cast<int>(hasBrickFields) +
                 static_cast<int>(hasTileFields) + static_cast<int>(hasWorleyFields) +
                 static_cast<int>(hasRandomFields) + static_cast<int>(hasLineFields) +
@@ -1995,7 +2222,7 @@ ParseResult parsePmat(std::string_view text)
                 static_cast<int>(hasSurfaceFields) + static_cast<int>(hasFilterFields) +
                 static_cast<int>(hasPosteriseFields) + static_cast<int>(hasRampFields) +
                 static_cast<int>(hasPaletteFields) + static_cast<int>(hasInkFields) +
-                static_cast<int>(hasRegionFields);
+                static_cast<int>(hasRegionFields) + static_cast<int>(hasCourseFields);
 
             const bool hasClassicFields = builder.seedOffset.value || builder.solidColour.value ||
                 builder.levelsLow.value || builder.levelsHigh.value ||
@@ -2262,6 +2489,127 @@ ParseResult parsePmat(std::string_view text)
                     *builder.tileSoftness.value,
                 };
                 break;
+            case OperationKind::courseLayout: {
+                if (!builder.courseProfile.value) {
+                    return missingLayerField(lineNumber + 1, index, "course.profile");
+                }
+                if (!builder.courseField.value) {
+                    return missingLayerField(lineNumber + 1, index, "course.field");
+                }
+                if (!builder.courseSizing.value) {
+                    return missingLayerField(lineNumber + 1, index, "course.sizing");
+                }
+                if (!builder.courseBlocks.value) {
+                    return missingLayerField(lineNumber + 1, index, "course.blocks");
+                }
+                if (!builder.courseCount.value) {
+                    return missingLayerField(lineNumber + 1, index, "course.courses");
+                }
+                if (!builder.courseBlockVariation.value) {
+                    return missingLayerField(lineNumber + 1, index, "course.block_variation");
+                }
+                if (!builder.courseHeightVariation.value) {
+                    return missingLayerField(lineNumber + 1, index, "course.height_variation");
+                }
+                if (!builder.courseStagger.value) {
+                    return missingLayerField(lineNumber + 1, index, "course.stagger");
+                }
+                if (!builder.courseCrookedness.value) {
+                    return missingLayerField(lineNumber + 1, index, "course.crookedness");
+                }
+                if (!builder.courseGap.value) {
+                    return missingLayerField(lineNumber + 1, index, "course.gap");
+                }
+                if (!builder.courseSoftness.value) {
+                    return missingLayerField(lineNumber + 1, index, "course.softness");
+                }
+                if (!builder.courseOverlap.value) {
+                    return missingLayerField(lineNumber + 1, index, "course.overlap");
+                }
+                if (!builder.courseSeedOffset.value) {
+                    return missingLayerField(lineNumber + 1, index, "course.seed_offset");
+                }
+                if (hasClassicFields || operationGroupCount != 1) {
+                    return crossOperationError();
+                }
+                if (invalidCount(*builder.courseBlocks.value) ||
+                    invalidCount(*builder.courseCount.value)) {
+                    return diagnostic(
+                        builder.courseBlocks.line,
+                        builder.courseBlocks.column,
+                        "course blocks and courses must be between 1 and 64");
+                }
+                if (outside(*builder.courseBlockVariation.value, 0.0, 1.0) ||
+                    outside(*builder.courseHeightVariation.value, 0.0, 1.0) ||
+                    outside(*builder.courseStagger.value, 0.0, 1.0) ||
+                    outside(*builder.courseCrookedness.value, 0.0, 1.0) ||
+                    outside(*builder.courseGap.value, 0.0, 0.95) ||
+                    outside(*builder.courseSoftness.value, 0.0, 0.25) ||
+                    outside(*builder.courseOverlap.value, 0.0, 0.95)) {
+                    return diagnostic(
+                        builder.courseBlockVariation.line,
+                        builder.courseBlockVariation.column,
+                        "course variation, stagger, crookedness, gap, softness, or overlap is outside its supported range");
+                }
+                CourseLayoutOperation course{
+                    *builder.courseProfile.value,
+                    *builder.courseField.value,
+                    *builder.courseBlocks.value,
+                    *builder.courseCount.value,
+                    *builder.courseBlockVariation.value,
+                    *builder.courseHeightVariation.value,
+                    *builder.courseStagger.value,
+                    *builder.courseCrookedness.value,
+                    *builder.courseGap.value,
+                    *builder.courseSoftness.value,
+                    *builder.courseOverlap.value,
+                    *builder.courseSeedOffset.value,
+                    std::nullopt,
+                };
+                if (*builder.courseSizing.value == BrickSizing::physical) {
+                    if (!builder.courseBlockWidthMetres.value) {
+                        return missingLayerField(lineNumber + 1, index, "course.block_width");
+                    }
+                    if (!builder.courseHeightMetres.value) {
+                        return missingLayerField(lineNumber + 1, index, "course.course_height");
+                    }
+                    if (!builder.courseGapMetres.value) {
+                        return missingLayerField(lineNumber + 1, index, "course.gap_width");
+                    }
+                    if (!builder.courseOverlapMetres.value) {
+                        return missingLayerField(lineNumber + 1, index, "course.overlap_depth");
+                    }
+                    const double width = *builder.courseBlockWidthMetres.value;
+                    const double height = *builder.courseHeightMetres.value;
+                    const double gap = *builder.courseGapMetres.value;
+                    const double overlap = *builder.courseOverlapMetres.value;
+                    if (!std::isfinite(width) || !std::isfinite(height) ||
+                        !std::isfinite(gap) || !std::isfinite(overlap) ||
+                        width <= 0.0 || height <= 0.0 || gap < 0.0 || overlap < 0.0 ||
+                        gap >= std::min(width, height) || overlap >= height) {
+                        return diagnostic(
+                            builder.courseBlockWidthMetres.line,
+                            builder.courseBlockWidthMetres.column,
+                            "physical course dimensions must be positive; gap and overlap must fit within a block and course");
+                    }
+                    course.physicalDimensions = CourseLayoutOperation::PhysicalDimensions{
+                        width,
+                        height,
+                        gap,
+                        overlap,
+                    };
+                } else if (builder.courseBlockWidthMetres.value ||
+                           builder.courseHeightMetres.value ||
+                           builder.courseGapMetres.value ||
+                           builder.courseOverlapMetres.value) {
+                    return diagnostic(
+                        lineNumber + 1,
+                        1,
+                        "a relatively sized course layout cannot declare physical dimensions");
+                }
+                layer.operation = course;
+                break;
+            }
             case OperationKind::worleyCells:
                 if (!builder.worleyColumns.value) {
                     return missingLayerField(lineNumber + 1, index, "worley.columns");
@@ -2933,6 +3281,55 @@ SerialisationResult serialisePmat(const Material& material)
             output += prefix + "tile.rows = " + std::to_string(tile->rows) + "\n";
             output += prefix + "tile.grout = " + grout + "\n";
             output += prefix + "tile.softness = " + softness + "\n";
+        } else if (const auto* course =
+                       std::get_if<CourseLayoutOperation>(&layer.operation)) {
+            const auto blockVariation = formatDouble(course->blockVariation);
+            const auto heightVariation = formatDouble(course->courseVariation);
+            const auto stagger = formatDouble(course->stagger);
+            const auto crookedness = formatDouble(course->crookedness);
+            const auto gap = formatDouble(course->gap);
+            const auto softness = formatDouble(course->softness);
+            const auto overlap = formatDouble(course->overlap);
+            if (blockVariation.empty() || heightVariation.empty() || stagger.empty() ||
+                crookedness.empty() || gap.empty() || softness.empty() || overlap.empty()) {
+                return SerialisationError{"could not format course layout parameters"};
+            }
+            output += prefix + "course.profile = " +
+                std::string(courseLayoutProfileName(course->profile)) + "\n";
+            output += prefix + "course.field = " +
+                std::string(courseLayoutFieldName(course->field)) + "\n";
+            output += prefix + "course.sizing = " +
+                (course->physicalDimensions ? "physical\n" : "relative\n");
+            output += prefix + "course.blocks = " + std::to_string(course->blocks) + "\n";
+            output += prefix + "course.courses = " + std::to_string(course->courses) + "\n";
+            output += prefix + "course.block_variation = " + blockVariation + "\n";
+            output += prefix + "course.height_variation = " + heightVariation + "\n";
+            output += prefix + "course.stagger = " + stagger + "\n";
+            output += prefix + "course.crookedness = " + crookedness + "\n";
+            output += prefix + "course.gap = " + gap + "\n";
+            output += prefix + "course.softness = " + softness + "\n";
+            output += prefix + "course.overlap = " + overlap + "\n";
+            output += prefix + "course.seed_offset = " +
+                std::to_string(course->seedOffset) + "\n";
+            if (course->physicalDimensions) {
+                const auto width = formatMetres(
+                    course->physicalDimensions->blockWidthMetres);
+                const auto height = formatMetres(
+                    course->physicalDimensions->courseHeightMetres);
+                const auto physicalGap = formatMetres(
+                    course->physicalDimensions->gapMetres);
+                const auto physicalOverlap = formatMetres(
+                    course->physicalDimensions->overlapMetres);
+                if (width.empty() || height.empty() || physicalGap.empty() ||
+                    physicalOverlap.empty()) {
+                    return SerialisationError{
+                        "could not format physical course layout parameters"};
+                }
+                output += prefix + "course.block_width = " + width + "\n";
+                output += prefix + "course.course_height = " + height + "\n";
+                output += prefix + "course.gap_width = " + physicalGap + "\n";
+                output += prefix + "course.overlap_depth = " + physicalOverlap + "\n";
+            }
         } else if (const auto* worley = std::get_if<WorleyCellsOperation>(&layer.operation)) {
             const auto jitter = formatDouble(worley->jitter);
             const auto edgeWidth = formatDouble(worley->edgeWidth);

@@ -247,6 +247,17 @@
 @property(nonatomic, strong) NSTextField* patternValueFourValue;
 @property(nonatomic, strong) NSStackView* surfaceKindRow;
 @property(nonatomic, strong) NSPopUpButton* surfaceKindPopup;
+@property(nonatomic, strong) NSStackView* courseFieldRow;
+@property(nonatomic, strong) NSPopUpButton* courseFieldPopup;
+@property(nonatomic, strong) NSStackView* courseGapRow;
+@property(nonatomic, strong) NSSlider* courseGapSlider;
+@property(nonatomic, strong) NSTextField* courseGapValue;
+@property(nonatomic, strong) NSStackView* courseSoftnessRow;
+@property(nonatomic, strong) NSSlider* courseSoftnessSlider;
+@property(nonatomic, strong) NSTextField* courseSoftnessValue;
+@property(nonatomic, strong) NSStackView* courseOverlapRow;
+@property(nonatomic, strong) NSSlider* courseOverlapSlider;
+@property(nonatomic, strong) NSTextField* courseOverlapValue;
 @property(nonatomic, strong) NSStackView* processingTargetRow;
 @property(nonatomic, strong) NSPopUpButton* processingTargetPopup;
 @property(nonatomic, strong) NSStackView* filterSensitivityRow;
@@ -288,6 +299,8 @@
 @property(nonatomic, strong) NSTextField* physicalBrickHeightField;
 @property(nonatomic, strong) NSStackView* physicalBrickMortarRow;
 @property(nonatomic, strong) NSTextField* physicalBrickMortarField;
+@property(nonatomic, strong) NSStackView* physicalCourseOverlapRow;
+@property(nonatomic, strong) NSTextField* physicalCourseOverlapField;
 @property(nonatomic, strong) NSTextField* physicalBrickSummary;
 @property(nonatomic, strong) NSStackView* patternDirectionRow;
 @property(nonatomic, strong) NSSegmentedControl* patternDirectionControl;
@@ -619,6 +632,8 @@ NSString* operationDisplayName(const paperweight::LayerOperation& operation)
         return @"Ink Contours";
     case 17:
         return @"Region Field";
+    case 18:
+        return @"Course Layout";
     default:
         return @"Unknown";
     }
@@ -657,7 +672,7 @@ paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger i
     return &material.layers[static_cast<std::size_t>(index)];
 }
 
-bool materialUsesPhysicalBricks(const paperweight::Material& material)
+bool materialUsesDerivedRepeat(const paperweight::Material& material)
 {
     return std::any_of(
         material.layers.begin(),
@@ -665,7 +680,12 @@ bool materialUsesPhysicalBricks(const paperweight::Material& material)
         [](const paperweight::MaterialLayer& layer) {
             const auto* brick = std::get_if<paperweight::BrickGridOperation>(
                 &layer.operation);
-            return brick != nullptr && brick->physicalDimensions.has_value();
+            if (brick != nullptr && brick->physicalDimensions.has_value()) {
+                return true;
+            }
+            const auto* course = std::get_if<paperweight::CourseLayoutOperation>(
+                &layer.operation);
+            return course != nullptr && course->physicalDimensions.has_value();
         });
 }
 
@@ -797,6 +817,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @[ @"Painted Metal", @"painted-metal" ],
         @[ @"Graphic Marble", @"graphic-marble" ],
         @[ @"Region Stones", @"region-stones" ],
+        @[ @"Castle Flagstone", @"castle-flagstone" ],
+        @[ @"Castle Stone", @"castle-stone" ],
+        @[ @"Cel Castle Stone", @"cel-castle-stone" ],
+        @[ @"Castle Roof", @"castle-roof" ],
     ];
     for (NSArray<NSString*>* showcase in showcases) {
         auto* item = [showcaseMenu addItemWithTitle:showcase[0]
@@ -1424,6 +1448,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @"Palette",
         @"Ink Contours",
         @"Region Field",
+        @"Course Layout",
     ]];
     auto* addLayerButton = [NSButton buttonWithTitle:@"Add"
                                               target:self
@@ -1558,6 +1583,34 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.surfaceKindRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
     self.surfaceKindRow.alignment = NSLayoutAttributeCenterY;
     self.surfaceKindRow.spacing = 8.0;
+
+    auto* courseFieldLabel = makeLabel(@"Output");
+    [courseFieldLabel.widthAnchor constraintEqualToConstant:72.0].active = YES;
+    self.courseFieldPopup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+    [self.courseFieldPopup addItemsWithTitles:@[
+        @"Block faces", @"Mortar / gaps", @"Course interiors", @"Overlap",
+    ]];
+    self.courseFieldPopup.target = self;
+    self.courseFieldPopup.action = @selector(structuralParameterChanged:);
+    self.courseFieldRow = [NSStackView stackViewWithViews:@[
+        courseFieldLabel, self.courseFieldPopup,
+    ]];
+    self.courseFieldRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    self.courseFieldRow.alignment = NSLayoutAttributeCenterY;
+    self.courseFieldRow.spacing = 8.0;
+
+    self.courseGapRow = makeLayerSliderRow(@"Gap width", 0.0, 0.95, 0.08, self);
+    self.courseGapSlider = static_cast<NSSlider*>(self.courseGapRow.views[1]);
+    self.courseGapValue = static_cast<NSTextField*>(self.courseGapRow.views[2]);
+    self.courseGapSlider.action = @selector(structuralParameterChanged:);
+    self.courseSoftnessRow = makeLayerSliderRow(@"Softness", 0.0, 0.25, 0.02, self);
+    self.courseSoftnessSlider = static_cast<NSSlider*>(self.courseSoftnessRow.views[1]);
+    self.courseSoftnessValue = static_cast<NSTextField*>(self.courseSoftnessRow.views[2]);
+    self.courseSoftnessSlider.action = @selector(structuralParameterChanged:);
+    self.courseOverlapRow = makeLayerSliderRow(@"Overlap", 0.0, 0.95, 0.25, self);
+    self.courseOverlapSlider = static_cast<NSSlider*>(self.courseOverlapRow.views[1]);
+    self.courseOverlapValue = static_cast<NSTextField*>(self.courseOverlapRow.views[2]);
+    self.courseOverlapSlider.action = @selector(structuralParameterChanged:);
 
     auto* processingTargetLabel = makeLabel(@"Affect");
     [processingTargetLabel.widthAnchor constraintEqualToConstant:72.0].active = YES;
@@ -1728,6 +1781,15 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.physicalBrickMortarRow.views[1]);
     self.physicalBrickMortarField.toolTip =
         @"Enter one real mortar width used equally in both directions.";
+    self.physicalCourseOverlapRow = makeMetreFieldRow(
+        @"Overlap",
+        0.04,
+        self,
+        @selector(structuralParameterChanged:));
+    self.physicalCourseOverlapField = static_cast<NSTextField*>(
+        self.physicalCourseOverlapRow.views[1]);
+    self.physicalCourseOverlapField.toolTip =
+        @"Enter the physical overlap depth for slate courses.";
     self.physicalBrickSummary = makeLabel(@"");
     self.physicalBrickSummary.font = [NSFont systemFontOfSize:11.0];
     self.physicalBrickSummary.textColor = NSColor.secondaryLabelColor;
@@ -1790,14 +1852,19 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.physicalBrickWidthRow,
         self.physicalBrickHeightRow,
         self.physicalBrickMortarRow,
+        self.physicalCourseOverlapRow,
         self.patternCountXRow,
         self.patternCountYRow,
         self.physicalBrickSummary,
         self.surfaceKindRow,
+        self.courseFieldRow,
         self.patternValueOneRow,
         self.patternValueTwoRow,
         self.patternValueThreeRow,
         self.patternValueFourRow,
+        self.courseGapRow,
+        self.courseSoftnessRow,
+        self.courseOverlapRow,
         self.equalMortarWidthCheckbox,
         self.patternDirectionRow,
         self.patternSeedRow,
@@ -1988,6 +2055,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         [self.physicalBrickWidthRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.physicalBrickHeightRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.physicalBrickMortarRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.physicalCourseOverlapRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.physicalBrickSummary.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.patternCountXRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.patternCountYRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
@@ -1997,6 +2065,11 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         [self.patternValueFourRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.surfaceKindRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.surfaceKindPopup.trailingAnchor constraintEqualToAnchor:self.surfaceKindRow.trailingAnchor],
+        [self.courseFieldRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.courseFieldPopup.trailingAnchor constraintEqualToAnchor:self.courseFieldRow.trailingAnchor],
+        [self.courseGapRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.courseSoftnessRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.courseOverlapRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.processingTargetRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.processingTargetPopup.trailingAnchor constraintEqualToAnchor:self.processingTargetRow.trailingAnchor],
         [self.filterSensitivityRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
@@ -2100,6 +2173,12 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         stringWithFormat:@"%.2f", self.patternValueThreeSlider.doubleValue];
     self.patternValueFourValue.stringValue = [NSString
         stringWithFormat:@"%.2f", self.patternValueFourSlider.doubleValue];
+    self.courseGapValue.stringValue = [NSString
+        stringWithFormat:@"%.2f", self.courseGapSlider.doubleValue];
+    self.courseSoftnessValue.stringValue = [NSString
+        stringWithFormat:@"%.2f", self.courseSoftnessSlider.doubleValue];
+    self.courseOverlapValue.stringValue = [NSString
+        stringWithFormat:@"%.2f", self.courseOverlapSlider.doubleValue];
 
     self.transformScaleXValue.stringValue = [NSString
         stringWithFormat:@"%.0f", self.transformScaleXSlider.doubleValue];
@@ -2122,11 +2201,11 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 
 - (void)refreshLayerInspector
 {
-    const bool repeatIsDerived = materialUsesPhysicalBricks(material_);
+    const bool repeatIsDerived = materialUsesDerivedRepeat(material_);
     self.materialWidthField.editable = !repeatIsDerived;
     self.materialHeightField.editable = !repeatIsDerived;
     NSString* repeatToolTip = repeatIsDerived
-        ? @"Calculated automatically from physical brick size multiplied by columns and rows."
+        ? @"Calculated automatically from the active physical layout dimensions and counts."
         : @"The physical size of one seamless material repeat.";
     self.materialWidthField.toolTip = repeatToolTip;
     self.materialHeightField.toolTip = repeatToolTip;
@@ -2156,11 +2235,16 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.patternValueThreeRow.hidden = YES;
         self.patternValueFourRow.hidden = YES;
         self.surfaceKindRow.hidden = YES;
+        self.courseFieldRow.hidden = YES;
+        self.courseGapRow.hidden = YES;
+        self.courseSoftnessRow.hidden = YES;
+        self.courseOverlapRow.hidden = YES;
         self.equalMortarWidthCheckbox.hidden = YES;
         self.physicalBrickCheckbox.hidden = YES;
         self.physicalBrickWidthRow.hidden = YES;
         self.physicalBrickHeightRow.hidden = YES;
         self.physicalBrickMortarRow.hidden = YES;
+        self.physicalCourseOverlapRow.hidden = YES;
         self.physicalBrickSummary.hidden = YES;
         self.patternDirectionRow.hidden = YES;
         self.patternSeedRow.hidden = YES;
@@ -2216,6 +2300,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     const auto* palette = std::get_if<paperweight::PaletteOperation>(&layer->operation);
     const auto* ink = std::get_if<paperweight::InkContourOperation>(&layer->operation);
     const auto* region = std::get_if<paperweight::RegionFieldOperation>(&layer->operation);
+    const auto* course = std::get_if<paperweight::CourseLayoutOperation>(&layer->operation);
     self.noiseSeedRow.hidden = noise == nullptr;
     self.solidColourRow.hidden = solid == nullptr;
     self.levelsLowRow.hidden = levels == nullptr;
@@ -2229,11 +2314,16 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.patternValueThreeRow.hidden = YES;
     self.patternValueFourRow.hidden = YES;
     self.surfaceKindRow.hidden = YES;
+    self.courseFieldRow.hidden = YES;
+    self.courseGapRow.hidden = YES;
+    self.courseSoftnessRow.hidden = YES;
+    self.courseOverlapRow.hidden = YES;
     self.equalMortarWidthCheckbox.hidden = YES;
-    self.physicalBrickCheckbox.hidden = brick == nullptr;
+    self.physicalBrickCheckbox.hidden = brick == nullptr && course == nullptr;
     self.physicalBrickWidthRow.hidden = YES;
     self.physicalBrickHeightRow.hidden = YES;
     self.physicalBrickMortarRow.hidden = YES;
+    self.physicalCourseOverlapRow.hidden = YES;
     self.physicalBrickSummary.hidden = YES;
     self.patternDirectionRow.hidden = YES;
     self.patternSeedRow.hidden = YES;
@@ -2300,6 +2390,13 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         valueLabel.stringValue = [NSString stringWithFormat:@"%.2f", value];
     };
     if (brick != nullptr) {
+        self.physicalBrickCheckbox.title = @"Size brick in metres";
+        static_cast<NSTextField*>(self.physicalBrickWidthRow.views[0]).stringValue =
+            @"Brick width";
+        static_cast<NSTextField*>(self.physicalBrickHeightRow.views[0]).stringValue =
+            @"Brick height";
+        static_cast<NSTextField*>(self.physicalBrickMortarRow.views[0]).stringValue =
+            @"Mortar";
         const bool physical = brick->physicalDimensions.has_value();
         self.physicalBrickCheckbox.state = physical
             ? NSControlStateValueOn
@@ -2361,6 +2458,94 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         showValue(self.patternValueThreeRow, self.patternValueThreeLabel,
                   self.patternValueThreeSlider, self.patternValueThreeValue,
                   @"Softness", 0.0, 0.25, brick->softness);
+    } else if (course != nullptr) {
+        self.surfaceKindRow.hidden = NO;
+        [self.surfaceKindPopup removeAllItems];
+        [self.surfaceKindPopup addItemsWithTitles:@[
+            @"Masonry", @"Flagstone slabs", @"Slate / shingles",
+        ]];
+        [self.surfaceKindPopup selectItemAtIndex:static_cast<NSInteger>(course->profile)];
+        self.courseFieldRow.hidden = NO;
+        [self.courseFieldPopup selectItemAtIndex:static_cast<NSInteger>(course->field)];
+        self.physicalBrickCheckbox.title = @"Size layout in metres";
+        self.physicalBrickCheckbox.state = course->physicalDimensions
+            ? NSControlStateValueOn
+            : NSControlStateValueOff;
+        static_cast<NSTextField*>(self.physicalBrickWidthRow.views[0]).stringValue =
+            @"Block width";
+        static_cast<NSTextField*>(self.physicalBrickHeightRow.views[0]).stringValue =
+            @"Course height";
+        static_cast<NSTextField*>(self.physicalBrickMortarRow.views[0]).stringValue =
+            @"Gap width";
+
+        std::uint32_t blocks = course->blocks;
+        std::uint32_t courses = course->courses;
+        if (course->physicalDimensions) {
+            blocks = static_cast<std::uint32_t>(std::clamp(
+                std::llround(material_.physicalSize.widthMetres /
+                    course->physicalDimensions->blockWidthMetres),
+                static_cast<long long>(paperweight::LayerLimits::minimumPatternCount),
+                static_cast<long long>(paperweight::LayerLimits::maximumPatternCount)));
+            courses = static_cast<std::uint32_t>(std::clamp(
+                std::llround(material_.physicalSize.heightMetres /
+                    course->physicalDimensions->courseHeightMetres),
+                static_cast<long long>(paperweight::LayerLimits::minimumPatternCount),
+                static_cast<long long>(paperweight::LayerLimits::maximumPatternCount)));
+            self.physicalBrickWidthRow.hidden = NO;
+            self.physicalBrickHeightRow.hidden = NO;
+            self.physicalBrickMortarRow.hidden = NO;
+            self.physicalCourseOverlapRow.hidden =
+                course->profile != paperweight::CourseLayoutProfile::slates;
+            self.physicalBrickSummary.hidden = NO;
+            self.physicalBrickWidthField.stringValue = [NSString
+                stringWithFormat:@"%.6g", course->physicalDimensions->blockWidthMetres];
+            self.physicalBrickHeightField.stringValue = [NSString
+                stringWithFormat:@"%.6g", course->physicalDimensions->courseHeightMetres];
+            self.physicalBrickMortarField.stringValue = [NSString
+                stringWithFormat:@"%.6g", course->physicalDimensions->gapMetres];
+            self.physicalCourseOverlapField.stringValue = [NSString
+                stringWithFormat:@"%.6g", course->physicalDimensions->overlapMetres];
+            self.physicalBrickSummary.stringValue = [NSString stringWithFormat:
+                @"%u blocks × %u courses → %.6g × %.6g m seamless repeat",
+                blocks,
+                courses,
+                material_.physicalSize.widthMetres,
+                material_.physicalSize.heightMetres];
+        } else {
+            self.courseGapRow.hidden = NO;
+            self.courseGapSlider.doubleValue = course->gap;
+            self.courseGapValue.stringValue = [NSString
+                stringWithFormat:@"%.2f", course->gap];
+            if (course->profile == paperweight::CourseLayoutProfile::slates) {
+                self.courseOverlapRow.hidden = NO;
+                self.courseOverlapSlider.doubleValue = course->overlap;
+                self.courseOverlapValue.stringValue = [NSString
+                    stringWithFormat:@"%.2f", course->overlap];
+            }
+        }
+        showCount(self.patternCountXRow, self.patternCountXLabel,
+                  self.patternCountXSlider, self.patternCountXValue, @"Blocks", blocks);
+        showCount(self.patternCountYRow, self.patternCountYLabel,
+                  self.patternCountYSlider, self.patternCountYValue, @"Courses", courses);
+        showValue(self.patternValueOneRow, self.patternValueOneLabel,
+                  self.patternValueOneSlider, self.patternValueOneValue,
+                  @"Width vary", 0.0, 1.0, course->blockVariation);
+        showValue(self.patternValueTwoRow, self.patternValueTwoLabel,
+                  self.patternValueTwoSlider, self.patternValueTwoValue,
+                  @"Height vary", 0.0, 1.0, course->courseVariation);
+        showValue(self.patternValueThreeRow, self.patternValueThreeLabel,
+                  self.patternValueThreeSlider, self.patternValueThreeValue,
+                  @"Stagger", 0.0, 1.0, course->stagger);
+        showValue(self.patternValueFourRow, self.patternValueFourLabel,
+                  self.patternValueFourSlider, self.patternValueFourValue,
+                  @"Crooked", 0.0, 1.0, course->crookedness);
+        self.courseSoftnessRow.hidden = NO;
+        self.courseSoftnessSlider.doubleValue = course->softness;
+        self.courseSoftnessValue.stringValue = [NSString
+            stringWithFormat:@"%.2f", course->softness];
+        self.patternSeedRow.hidden = NO;
+        self.patternSeedOffsetField.stringValue = [NSString
+            stringWithFormat:@"%llu", course->seedOffset];
     } else if (tile != nullptr) {
         showCount(self.patternCountXRow, self.patternCountXLabel,
                   self.patternCountXSlider, self.patternCountXValue, @"Columns", tile->columns);
@@ -2497,6 +2682,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
             @"Local V",
             @"Distance to Centre",
             @"Distance to Boundary",
+            @"Course Random",
         ]];
         [self.surfaceKindPopup selectItemAtIndex:static_cast<NSInteger>(region->field)];
         self.patternCountXRow.hidden = NO;
@@ -2756,6 +2942,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         break;
     case 21:
         material_.layers.push_back(paperweight::makeRegionFieldLayer());
+        break;
+    case 22:
+        material_.layers.push_back(paperweight::makeCourseLayoutLayer());
         break;
     default:
         return;
@@ -3239,6 +3428,120 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         }
         brick->stagger = self.patternValueTwoSlider.doubleValue;
         brick->softness = self.patternValueThreeSlider.doubleValue;
+    } else if (auto* course =
+                   std::get_if<paperweight::CourseLayoutOperation>(&layer->operation)) {
+        const bool wantsPhysical =
+            self.physicalBrickCheckbox.state == NSControlStateValueOn;
+        if (sender == self.physicalBrickCheckbox) {
+            if (wantsPhysical && !course->physicalDimensions) {
+                const double width = material_.physicalSize.widthMetres / course->blocks;
+                const double height = material_.physicalSize.heightMetres / course->courses;
+                course->physicalDimensions =
+                    paperweight::CourseLayoutOperation::PhysicalDimensions{
+                        width,
+                        height,
+                        course->gap * std::min(width, height),
+                        course->overlap * height,
+                    };
+            } else if (!wantsPhysical && course->physicalDimensions) {
+                const auto physical = *course->physicalDimensions;
+                course->blocks = static_cast<std::uint32_t>(std::clamp(
+                    std::llround(material_.physicalSize.widthMetres /
+                        physical.blockWidthMetres),
+                    static_cast<long long>(paperweight::LayerLimits::minimumPatternCount),
+                    static_cast<long long>(paperweight::LayerLimits::maximumPatternCount)));
+                course->courses = static_cast<std::uint32_t>(std::clamp(
+                    std::llround(material_.physicalSize.heightMetres /
+                        physical.courseHeightMetres),
+                    static_cast<long long>(paperweight::LayerLimits::minimumPatternCount),
+                    static_cast<long long>(paperweight::LayerLimits::maximumPatternCount)));
+                course->gap = std::clamp(
+                    physical.gapMetres /
+                        std::min(physical.blockWidthMetres, physical.courseHeightMetres),
+                    paperweight::LayerLimits::minimumGap,
+                    paperweight::LayerLimits::maximumGap);
+                course->overlap = std::clamp(
+                    physical.overlapMetres / physical.courseHeightMetres,
+                    paperweight::LayerLimits::minimumLayoutOverlap,
+                    paperweight::LayerLimits::maximumLayoutOverlap);
+                course->physicalDimensions.reset();
+            }
+            [self refreshLayerInspector];
+        }
+
+        if (course->physicalDimensions) {
+            const auto width = positiveDecimal(self.physicalBrickWidthField);
+            const auto height = positiveDecimal(self.physicalBrickHeightField);
+            const auto gap = nonNegativeDecimal(self.physicalBrickMortarField);
+            const auto overlap = nonNegativeDecimal(self.physicalCourseOverlapField);
+            if (!width || !height || !gap || !overlap ||
+                *gap >= std::min(*width, *height) || *overlap >= *height) {
+                self.statusLabel.stringValue =
+                    @"Course dimensions must be positive metres; gap and overlap must fit inside the block and course.";
+                self.statusLabel.textColor = NSColor.systemRedColor;
+                return;
+            }
+            course->physicalDimensions =
+                paperweight::CourseLayoutOperation::PhysicalDimensions{
+                    *width,
+                    *height,
+                    *gap,
+                    *overlap,
+                };
+            course->blocks = countX;
+            course->courses = countY;
+            const auto oldRepeat = material_.physicalSize;
+            const paperweight::PhysicalSize newRepeat{
+                *width * static_cast<double>(countX),
+                *height * static_cast<double>(countY),
+            };
+            previewCoverage_ = {
+                resizedCoverageExtent(
+                    previewCoverage_.widthMetres,
+                    oldRepeat.widthMetres,
+                    newRepeat.widthMetres),
+                resizedCoverageExtent(
+                    previewCoverage_.heightMetres,
+                    oldRepeat.heightMetres,
+                    newRepeat.heightMetres),
+            };
+            material_.physicalSize = newRepeat;
+            self.materialWidthField.stringValue = [NSString
+                stringWithFormat:@"%.6g", newRepeat.widthMetres];
+            self.materialHeightField.stringValue = [NSString
+                stringWithFormat:@"%.6g", newRepeat.heightMetres];
+            self.coverageWidthField.stringValue = [NSString
+                stringWithFormat:@"%.6g", previewCoverage_.widthMetres];
+            self.coverageHeightField.stringValue = [NSString
+                stringWithFormat:@"%.6g", previewCoverage_.heightMetres];
+            self.physicalBrickSummary.stringValue = [NSString stringWithFormat:
+                @"%u blocks × %u courses → %.6g × %.6g m seamless repeat",
+                countX,
+                countY,
+                newRepeat.widthMetres,
+                newRepeat.heightMetres];
+        } else {
+            course->blocks = countX;
+            course->courses = countY;
+            course->gap = self.courseGapSlider.doubleValue;
+            course->overlap = self.courseOverlapSlider.doubleValue;
+        }
+        if (sender == self.surfaceKindPopup) {
+            course->profile = static_cast<paperweight::CourseLayoutProfile>(
+                self.surfaceKindPopup.indexOfSelectedItem);
+        }
+        if (sender == self.courseFieldPopup) {
+            course->field = static_cast<paperweight::CourseLayoutField>(
+                self.courseFieldPopup.indexOfSelectedItem);
+        }
+        course->blockVariation = self.patternValueOneSlider.doubleValue;
+        course->courseVariation = self.patternValueTwoSlider.doubleValue;
+        course->stagger = self.patternValueThreeSlider.doubleValue;
+        course->crookedness = self.patternValueFourSlider.doubleValue;
+        course->softness = self.courseSoftnessSlider.doubleValue;
+        if (parsedSeed) {
+            course->seedOffset = *parsedSeed;
+        }
     } else if (auto* tile = std::get_if<paperweight::TileGridOperation>(&layer->operation)) {
         tile->columns = countX;
         tile->rows = countY;
@@ -3383,13 +3686,13 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 - (void)materialSizeChanged:(id)sender
 {
     static_cast<void>(sender);
-    if (materialUsesPhysicalBricks(material_)) {
+    if (materialUsesDerivedRepeat(material_)) {
         self.materialWidthField.stringValue = [NSString
             stringWithFormat:@"%.6g", material_.physicalSize.widthMetres];
         self.materialHeightField.stringValue = [NSString
             stringWithFormat:@"%.6g", material_.physicalSize.heightMetres];
         self.statusLabel.stringValue =
-            @"Repeat size is calculated from physical brick size × columns and rows.";
+            @"Repeat size is calculated from the physical layout dimensions and counts.";
         self.statusLabel.textColor = NSColor.secondaryLabelColor;
         return;
     }

@@ -113,9 +113,9 @@ paperweight::Material materialWithNoiseParameters(
 
 void testVersion()
 {
-    constexpr paperweight::Version expected{0, 0, 12};
+    constexpr paperweight::Version expected{0, 0, 13};
     static_assert(paperweight::currentVersion == expected);
-    expect(paperweight::versionString() == "0.0.12", "version string is 0.0.12");
+    expect(paperweight::versionString() == "0.0.13", "version string is 0.0.13");
 }
 
 void testImage()
@@ -913,17 +913,17 @@ void testRegionAttributes()
 
     const auto serialised = paperweight::serialisePmat(layered);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 9") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 10") != std::string::npos &&
                text->find("operation = region_field") != std::string::npos,
-           "region fields serialise in human-readable .pmat version 9");
+           "region fields introduced in version 9 serialise canonically as .pmat version 10");
     if (text != nullptr) {
         const auto reparsed = paperweight::parsePmat(*text);
         expect(std::holds_alternative<paperweight::Material>(reparsed) &&
                    std::get<paperweight::Material>(reparsed) == layered,
-               "region-field materials round-trip exactly through .pmat version 9");
+               "region-field materials round-trip exactly through canonical .pmat version 10");
         auto premature = *text;
-        const auto marker = premature.find("pmat.version = 9");
-        premature.replace(marker, std::string("pmat.version = 9").size(),
+        const auto marker = premature.find("pmat.version = 10");
+        premature.replace(marker, std::string("pmat.version = 10").size(),
                           "pmat.version = 8");
         const auto result = paperweight::parsePmat(premature);
         expect(std::holds_alternative<paperweight::ParseDiagnostic>(result) &&
@@ -936,6 +936,187 @@ void testRegionAttributes()
     std::get<paperweight::RegionFieldOperation>(invalid.layers.back().operation).channel = 256;
     expect(paperweight::validateMaterial(invalid).has_value(),
            "out-of-range region random channels are diagnosed");
+}
+
+void testCourseLayouts()
+{
+    paperweight::CourseLayoutOperation layout;
+    layout.blocks = 7;
+    layout.courses = 6;
+    layout.blockVariation = 0.62;
+    layout.courseVariation = 0.48;
+    layout.stagger = 0.45;
+    layout.crookedness = 0.7;
+    layout.gap = 0.1;
+    layout.softness = 0.025;
+    layout.seedOffset = 811;
+    const paperweight::PhysicalSize size{2.8, 1.2};
+    const auto sample = paperweight::evaluateCourseLayoutFields(
+        layout, size, -0.17, 0.43, 18431);
+    const auto repeated = paperweight::evaluateCourseLayoutFields(
+        layout, size, 0.83, 1.43, 18431);
+    expect(sample.region.key == repeated.region.key &&
+               sample.region.parentKey == repeated.region.parentKey &&
+               sample.region.valid && sample.region.parentValid,
+           "course and block identities remain stable across both tile seams");
+    expectNear(sample.blocks, repeated.blocks, 1.0e-12,
+               "crooked course layouts remain mathematically seamless");
+    expectNear(sample.mortar, 1.0 - sample.blocks, 0.0,
+               "course mortar is the exact complement of the block mask");
+    expect(sample.course + 1.0e-12 >= sample.blocks,
+           "course interiors include every visible block face");
+    expect(sample.region.localU >= 0.0 && sample.region.localU <= 1.0 &&
+               sample.region.localV >= 0.0 && sample.region.localV <= 1.0,
+           "variable course layouts expose normalised region-local coordinates");
+
+    auto regular = layout;
+    regular.blockVariation = 0.0;
+    regular.courseVariation = 0.0;
+    regular.crookedness = 0.0;
+    regular.stagger = 0.0;
+    regular.gap = 0.0;
+    regular.softness = 0.0;
+    const auto regularCentre = paperweight::evaluateCourseLayoutFields(
+        regular,
+        size,
+        0.5 / static_cast<double>(regular.blocks),
+        0.5 / static_cast<double>(regular.courses),
+        18431);
+    expect(regularCentre.blocks == 1.0 && regularCentre.course == 1.0,
+           "zero variation and crookedness reduce to a regular rectangular grid");
+
+    auto slabs = layout;
+    slabs.profile = paperweight::CourseLayoutProfile::slabs;
+    const auto slab = paperweight::evaluateCourseLayoutFields(
+        slabs, size, 0.37, 0.61, 18431);
+    expect(slab.region.key != sample.region.key,
+           "slab subdivision has a domain separate from masonry ownership");
+
+    auto slates = layout;
+    slates.profile = paperweight::CourseLayoutProfile::slates;
+    slates.overlap = 0.4;
+    bool foundOverlap = false;
+    for (std::uint32_t y = 0; y < 64 && !foundOverlap; ++y) {
+        for (std::uint32_t x = 0; x < 64; ++x) {
+            const auto fields = paperweight::evaluateCourseLayoutFields(
+                slates,
+                size,
+                (static_cast<double>(x) + 0.5) / 64.0,
+                (static_cast<double>(y) + 0.5) / 64.0,
+                18431);
+            foundOverlap = fields.overlap > 0.5;
+            if (foundOverlap) {
+                break;
+            }
+        }
+    }
+    expect(foundOverlap,
+           "slate profiles expose a visible deterministic overlap field");
+    expect(paperweight::evaluateCourseLayoutFields(
+               layout, size, 0.37, 0.61, 18431).overlap == 0.0,
+           "masonry profiles do not invent a roof-overlap mask");
+
+    paperweight::Material physicalMaterial;
+    physicalMaterial.physicalSize = size;
+    physicalMaterial.layers = {paperweight::makeCourseLayoutLayer()};
+    auto& physical = std::get<paperweight::CourseLayoutOperation>(
+        physicalMaterial.layers.front().operation);
+    physical.profile = paperweight::CourseLayoutProfile::slates;
+    physical.blocks = 7;
+    physical.courses = 6;
+    physical.physicalDimensions =
+        paperweight::CourseLayoutOperation::PhysicalDimensions{0.4, 0.2, 0.012, 0.06};
+    expect(!paperweight::validateMaterial(physicalMaterial).has_value(),
+           "physical block, course, gap, and overlap dimensions validate together");
+    auto invalidPhysicalCount = physicalMaterial;
+    std::get<paperweight::CourseLayoutOperation>(
+        invalidPhysicalCount.layers.front().operation).blocks = 0;
+    expect(paperweight::validateMaterial(invalidPhysicalCount).has_value(),
+           "stored physical course counts remain valid for relative-mode round trips");
+    auto invalidPhysical = physicalMaterial;
+    std::get<paperweight::CourseLayoutOperation>(
+        invalidPhysical.layers.front().operation).physicalDimensions->overlapMetres = 0.2;
+    expect(paperweight::validateMaterial(invalidPhysical).has_value(),
+           "overlap depths that consume a whole physical course are rejected");
+
+    auto fieldMaterial = paperweight::Material{};
+    auto fieldLayer = paperweight::makeCourseLayoutLayer();
+    auto& fieldLayout = std::get<paperweight::CourseLayoutOperation>(fieldLayer.operation);
+    fieldLayout.blocks = 4;
+    fieldLayout.courses = 2;
+    fieldLayout.blockVariation = 0.0;
+    fieldLayout.courseVariation = 0.0;
+    fieldLayout.stagger = 0.0;
+    fieldLayout.crookedness = 0.0;
+    fieldLayout.gap = 0.0;
+    fieldLayout.softness = 0.0;
+    fieldMaterial.layers = {fieldLayer, paperweight::makeRegionFieldLayer()};
+    auto& courseRandom = std::get<paperweight::RegionFieldOperation>(
+        fieldMaterial.layers.back().operation);
+    courseRandom.field = paperweight::RegionFieldKind::courseRandom;
+    courseRandom.seedOffset = 79;
+    courseRandom.channel = 4;
+    const auto firstBlock = paperweight::evaluateMaterialSample(fieldMaterial, 0.1, 0.2);
+    const auto secondBlock = paperweight::evaluateMaterialSample(fieldMaterial, 0.35, 0.2);
+    expect(firstBlock.region.key != secondBlock.region.key &&
+               firstBlock.region.parentKey == secondBlock.region.parentKey &&
+               firstBlock.scalar == secondBlock.scalar,
+           "course-random fields agree across distinct blocks in one course");
+
+    auto routed = paperweight::Material{};
+    routed.layers = {paperweight::makeCourseLayoutLayer()};
+    const auto compiled = paperweight::compileMaterialGraph(routed);
+    const auto* graph = std::get_if<paperweight::MaterialGraph>(&compiled);
+    bool foundCourseGenerator = false;
+    if (graph != nullptr) {
+        for (const auto& node : graph->nodes) {
+            if (const auto* generator = std::get_if<paperweight::GeneratorNode>(&node)) {
+                foundCourseGenerator = foundCourseGenerator ||
+                    std::holds_alternative<paperweight::CourseLayoutOperation>(
+                        generator->operation);
+            }
+        }
+    }
+    expect(graph != nullptr && foundCourseGenerator,
+           "course layouts compile as reusable graph generators");
+
+    for (const auto output : paperweight::materialOutputs) {
+        paperweight::GenerationRequest request{
+            routed, 80, 56, output, std::nullopt, std::nullopt, 1};
+        const auto serial = paperweight::generate(request);
+        request.workerCount = 4;
+        const auto parallel = paperweight::generate(request);
+        const auto* serialImage = std::get_if<paperweight::Image>(&serial);
+        const auto* parallelImage = std::get_if<paperweight::Image>(&parallel);
+        expect(serialImage != nullptr && parallelImage != nullptr &&
+                   std::equal(
+                       serialImage->pixels().begin(),
+                       serialImage->pixels().end(),
+                       parallelImage->pixels().begin()),
+               "course-layout outputs are byte-identical with one or four workers");
+    }
+
+    const auto serialised = paperweight::serialisePmat(physicalMaterial);
+    const auto* text = std::get_if<std::string>(&serialised);
+    expect(text != nullptr && text->find("pmat.version = 10") != std::string::npos &&
+               text->find("operation = course_layout") != std::string::npos &&
+               text->find("course.sizing = physical") != std::string::npos,
+           "physical course layouts serialise explicitly in .pmat version 10");
+    if (text != nullptr) {
+        const auto reparsed = paperweight::parsePmat(*text);
+        expect(std::holds_alternative<paperweight::Material>(reparsed) &&
+                   std::get<paperweight::Material>(reparsed) == physicalMaterial,
+               "course layouts round-trip exactly through .pmat version 10");
+        auto premature = *text;
+        const auto marker = premature.find("pmat.version = 10");
+        premature.replace(marker, std::string("pmat.version = 10").size(),
+                          "pmat.version = 9");
+        const auto rejected = paperweight::parsePmat(premature);
+        expect(std::holds_alternative<paperweight::ParseDiagnostic>(rejected) &&
+                   std::get<paperweight::ParseDiagnostic>(rejected).message.find(
+                       "require .pmat version 10") != std::string::npos,
+               ".pmat version 9 rejects Course Layout explicitly");
+    }
 }
 
 void testAdvancedSurfaceOperations()
@@ -1111,9 +1292,9 @@ void testAdvancedSurfaceOperations()
                    std::get<paperweight::Material>(reparsed) == material,
                "advanced surface recipes round-trip through .pmat version 8 exactly");
         auto premature = *text;
-        const auto marker = premature.find("pmat.version = 9");
+        const auto marker = premature.find("pmat.version = 10");
         if (marker != std::string::npos) {
-            premature.replace(marker, std::string("pmat.version = 9").size(),
+            premature.replace(marker, std::string("pmat.version = 10").size(),
                               "pmat.version = 7");
         }
         const auto prematureResult = paperweight::parsePmat(premature);
@@ -1282,7 +1463,7 @@ void testStylisedOperations()
 
     const auto serialised = paperweight::serialisePmat(stylised);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 9") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 10") != std::string::npos &&
                text->find("operation = colour_ramp") != std::string::npos &&
                text->find("operation = ink_contour") != std::string::npos,
            "stylisation serialises in the human-readable .pmat v9 format");
@@ -2003,7 +2184,7 @@ void testPmat()
 {
     constexpr std::string_view canonical =
         "# Paperweight procedural material\n"
-        "pmat.version = 9\n"
+        "pmat.version = 10\n"
         "material.type = fbm\n"
         "material.seed = 18431\n"
         "material.width = 1m\n"
@@ -2141,6 +2322,22 @@ void testPmat()
             "region-stones.pmat",
             {3145964603081166891ULL, 3288223741196907183ULL,
              12168598463037332862ULL, 5149046671055124938ULL}},
+        ShowcaseGolden{
+            "castle-flagstone.pmat",
+            {13934266668256225620ULL, 13619053176943020104ULL,
+             15508284524803890667ULL, 3521906500934769144ULL}},
+        ShowcaseGolden{
+            "castle-stone.pmat",
+            {6734270194795994378ULL, 7845019198883664654ULL,
+             17249611255219133448ULL, 15516935511163469849ULL}},
+        ShowcaseGolden{
+            "cel-castle-stone.pmat",
+            {9844301835472419380ULL, 14356323194920482897ULL,
+             14553100330569707255ULL, 16519552215408518380ULL}},
+        ShowcaseGolden{
+            "castle-roof.pmat",
+            {4556783255243544328ULL, 17805210683419656455ULL,
+             15736615163697282365ULL, 5145349734117541484ULL}},
     };
     constexpr std::array outputs{
         paperweight::MaterialOutput::colour,
@@ -2201,13 +2398,13 @@ void testPmat()
         legacyBrickMaterial.layers = {paperweight::makeBrickGridLayer()};
         auto versionFourBrick = std::get<std::string>(
             paperweight::serialisePmat(legacyBrickMaterial));
-        const auto versionMarkerPosition = versionFourBrick.find("pmat.version = 9");
+        const auto versionMarkerPosition = versionFourBrick.find("pmat.version = 10");
         expect(versionMarkerPosition != std::string::npos,
-               "current brick fixture declares format version 9");
+               "current brick fixture declares format version 10");
         if (versionMarkerPosition != std::string::npos) {
             versionFourBrick.replace(
                 versionMarkerPosition,
-                std::string("pmat.version = 9").size(),
+                std::string("pmat.version = 10").size(),
                 "pmat.version = 4");
         }
         for (const auto& field : {
@@ -2530,7 +2727,7 @@ void testPmat()
         }
     };
 
-    expectDiagnostic("pmat.version = 10\n", 1, "unsupported");
+    expectDiagnostic("pmat.version = 11\n", 1, "unsupported");
     expectDiagnostic("unknown.key = 1\n", 1, "unknown key");
     expectDiagnostic("pmat.version = 1\npmat.version = 1\n", 2, "duplicate");
     expectDiagnostic("pmat.version = nope\n", 1, "integer");
@@ -2648,6 +2845,7 @@ int main()
     testMasksAndWarping();
     testStructuralGenerators();
     testRegionAttributes();
+    testCourseLayouts();
     testAdvancedSurfaceOperations();
     testStylisedOperations();
     testMaterialGraph();

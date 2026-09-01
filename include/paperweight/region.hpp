@@ -11,6 +11,8 @@ struct RegionSample {
     double centreDistance{};
     double boundaryDistance{};
     bool valid{};
+    std::uint64_t parentKey{};
+    bool parentValid{};
 
     friend constexpr bool operator==(const RegionSample&, const RegionSample&) = default;
 };

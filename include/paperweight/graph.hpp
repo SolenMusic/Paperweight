@@ -28,7 +28,8 @@ using GeneratorOperation = std::variant<
     LinesOperation,
     RectanglesOperation,
     CirclesOperation,
-    SurfacePatternOperation>;
+    SurfacePatternOperation,
+    CourseLayoutOperation>;
 
 struct GeneratorNode {
     GraphNodeId id{invalidGraphNodeId};
