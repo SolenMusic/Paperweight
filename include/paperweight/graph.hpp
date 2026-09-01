@@ -57,6 +57,33 @@ struct ThresholdProcessing {
         const ThresholdProcessing&) = default;
 };
 
+struct PosteriseProcessing {
+    GraphNodeId input{invalidGraphNodeId};
+    PosteriseOperation parameters;
+
+    friend constexpr bool operator==(
+        const PosteriseProcessing&,
+        const PosteriseProcessing&) = default;
+};
+
+struct ColourRampProcessing {
+    GraphNodeId input{invalidGraphNodeId};
+    ColourRampOperation parameters;
+
+    friend bool operator==(
+        const ColourRampProcessing&,
+        const ColourRampProcessing&) = default;
+};
+
+struct PaletteProcessing {
+    GraphNodeId input{invalidGraphNodeId};
+    PaletteOperation parameters;
+
+    friend bool operator==(
+        const PaletteProcessing&,
+        const PaletteProcessing&) = default;
+};
+
 struct CompositeProcessing {
     GraphNodeId background{invalidGraphNodeId};
     GraphNodeId source{invalidGraphNodeId};
@@ -78,11 +105,24 @@ struct SurfaceFilterProcessing {
         const SurfaceFilterProcessing&) = default;
 };
 
+struct InkContourProcessing {
+    GraphNodeId input{invalidGraphNodeId};
+    InkContourOperation parameters;
+
+    friend constexpr bool operator==(
+        const InkContourProcessing&,
+        const InkContourProcessing&) = default;
+};
+
 using ProcessingOperation = std::variant<
     LevelsProcessing,
     ThresholdProcessing,
+    PosteriseProcessing,
+    ColourRampProcessing,
+    PaletteProcessing,
     CompositeProcessing,
-    SurfaceFilterProcessing>;
+    SurfaceFilterProcessing,
+    InkContourProcessing>;
 
 struct ProcessingNode {
     GraphNodeId id{invalidGraphNodeId};

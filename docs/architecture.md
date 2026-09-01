@@ -118,6 +118,15 @@ ordinary graph sharing at the requested sample remains cached. A radius is
 therefore independent of output pixels, giving stable features at matching
 physical positions across resolutions.
 
+In v0.0.11, posterise, colour ramp, palette, edge-aware soften, and ink contour
+remain ordinary unary processing nodes. Posterise and surface filters declare
+whether they affect colour, scalar surface data, or both. Colour ramps and
+palettes intentionally preserve scalar input, while ink measures a periodic
+neighbourhood but writes RGB only. This makes stylisation orthogonal to material
+shape: callers can change an art direction without silently changing collision-
+like relief cues in height and normal maps. Palette comparison is performed on
+UNORM8 channels with integer squared distance and stable source-order ties.
+
 The prepared graph evaluator resolves identifiers once per generation request
 and memoises shared nodes once per sample. It walks only the branch selected by
 `GenerationRequest::output`. An optional `GenerationRequest::graph` lets a
@@ -179,7 +188,7 @@ hit rate and bounded memory without altering the cancellation contract.
 `.pmat` is a human-readable, versioned text format. Parsing and serialisation live in the portable core. Round trips should be stable and errors should identify useful source locations.
 
 The format version is deliberately independent of the application version.
-Paperweight v0.0.10 reads `.pmat` format versions 1 through 7 and writes version 7.
+Paperweight v0.0.11 reads `.pmat` format versions 1 through 8 and writes version 8.
 Unknown keys and unsupported format versions fail explicitly instead of being
 silently ignored. Version 1 maps to the original implicit FBM source; adding an
 explicit base noise layer produces byte-identical output. Version-2 layers map
@@ -192,6 +201,9 @@ optional physical brick parameter group. Versions 1 through 5 acquire a 1m by
 1m repeat, so default one-repeat generation remains byte-identical. The layer
 recipe still compiles to a graph only in memory. Format version 7 adds the
 surface-pattern and surface-filter groups; versions 1 through 6 remain unchanged.
+Format version 8 adds posterise, colour-ramp, palette, ink-contour, edge-aware
+softening, and processing-target fields. Colour-only processors retain the
+scalar branch used by height, normal, and roughness.
 Direct-graph text persistence is deferred until a node-authoring workflow can
 round-trip it without discarding information.
 See [pmat-format.md](pmat-format.md).
@@ -223,5 +235,6 @@ See [pmat-format.md](pmat-format.md).
 
 Visual node-canvas authoring, graph-specific text persistence, WebAssembly
 bindings, game-engine adapters, complete PBR authoring, arbitrary-angle
-rotation, and procedural GPU backends remain outside v0.0.10. MetalKit in
-v0.0.10 presents CPU-generated images; it is not a generator backend.
+rotation, and procedural GPU backends remain outside v0.0.11. MetalKit in
+v0.0.11 presents CPU-generated images and optional cel lighting; it is not a
+generator backend and its lighting choices are never serialised into `.pmat`.

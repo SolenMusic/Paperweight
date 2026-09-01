@@ -369,6 +369,20 @@ double evaluateSurfaceFilter(
     case SurfaceFilterKind::peaks:
         filtered = std::clamp((neighbourhood.centre - neighbours) * 2.0, 0.0, 1.0);
         break;
+    case SurfaceFilterKind::edgeAwareSoften: {
+        double weighted = neighbourhood.centre;
+        double totalWeight = 1.0;
+        for (std::size_t index = 1; index < samples.size(); ++index) {
+            const double difference = std::abs(samples[index] - neighbourhood.centre);
+            const double weight = operation.sensitivity == 0.0
+                ? (difference == 0.0 ? 1.0 : 0.0)
+                : std::clamp(1.0 - difference / operation.sensitivity, 0.0, 1.0);
+            weighted += samples[index] * weight;
+            totalWeight += weight;
+        }
+        filtered = weighted / totalWeight;
+        break;
+    }
     }
     return std::clamp(
         neighbourhood.centre +

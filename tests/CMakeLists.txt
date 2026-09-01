@@ -29,6 +29,9 @@ foreach(showcase IN ITEMS
     knotty-wood
     marble-veins
     eroded-terrain
+    toon-dungeon
+    painted-metal
+    graphic-marble
 )
     configure_file(
         "${PROJECT_SOURCE_DIR}/examples/materials/${showcase}.pmat"

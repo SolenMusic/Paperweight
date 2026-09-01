@@ -90,6 +90,17 @@ four-map set is published. Metal is presentation-only and remains outside the
 portable core. A compatible Metal device enables 3D; the full 2D editor remains
 available otherwise.
 
+## v0.0.11 - Stylised Materials
+
+Add portable posterisation, smooth and stepped colour ramps, deterministic
+palette reduction, edge-aware smoothing, and periodic ink contours. Processing
+can target colour, scalar surface data, or both; colour-only filters preserve
+height, normal, and roughness outputs exactly. The AppKit editor exposes native
+controls for each operation and includes editable toon-dungeon, painted-metal,
+and graphic-marble showcases. The MetalKit preview gains optional display-only
+cel lighting with discrete diffuse bands, a hard highlight threshold, and rim
+light. The preview effect never enters `.pmat` data or exported maps.
+
 ## v0.1.0 - Game Library
 
 Stabilise the embedding API and add material-definition versioning, generator

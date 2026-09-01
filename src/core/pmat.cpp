@@ -1,5 +1,6 @@
 #include <paperweight/pmat.hpp>
 
+#include <algorithm>
 #include <array>
 #include <charconv>
 #include <cmath>
@@ -67,6 +68,10 @@ enum class OperationKind {
     circles,
     surfacePattern,
     surfaceFilter,
+    posterise,
+    colourRamp,
+    palette,
+    inkContour,
 };
 
 enum class BrickSizing {
@@ -151,6 +156,22 @@ struct LayerBuilder {
     ParsedValue<SurfaceFilterKind> filterKind;
     ParsedValue<double> filterRadius;
     ParsedValue<double> filterStrength;
+    ParsedValue<double> filterSensitivity;
+    ParsedValue<ProcessingTarget> filterTarget;
+    ParsedValue<std::uint32_t> posteriseBands;
+    ParsedValue<ProcessingTarget> posteriseTarget;
+    ParsedValue<ColourRampMode> rampMode;
+    ParsedValue<std::uint32_t> rampStopCount;
+    std::array<ParsedValue<double>, LayerLimits::maximumColourStops> rampPositions;
+    std::array<ParsedValue<Rgba8>, LayerLimits::maximumColourStops> rampColours;
+    ParsedValue<std::uint32_t> paletteColourCount;
+    std::array<ParsedValue<Rgba8>, LayerLimits::maximumColourStops> paletteColours;
+    ParsedValue<Rgba8> inkColour;
+    ParsedValue<double> inkRadius;
+    ParsedValue<double> inkThreshold;
+    ParsedValue<double> inkSoftness;
+    ParsedValue<double> inkStrength;
+    ParsedValue<bool> inkInverted;
 };
 
 std::string_view trim(std::string_view value)
@@ -180,6 +201,31 @@ std::optional<std::pair<std::size_t, std::string_view>> parseLayerKey(std::strin
         return std::nullopt;
     }
     const auto remainder = key.substr(prefix.size());
+    const auto dot = remainder.find('.');
+    if (dot == std::string_view::npos || dot == 0 || dot + 1 >= remainder.size()) {
+        return std::nullopt;
+    }
+    std::size_t index = 0;
+    const auto indexText = remainder.substr(0, dot);
+    const auto result = std::from_chars(
+        indexText.data(),
+        indexText.data() + indexText.size(),
+        index,
+        10);
+    if (result.ec != std::errc{} || result.ptr != indexText.data() + indexText.size()) {
+        return std::nullopt;
+    }
+    return std::pair{index, remainder.substr(dot + 1)};
+}
+
+std::optional<std::pair<std::size_t, std::string_view>> parseIndexedProperty(
+    std::string_view property,
+    std::string_view prefix)
+{
+    if (!property.starts_with(prefix)) {
+        return std::nullopt;
+    }
+    const auto remainder = property.substr(prefix.size());
     const auto dot = remainder.find('.');
     if (dot == std::string_view::npos || dot == 0 || dot + 1 >= remainder.size()) {
         return std::nullopt;
@@ -350,6 +396,18 @@ std::optional<OperationKind> parseOperationKind(std::string_view value)
     if (value == "surface_filter") {
         return OperationKind::surfaceFilter;
     }
+    if (value == "posterise") {
+        return OperationKind::posterise;
+    }
+    if (value == "colour_ramp") {
+        return OperationKind::colourRamp;
+    }
+    if (value == "palette") {
+        return OperationKind::palette;
+    }
+    if (value == "ink_contour") {
+        return OperationKind::inkContour;
+    }
     return std::nullopt;
 }
 
@@ -398,6 +456,34 @@ std::optional<SurfaceFilterKind> parseSurfaceFilterKind(std::string_view value)
     }
     if (value == "peaks") {
         return SurfaceFilterKind::peaks;
+    }
+    if (value == "edge_aware_soften") {
+        return SurfaceFilterKind::edgeAwareSoften;
+    }
+    return std::nullopt;
+}
+
+std::optional<ProcessingTarget> parseProcessingTarget(std::string_view value)
+{
+    if (value == "colour") {
+        return ProcessingTarget::colour;
+    }
+    if (value == "scalar") {
+        return ProcessingTarget::scalar;
+    }
+    if (value == "all") {
+        return ProcessingTarget::colourAndScalar;
+    }
+    return std::nullopt;
+}
+
+std::optional<ColourRampMode> parseColourRampMode(std::string_view value)
+{
+    if (value == "linear") {
+        return ColourRampMode::linear;
+    }
+    if (value == "stepped") {
+        return ColourRampMode::stepped;
     }
     return std::nullopt;
 }
@@ -515,10 +601,28 @@ bool hasVersionSevenFields(const LayerBuilder& builder)
         builder.filterRadius.value || builder.filterStrength.value;
 }
 
+bool hasVersionEightFields(const LayerBuilder& builder)
+{
+    const auto any = [](const auto& fields) {
+        return std::any_of(fields.begin(), fields.end(), [](const auto& field) {
+            return field.value.has_value();
+        });
+    };
+    return builder.filterSensitivity.value || builder.filterTarget.value ||
+        builder.posteriseBands.value || builder.posteriseTarget.value ||
+        builder.rampMode.value || builder.rampStopCount.value ||
+        any(builder.rampPositions) || any(builder.rampColours) ||
+        builder.paletteColourCount.value || any(builder.paletteColours) ||
+        builder.inkColour.value || builder.inkRadius.value ||
+        builder.inkThreshold.value || builder.inkSoftness.value ||
+        builder.inkStrength.value || builder.inkInverted.value;
+}
+
 bool hasStructuralFields(const LayerBuilder& builder)
 {
     return hasVersionFourFields(builder) || hasVersionFiveFields(builder) ||
-        hasVersionSixFields(builder) || hasVersionSevenFields(builder);
+        hasVersionSixFields(builder) || hasVersionSevenFields(builder) ||
+        hasVersionEightFields(builder);
 }
 
 template<typename Value>
@@ -1204,7 +1308,7 @@ ParseResult parsePmat(std::string_view text)
                         return diagnostic(
                             lineNumber,
                             valueColumn,
-                            "filter kind must be 'invert', 'soften', 'expand', 'contract', 'edge', 'slope', 'cavity', or 'peaks'");
+                            "filter kind must be 'invert', 'soften', 'expand', 'contract', 'edge', 'slope', 'cavity', 'peaks', or 'edge_aware_soften'");
                     }
                     if (!storeValue(builder.filterKind, *parsed, lineNumber, valueColumn)) {
                         return duplicate();
@@ -1223,6 +1327,148 @@ ParseResult parsePmat(std::string_view text)
                         return diagnostic(lineNumber, valueColumn, "filter strength must be a decimal number");
                     }
                     if (!storeValue(builder.filterStrength, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "filter.sensitivity") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "filter sensitivity must be a decimal number");
+                    }
+                    if (!storeValue(builder.filterSensitivity, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "filter.target") {
+                    const auto parsed = parseProcessingTarget(value);
+                    if (!parsed) {
+                        return diagnostic(lineNumber, valueColumn, "filter target must be 'colour', 'scalar', or 'all'");
+                    }
+                    if (!storeValue(builder.filterTarget, *parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "posterise.bands") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "posterise bands must be an integer");
+                    }
+                    if (!storeValue(builder.posteriseBands, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "posterise.target") {
+                    const auto parsed = parseProcessingTarget(value);
+                    if (!parsed) {
+                        return diagnostic(lineNumber, valueColumn, "posterise target must be 'colour', 'scalar', or 'all'");
+                    }
+                    if (!storeValue(builder.posteriseTarget, *parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "ramp.mode") {
+                    const auto parsed = parseColourRampMode(value);
+                    if (!parsed) {
+                        return diagnostic(lineNumber, valueColumn, "colour ramp mode must be 'linear' or 'stepped'");
+                    }
+                    if (!storeValue(builder.rampMode, *parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "ramp.stops") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "colour ramp stop count must be an integer");
+                    }
+                    if (!storeValue(builder.rampStopCount, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property.starts_with("ramp.stop.")) {
+                    const auto indexed = parseIndexedProperty(property, "ramp.stop.");
+                    if (!indexed || indexed->first >= LayerLimits::maximumColourStops) {
+                        return diagnostic(lineNumber, 1, "colour ramp stop index must be between 0 and 7");
+                    }
+                    const auto stopIndex = indexed->first;
+                    if (indexed->second == "position") {
+                        double parsed = 0.0;
+                        if (!parseDouble(value, parsed)) {
+                            return diagnostic(lineNumber, valueColumn, "colour ramp stop position must be a decimal number");
+                        }
+                        if (!storeValue(builder.rampPositions[stopIndex], parsed, lineNumber, valueColumn)) {
+                            return duplicate();
+                        }
+                    } else if (indexed->second == "colour") {
+                        Rgba8 parsed;
+                        if (!parseColour(value, parsed)) {
+                            return diagnostic(lineNumber, valueColumn, "colour ramp stop colour must use 0xRRGGBBAA notation");
+                        }
+                        if (!storeValue(builder.rampColours[stopIndex], parsed, lineNumber, valueColumn)) {
+                            return duplicate();
+                        }
+                    } else {
+                        return diagnostic(lineNumber, 1, "unknown colour ramp stop key '" + std::string(key) + "'");
+                    }
+                } else if (property == "palette.colours") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "palette colour count must be an integer");
+                    }
+                    if (!storeValue(builder.paletteColourCount, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property.starts_with("palette.entry.")) {
+                    const auto indexed = parseIndexedProperty(property, "palette.entry.");
+                    if (!indexed || indexed->first >= LayerLimits::maximumColourStops ||
+                        indexed->second != "colour") {
+                        return diagnostic(lineNumber, 1, "palette entry must be palette.entry.0.colour through palette.entry.7.colour");
+                    }
+                    Rgba8 parsed;
+                    if (!parseColour(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "palette colour must use 0xRRGGBBAA notation");
+                    }
+                    if (!storeValue(builder.paletteColours[indexed->first], parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "ink.colour") {
+                    Rgba8 parsed;
+                    if (!parseColour(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "ink colour must use 0xRRGGBBAA notation");
+                    }
+                    if (!storeValue(builder.inkColour, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "ink.radius") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "ink radius must be a decimal number");
+                    }
+                    if (!storeValue(builder.inkRadius, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "ink.threshold") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "ink threshold must be a decimal number");
+                    }
+                    if (!storeValue(builder.inkThreshold, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "ink.softness") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "ink softness must be a decimal number");
+                    }
+                    if (!storeValue(builder.inkSoftness, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "ink.strength") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "ink strength must be a decimal number");
+                    }
+                    if (!storeValue(builder.inkStrength, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "ink.inverted") {
+                    bool parsed = false;
+                    if (!parseBoolean(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "ink inverted must be true or false");
+                    }
+                    if (!storeValue(builder.inkInverted, parsed, lineNumber, valueColumn)) {
                         return duplicate();
                     }
                 } else if (property == "transform.scale_x") {
@@ -1439,6 +1685,18 @@ ParseResult parsePmat(std::string_view text)
                     "advanced surface operations require .pmat version 7");
             }
 
+            if (formatVersion < 8 &&
+                (hasVersionEightFields(builder) ||
+                 *builder.operation.value == OperationKind::posterise ||
+                 *builder.operation.value == OperationKind::colourRamp ||
+                 *builder.operation.value == OperationKind::palette ||
+                 *builder.operation.value == OperationKind::inkContour)) {
+                return diagnostic(
+                    lineNumber + 1,
+                    1,
+                    "stylisation operations require .pmat version 8");
+            }
+
             if (formatVersion < 4 &&
                 (hasVersionFourFields(builder) ||
                  isStructuralOperation(*builder.operation.value))) {
@@ -1605,12 +1863,30 @@ ParseResult parsePmat(std::string_view text)
                 builder.surfaceDetail.value || builder.surfaceDistortion.value ||
                 builder.surfaceVariation.value || builder.surfaceSeedOffset.value;
             const bool hasFilterFields = builder.filterKind.value ||
-                builder.filterRadius.value || builder.filterStrength.value;
+                builder.filterRadius.value || builder.filterStrength.value ||
+                builder.filterSensitivity.value || builder.filterTarget.value;
+            const auto anyParsed = [](const auto& fields) {
+                return std::any_of(fields.begin(), fields.end(), [](const auto& field) {
+                    return field.value.has_value();
+                });
+            };
+            const bool hasPosteriseFields = builder.posteriseBands.value ||
+                builder.posteriseTarget.value;
+            const bool hasRampFields = builder.rampMode.value ||
+                builder.rampStopCount.value || anyParsed(builder.rampPositions) ||
+                anyParsed(builder.rampColours);
+            const bool hasPaletteFields = builder.paletteColourCount.value ||
+                anyParsed(builder.paletteColours);
+            const bool hasInkFields = builder.inkColour.value || builder.inkRadius.value ||
+                builder.inkThreshold.value || builder.inkSoftness.value ||
+                builder.inkStrength.value || builder.inkInverted.value;
             const int operationGroupCount = static_cast<int>(hasBrickFields) +
                 static_cast<int>(hasTileFields) + static_cast<int>(hasWorleyFields) +
                 static_cast<int>(hasRandomFields) + static_cast<int>(hasLineFields) +
                 static_cast<int>(hasRectangleFields) + static_cast<int>(hasCircleFields) +
-                static_cast<int>(hasSurfaceFields) + static_cast<int>(hasFilterFields);
+                static_cast<int>(hasSurfaceFields) + static_cast<int>(hasFilterFields) +
+                static_cast<int>(hasPosteriseFields) + static_cast<int>(hasRampFields) +
+                static_cast<int>(hasPaletteFields) + static_cast<int>(hasInkFields);
             const bool hasClassicFields = builder.seedOffset.value || builder.solidColour.value ||
                 builder.levelsLow.value || builder.levelsHigh.value ||
                 builder.levelsGamma.value || builder.threshold.value;
@@ -2146,6 +2422,12 @@ ParseResult parsePmat(std::string_view text)
                 if (!builder.filterStrength.value) {
                     return missingLayerField(lineNumber + 1, index, "filter.strength");
                 }
+                if (formatVersion >= 8 && !builder.filterSensitivity.value) {
+                    return missingLayerField(lineNumber + 1, index, "filter.sensitivity");
+                }
+                if (formatVersion >= 8 && !builder.filterTarget.value) {
+                    return missingLayerField(lineNumber + 1, index, "filter.target");
+                }
                 if (hasClassicFields || operationGroupCount != 1) {
                     return crossOperationError();
                 }
@@ -2164,10 +2446,183 @@ ParseResult parsePmat(std::string_view text)
                         builder.filterStrength.column,
                         "filter strength must be finite and between 0 and 1");
                 }
+                if (builder.filterSensitivity.value &&
+                    outside(*builder.filterSensitivity.value, 0.0, 1.0)) {
+                    return diagnostic(
+                        builder.filterSensitivity.line,
+                        builder.filterSensitivity.column,
+                        "filter sensitivity must be finite and between 0 and 1");
+                }
                 layer.operation = SurfaceFilterOperation{
                     *builder.filterKind.value,
                     *builder.filterRadius.value,
                     *builder.filterStrength.value,
+                    builder.filterSensitivity.value.value_or(0.2),
+                    builder.filterTarget.value.value_or(
+                        ProcessingTarget::colourAndScalar),
+                };
+                break;
+            case OperationKind::posterise:
+                if (!builder.posteriseBands.value) {
+                    return missingLayerField(lineNumber + 1, index, "posterise.bands");
+                }
+                if (!builder.posteriseTarget.value) {
+                    return missingLayerField(lineNumber + 1, index, "posterise.target");
+                }
+                if (hasClassicFields || operationGroupCount != 1) {
+                    return crossOperationError();
+                }
+                if (*builder.posteriseBands.value < LayerLimits::minimumPosteriseBands ||
+                    *builder.posteriseBands.value > LayerLimits::maximumPosteriseBands) {
+                    return diagnostic(
+                        builder.posteriseBands.line,
+                        builder.posteriseBands.column,
+                        "posterise bands must be between 2 and 16");
+                }
+                layer.operation = PosteriseOperation{
+                    *builder.posteriseBands.value,
+                    *builder.posteriseTarget.value,
+                };
+                break;
+            case OperationKind::colourRamp: {
+                if (!builder.rampMode.value) {
+                    return missingLayerField(lineNumber + 1, index, "ramp.mode");
+                }
+                if (!builder.rampStopCount.value) {
+                    return missingLayerField(lineNumber + 1, index, "ramp.stops");
+                }
+                if (hasClassicFields || operationGroupCount != 1) {
+                    return crossOperationError();
+                }
+                const auto count = *builder.rampStopCount.value;
+                if (count < LayerLimits::minimumColourStops ||
+                    count > LayerLimits::maximumColourStops) {
+                    return diagnostic(
+                        builder.rampStopCount.line,
+                        builder.rampStopCount.column,
+                        "colour ramp must contain between 2 and 8 stops");
+                }
+                ColourRampOperation ramp;
+                ramp.mode = *builder.rampMode.value;
+                ramp.stops.clear();
+                ramp.stops.reserve(count);
+                double previous = -1.0;
+                for (std::size_t stopIndex = 0; stopIndex < count; ++stopIndex) {
+                    if (!builder.rampPositions[stopIndex].value) {
+                        return missingLayerField(
+                            lineNumber + 1,
+                            index,
+                            "ramp.stop." + std::to_string(stopIndex) + ".position");
+                    }
+                    if (!builder.rampColours[stopIndex].value) {
+                        return missingLayerField(
+                            lineNumber + 1,
+                            index,
+                            "ramp.stop." + std::to_string(stopIndex) + ".colour");
+                    }
+                    const double position = *builder.rampPositions[stopIndex].value;
+                    if (!std::isfinite(position) || position < 0.0 || position > 1.0 ||
+                        position <= previous) {
+                        return diagnostic(
+                            builder.rampPositions[stopIndex].line,
+                            builder.rampPositions[stopIndex].column,
+                            "colour ramp stop positions must be within 0 to 1 and strictly increasing");
+                    }
+                    previous = position;
+                    ramp.stops.push_back({position, *builder.rampColours[stopIndex].value});
+                }
+                for (std::size_t stopIndex = count;
+                     stopIndex < LayerLimits::maximumColourStops;
+                     ++stopIndex) {
+                    if (builder.rampPositions[stopIndex].value ||
+                        builder.rampColours[stopIndex].value) {
+                        return diagnostic(
+                            lineNumber + 1,
+                            1,
+                            "colour ramp declares a stop beyond ramp.stops");
+                    }
+                }
+                layer.operation = std::move(ramp);
+                break;
+            }
+            case OperationKind::palette: {
+                if (!builder.paletteColourCount.value) {
+                    return missingLayerField(lineNumber + 1, index, "palette.colours");
+                }
+                if (hasClassicFields || operationGroupCount != 1) {
+                    return crossOperationError();
+                }
+                const auto count = *builder.paletteColourCount.value;
+                if (count < LayerLimits::minimumColourStops ||
+                    count > LayerLimits::maximumColourStops) {
+                    return diagnostic(
+                        builder.paletteColourCount.line,
+                        builder.paletteColourCount.column,
+                        "palette must contain between 2 and 8 colours");
+                }
+                PaletteOperation palette;
+                palette.colours.clear();
+                palette.colours.reserve(count);
+                for (std::size_t colourIndex = 0; colourIndex < count; ++colourIndex) {
+                    if (!builder.paletteColours[colourIndex].value) {
+                        return missingLayerField(
+                            lineNumber + 1,
+                            index,
+                            "palette.entry." + std::to_string(colourIndex) + ".colour");
+                    }
+                    palette.colours.push_back(*builder.paletteColours[colourIndex].value);
+                }
+                for (std::size_t colourIndex = count;
+                     colourIndex < LayerLimits::maximumColourStops;
+                     ++colourIndex) {
+                    if (builder.paletteColours[colourIndex].value) {
+                        return diagnostic(
+                            lineNumber + 1,
+                            1,
+                            "palette declares an entry beyond palette.colours");
+                    }
+                }
+                layer.operation = std::move(palette);
+                break;
+            }
+            case OperationKind::inkContour:
+                if (!builder.inkColour.value) {
+                    return missingLayerField(lineNumber + 1, index, "ink.colour");
+                }
+                if (!builder.inkRadius.value) {
+                    return missingLayerField(lineNumber + 1, index, "ink.radius");
+                }
+                if (!builder.inkThreshold.value) {
+                    return missingLayerField(lineNumber + 1, index, "ink.threshold");
+                }
+                if (!builder.inkSoftness.value) {
+                    return missingLayerField(lineNumber + 1, index, "ink.softness");
+                }
+                if (!builder.inkStrength.value) {
+                    return missingLayerField(lineNumber + 1, index, "ink.strength");
+                }
+                if (!builder.inkInverted.value) {
+                    return missingLayerField(lineNumber + 1, index, "ink.inverted");
+                }
+                if (hasClassicFields || operationGroupCount != 1) {
+                    return crossOperationError();
+                }
+                if (outside(*builder.inkRadius.value, 0.0, 0.25) ||
+                    outside(*builder.inkThreshold.value, 0.0, 1.0) ||
+                    outside(*builder.inkSoftness.value, 0.0, 0.5) ||
+                    outside(*builder.inkStrength.value, 0.0, 1.0)) {
+                    return diagnostic(
+                        builder.inkRadius.line,
+                        builder.inkRadius.column,
+                        "ink radius, threshold, softness, or strength is outside its supported range");
+                }
+                layer.operation = InkContourOperation{
+                    *builder.inkColour.value,
+                    *builder.inkRadius.value,
+                    *builder.inkThreshold.value,
+                    *builder.inkSoftness.value,
+                    *builder.inkStrength.value,
+                    *builder.inkInverted.value,
                 };
                 break;
             }
@@ -2398,13 +2853,67 @@ SerialisationResult serialisePmat(const Material& material)
                        std::get_if<SurfaceFilterOperation>(&layer.operation)) {
             const auto radius = formatDouble(filter->radius);
             const auto strength = formatDouble(filter->strength);
-            if (radius.empty() || strength.empty()) {
+            const auto sensitivity = formatDouble(filter->sensitivity);
+            if (radius.empty() || strength.empty() || sensitivity.empty()) {
                 return SerialisationError{"could not format surface filter parameters"};
             }
             output += prefix + "filter.kind = " +
                 std::string(surfaceFilterKindName(filter->kind)) + "\n";
             output += prefix + "filter.radius = " + radius + "\n";
             output += prefix + "filter.strength = " + strength + "\n";
+            output += prefix + "filter.sensitivity = " + sensitivity + "\n";
+            output += prefix + "filter.target = " +
+                std::string(processingTargetName(filter->target)) + "\n";
+        } else if (const auto* posterise =
+                       std::get_if<PosteriseOperation>(&layer.operation)) {
+            output += prefix + "posterise.bands = " +
+                std::to_string(posterise->bands) + "\n";
+            output += prefix + "posterise.target = " +
+                std::string(processingTargetName(posterise->target)) + "\n";
+        } else if (const auto* ramp =
+                       std::get_if<ColourRampOperation>(&layer.operation)) {
+            output += prefix + "ramp.mode = " +
+                std::string(colourRampModeName(ramp->mode)) + "\n";
+            output += prefix + "ramp.stops = " +
+                std::to_string(ramp->stops.size()) + "\n";
+            for (std::size_t stopIndex = 0; stopIndex < ramp->stops.size(); ++stopIndex) {
+                const auto position = formatDouble(ramp->stops[stopIndex].position);
+                if (position.empty()) {
+                    return SerialisationError{"could not format colour ramp stop position"};
+                }
+                const auto stopPrefix = prefix + "ramp.stop." +
+                    std::to_string(stopIndex) + ".";
+                output += stopPrefix + "position = " + position + "\n";
+                output += stopPrefix + "colour = " +
+                    formatColour(ramp->stops[stopIndex].colour) + "\n";
+            }
+        } else if (const auto* palette =
+                       std::get_if<PaletteOperation>(&layer.operation)) {
+            output += prefix + "palette.colours = " +
+                std::to_string(palette->colours.size()) + "\n";
+            for (std::size_t colourIndex = 0;
+                 colourIndex < palette->colours.size();
+                 ++colourIndex) {
+                output += prefix + "palette.entry." + std::to_string(colourIndex) +
+                    ".colour = " + formatColour(palette->colours[colourIndex]) + "\n";
+            }
+        } else if (const auto* contour =
+                       std::get_if<InkContourOperation>(&layer.operation)) {
+            const auto radius = formatDouble(contour->radius);
+            const auto threshold = formatDouble(contour->threshold);
+            const auto softness = formatDouble(contour->softness);
+            const auto strength = formatDouble(contour->strength);
+            if (radius.empty() || threshold.empty() || softness.empty() ||
+                strength.empty()) {
+                return SerialisationError{"could not format ink contour parameters"};
+            }
+            output += prefix + "ink.colour = " + formatColour(contour->colour) + "\n";
+            output += prefix + "ink.radius = " + radius + "\n";
+            output += prefix + "ink.threshold = " + threshold + "\n";
+            output += prefix + "ink.softness = " + softness + "\n";
+            output += prefix + "ink.strength = " + strength + "\n";
+            output += prefix + "ink.inverted = " +
+                (contour->inverted ? "true\n" : "false\n");
         }
 
         const auto offsetX = formatDouble(layer.transform.offsetX);

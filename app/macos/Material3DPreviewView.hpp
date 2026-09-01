@@ -21,6 +21,10 @@ typedef NS_ENUM(NSInteger, PWPreviewShape) {
 @property(nonatomic) double ambientIntensity;
 @property(nonatomic) double displacementStrength;
 @property(nonatomic) double previewNormalStrength;
+@property(nonatomic) BOOL toonLightingEnabled;
+@property(nonatomic) double toonBandCount;
+@property(nonatomic) double toonSpecularThreshold;
+@property(nonatomic) double toonRimStrength;
 @property(nonatomic) double animationPhase;
 @property(nonatomic) double animationSpeed;
 @property(nonatomic, getter=isAnimationRunning) BOOL animationRunning;

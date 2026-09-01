@@ -112,9 +112,9 @@ paperweight::Material materialWithNoiseParameters(
 
 void testVersion()
 {
-    constexpr paperweight::Version expected{0, 0, 10};
+    constexpr paperweight::Version expected{0, 0, 11};
     static_assert(paperweight::currentVersion == expected);
-    expect(paperweight::versionString() == "0.0.10", "version string is 0.0.10");
+    expect(paperweight::versionString() == "0.0.11", "version string is 0.0.11");
 }
 
 void testImage()
@@ -866,23 +866,23 @@ void testAdvancedSurfaceOperations()
     const auto* text = std::get_if<std::string>(&serialised);
     expect(text != nullptr && text->find("surface.kind = ridged_noise") != std::string::npos &&
                text->find("filter.kind = edge") != std::string::npos,
-           "format version 7 stores surface patterns and filters explicitly");
+           "format version 8 stores surface patterns and filters explicitly");
     if (text != nullptr) {
         const auto reparsed = paperweight::parsePmat(*text);
         expect(std::holds_alternative<paperweight::Material>(reparsed) &&
                    std::get<paperweight::Material>(reparsed) == material,
-               "advanced surface recipes round-trip through .pmat version 7 exactly");
+               "advanced surface recipes round-trip through .pmat version 8 exactly");
         auto premature = *text;
-        const auto marker = premature.find("pmat.version = 7");
+        const auto marker = premature.find("pmat.version = 8");
         if (marker != std::string::npos) {
-            premature.replace(marker, std::string("pmat.version = 7").size(),
-                              "pmat.version = 6");
+            premature.replace(marker, std::string("pmat.version = 8").size(),
+                              "pmat.version = 7");
         }
         const auto prematureResult = paperweight::parsePmat(premature);
         expect(std::holds_alternative<paperweight::ParseDiagnostic>(prematureResult) &&
                    std::get<paperweight::ParseDiagnostic>(prematureResult).message.find(
-                       "require .pmat version 7") != std::string::npos,
-               "older .pmat versions reject advanced surface fields explicitly");
+                       "require .pmat version 8") != std::string::npos,
+               "older .pmat versions reject v8 surface filter fields explicitly");
     }
 
     auto invalid = material;
@@ -893,6 +893,167 @@ void testAdvancedSurfaceOperations()
     std::get<paperweight::SurfaceFilterOperation>(invalid.layers.back().operation).radius = 0.5;
     expect(paperweight::validateMaterial(invalid).has_value(),
            "invalid surface filter radius is diagnosed");
+}
+
+void testStylisedOperations()
+{
+    paperweight::Material material;
+    const paperweight::EvaluationContext context{material, 0.25, 0.75};
+    const paperweight::EvaluatedSample input{0.62, 0.12, 0.54, 0.91, 1.0};
+
+    const auto colourPosterised = paperweight::evaluateOperation(
+        paperweight::PosteriseOperation{3, paperweight::ProcessingTarget::colour},
+        context,
+        input);
+    expectNear(colourPosterised.scalar, input.scalar, 0.0,
+               "colour posterisation preserves scalar structure exactly");
+    expectNear(colourPosterised.red, 0.0, 0.0,
+               "posterisation selects the nearest authored band");
+    expectNear(colourPosterised.green, 0.5, 0.0,
+               "posterisation produces a middle band");
+    expectNear(colourPosterised.blue, 1.0, 0.0,
+               "posterisation retains the upper endpoint");
+
+    const auto scalarPosterised = paperweight::evaluateOperation(
+        paperweight::PosteriseOperation{4, paperweight::ProcessingTarget::scalar},
+        context,
+        input);
+    expectNear(scalarPosterised.scalar, 2.0 / 3.0, 1.0e-12,
+               "scalar posterisation deliberately terraces material structure");
+    expectNear(scalarPosterised.red, input.red, 0.0,
+               "scalar-only posterisation preserves colour channels");
+
+    paperweight::ColourRampOperation ramp;
+    ramp.stops = {
+        {0.0, {20, 28, 48, 255}},
+        {0.5, {78, 132, 164, 255}},
+        {1.0, {238, 218, 142, 255}},
+    };
+    const auto ramped = paperweight::evaluateOperation(ramp, context, input);
+    expectNear(ramped.scalar, input.scalar, 0.0,
+               "colour ramps preserve the source scalar exactly");
+    expect(ramped.red > 78.0 / 255.0 && ramped.red < 238.0 / 255.0,
+           "linear colour ramps interpolate between enclosing stops");
+    ramp.mode = paperweight::ColourRampMode::stepped;
+    const auto stepped = paperweight::evaluateOperation(ramp, context, input);
+    expectNear(stepped.red, 78.0 / 255.0, 1.0e-12,
+               "stepped colour ramps hold the preceding stop");
+
+    paperweight::PaletteOperation palette;
+    palette.colours = {{255, 0, 0, 255}, {0, 0, 255, 255}};
+    const paperweight::EvaluatedSample tie{0.4, 1.0, 0.0, 1.0, 1.0};
+    const auto quantised = paperweight::evaluateOperation(palette, context, tie);
+    expectNear(quantised.red, 1.0, 0.0,
+               "palette ties select the first authored colour deterministically");
+    expectNear(quantised.blue, 0.0, 0.0,
+               "palette quantisation replaces arbitrary colour exactly");
+    expectNear(quantised.scalar, tie.scalar, 0.0,
+               "palette quantisation preserves scalar structure");
+
+    const paperweight::SurfaceNeighbourhood neighbourhood{
+        0.2, 0.18, 0.22, 0.19, 0.21, 0.2, 0.23, 0.17, 1.0};
+    const auto edgeAware = paperweight::evaluateSurfaceFilter(
+        paperweight::SurfaceFilterOperation{
+            paperweight::SurfaceFilterKind::edgeAwareSoften,
+            0.02,
+            1.0,
+            0.1,
+            paperweight::ProcessingTarget::colourAndScalar,
+        },
+        neighbourhood);
+    const auto ordinary = paperweight::evaluateSurfaceFilter(
+        paperweight::SurfaceFilterOperation{
+            paperweight::SurfaceFilterKind::soften, 0.02, 1.0},
+        neighbourhood);
+    expect(edgeAware < ordinary && edgeAware > 0.17 && edgeAware < 0.23,
+           "edge-aware smoothing rejects an outlier while smoothing its local region");
+
+    paperweight::Material base;
+    base.seed = 424242;
+    base.layers = {paperweight::makeNoiseLayer()};
+    auto stylised = base;
+    stylised.layers.push_back(paperweight::makePosteriseLayer());
+    auto colourRampLayer = paperweight::makeColourRampLayer();
+    auto& authoredRamp = std::get<paperweight::ColourRampOperation>(
+        colourRampLayer.operation);
+    authoredRamp.mode = paperweight::ColourRampMode::stepped;
+    authoredRamp.stops = ramp.stops;
+    stylised.layers.push_back(colourRampLayer);
+    auto paletteLayer = paperweight::makePaletteLayer();
+    std::get<paperweight::PaletteOperation>(paletteLayer.operation).colours = {
+        {23, 31, 42, 255},
+        {79, 121, 137, 255},
+        {224, 202, 132, 255},
+    };
+    stylised.layers.push_back(paletteLayer);
+    auto smoothLayer = paperweight::makeSurfaceFilterLayer(
+        paperweight::SurfaceFilterKind::edgeAwareSoften);
+    auto& smooth = std::get<paperweight::SurfaceFilterOperation>(
+        smoothLayer.operation);
+    smooth.radius = 0.01;
+    smooth.sensitivity = 0.18;
+    smooth.target = paperweight::ProcessingTarget::colour;
+    stylised.layers.push_back(smoothLayer);
+    auto inkLayer = paperweight::makeInkContourLayer();
+    auto& ink = std::get<paperweight::InkContourOperation>(inkLayer.operation);
+    ink.colour = {18, 20, 28, 220};
+    ink.radius = 0.012;
+    ink.threshold = 0.08;
+    ink.softness = 0.04;
+    stylised.layers.push_back(inkLayer);
+
+    const auto baseColour = paperweight::generate(
+        {base, 40, 32, paperweight::MaterialOutput::colour, std::nullopt, std::nullopt});
+    const auto styledColour = paperweight::generate(
+        {stylised, 40, 32, paperweight::MaterialOutput::colour, std::nullopt, std::nullopt});
+    const auto* baseColourImage = std::get_if<paperweight::Image>(&baseColour);
+    const auto* styledColourImage = std::get_if<paperweight::Image>(&styledColour);
+    expect(baseColourImage != nullptr && styledColourImage != nullptr &&
+               checksum(baseColourImage->pixels()) != checksum(styledColourImage->pixels()),
+           "stylisation processing changes the colour output");
+
+    for (const auto output : std::array{
+             paperweight::MaterialOutput::height,
+             paperweight::MaterialOutput::normal,
+             paperweight::MaterialOutput::roughness,
+         }) {
+        const auto original = paperweight::generate(
+            {base, 40, 32, output, std::nullopt, std::nullopt});
+        const auto processed = paperweight::generate(
+            {stylised, 40, 32, output, std::nullopt, std::nullopt});
+        const auto* originalImage = std::get_if<paperweight::Image>(&original);
+        const auto* processedImage = std::get_if<paperweight::Image>(&processed);
+        expect(originalImage != nullptr && processedImage != nullptr &&
+                   checksum(originalImage->pixels()) == checksum(processedImage->pixels()),
+               "colour-only stylisation preserves every scalar-derived output byte");
+    }
+
+    const auto compiled = paperweight::compileMaterialGraph(stylised);
+    const auto* graph = std::get_if<paperweight::MaterialGraph>(&compiled);
+    expect(graph != nullptr, "stylisation layers compile into the reusable graph");
+    if (graph != nullptr) {
+        const auto sample = paperweight::evaluateMaterialGraphSample(
+            stylised, *graph, paperweight::MaterialOutput::colour, -0.17, 0.43);
+        const auto repeated = paperweight::evaluateMaterialGraphSample(
+            stylised, *graph, paperweight::MaterialOutput::colour, 0.83, 1.43);
+        expectNear(sample.red, repeated.red, 1.0e-12,
+                   "stylised colour remains mathematically seamless on x and y");
+        expectNear(sample.green, repeated.green, 1.0e-12,
+                   "ink contours remain periodic through graph neighbourhood sampling");
+    }
+
+    const auto serialised = paperweight::serialisePmat(stylised);
+    const auto* text = std::get_if<std::string>(&serialised);
+    expect(text != nullptr && text->find("pmat.version = 8") != std::string::npos &&
+               text->find("operation = colour_ramp") != std::string::npos &&
+               text->find("operation = ink_contour") != std::string::npos,
+           "stylisation serialises in the human-readable .pmat v8 format");
+    if (text != nullptr) {
+        const auto reparsed = paperweight::parsePmat(*text);
+        expect(std::holds_alternative<paperweight::Material>(reparsed) &&
+                   std::get<paperweight::Material>(reparsed) == stylised,
+               "stylised materials round-trip through .pmat v8 exactly");
+    }
 }
 
 void testMaterialGraph()
@@ -1604,7 +1765,7 @@ void testPmat()
 {
     constexpr std::string_view canonical =
         "# Paperweight procedural material\n"
-        "pmat.version = 7\n"
+        "pmat.version = 8\n"
         "material.type = fbm\n"
         "material.seed = 18431\n"
         "material.width = 1m\n"
@@ -1726,6 +1887,18 @@ void testPmat()
             "eroded-terrain.pmat",
             {2672928488154530846ULL, 11242585904416509996ULL,
              693934066486834851ULL, 17089152962988358180ULL}},
+        ShowcaseGolden{
+            "toon-dungeon.pmat",
+            {8499675537848085354ULL, 13431479686308136619ULL,
+             16421642948452846500ULL, 3171233496124241193ULL}},
+        ShowcaseGolden{
+            "painted-metal.pmat",
+            {10753402355863875260ULL, 14470172278737105751ULL,
+             4592657175009531340ULL, 4028349011060139012ULL}},
+        ShowcaseGolden{
+            "graphic-marble.pmat",
+            {5673632620284603551ULL, 4843462098491275796ULL,
+             13736793143684132695ULL, 5671637863622030837ULL}},
     };
     constexpr std::array outputs{
         paperweight::MaterialOutput::colour,
@@ -1786,13 +1959,13 @@ void testPmat()
         legacyBrickMaterial.layers = {paperweight::makeBrickGridLayer()};
         auto versionFourBrick = std::get<std::string>(
             paperweight::serialisePmat(legacyBrickMaterial));
-        const auto versionMarkerPosition = versionFourBrick.find("pmat.version = 7");
+        const auto versionMarkerPosition = versionFourBrick.find("pmat.version = 8");
         expect(versionMarkerPosition != std::string::npos,
-               "current brick fixture declares format version 7");
+               "current brick fixture declares format version 8");
         if (versionMarkerPosition != std::string::npos) {
             versionFourBrick.replace(
                 versionMarkerPosition,
-                std::string("pmat.version = 7").size(),
+                std::string("pmat.version = 8").size(),
                 "pmat.version = 4");
         }
         for (const auto& field : {
@@ -2115,7 +2288,7 @@ void testPmat()
         }
     };
 
-    expectDiagnostic("pmat.version = 8\n", 1, "unsupported");
+    expectDiagnostic("pmat.version = 9\n", 1, "unsupported");
     expectDiagnostic("unknown.key = 1\n", 1, "unknown key");
     expectDiagnostic("pmat.version = 1\npmat.version = 1\n", 2, "duplicate");
     expectDiagnostic("pmat.version = nope\n", 1, "integer");
@@ -2233,6 +2406,7 @@ int main()
     testMasksAndWarping();
     testStructuralGenerators();
     testAdvancedSurfaceOperations();
+    testStylisedOperations();
     testMaterialGraph();
     testGenerator();
     testPhysicalScale();

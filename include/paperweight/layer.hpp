@@ -5,6 +5,7 @@
 #include <optional>
 #include <string_view>
 #include <variant>
+#include <vector>
 
 #include <paperweight/image.hpp>
 
@@ -77,6 +78,58 @@ struct ThresholdOperation {
     friend constexpr bool operator==(
         const ThresholdOperation&,
         const ThresholdOperation&) = default;
+};
+
+enum class ProcessingTarget : std::uint8_t {
+    colour = 0,
+    scalar = 1,
+    colourAndScalar = 2,
+};
+
+struct PosteriseOperation {
+    std::uint32_t bands{4};
+    ProcessingTarget target{ProcessingTarget::colour};
+
+    friend constexpr bool operator==(
+        const PosteriseOperation&,
+        const PosteriseOperation&) = default;
+};
+
+enum class ColourRampMode : std::uint8_t {
+    linear = 0,
+    stepped = 1,
+};
+
+struct ColourRampStop {
+    double position{};
+    Rgba8 colour{};
+
+    friend constexpr bool operator==(
+        const ColourRampStop&,
+        const ColourRampStop&) = default;
+};
+
+struct ColourRampOperation {
+    ColourRampMode mode{ColourRampMode::linear};
+    std::vector<ColourRampStop> stops{
+        {0.0, {0, 0, 0, 255}},
+        {1.0, {255, 255, 255, 255}},
+    };
+
+    friend bool operator==(
+        const ColourRampOperation&,
+        const ColourRampOperation&) = default;
+};
+
+struct PaletteOperation {
+    std::vector<Rgba8> colours{
+        {0, 0, 0, 255},
+        {255, 255, 255, 255},
+    };
+
+    friend bool operator==(
+        const PaletteOperation&,
+        const PaletteOperation&) = default;
 };
 
 enum class BrickMortarSpace : std::uint8_t {
@@ -210,16 +263,32 @@ enum class SurfaceFilterKind : std::uint8_t {
     slope = 5,
     cavity = 6,
     peaks = 7,
+    edgeAwareSoften = 8,
 };
 
 struct SurfaceFilterOperation {
     SurfaceFilterKind kind{SurfaceFilterKind::edge};
     double radius{0.02};
     double strength{1.0};
+    double sensitivity{0.2};
+    ProcessingTarget target{ProcessingTarget::colourAndScalar};
 
     friend constexpr bool operator==(
         const SurfaceFilterOperation&,
         const SurfaceFilterOperation&) = default;
+};
+
+struct InkContourOperation {
+    Rgba8 colour{24, 24, 28, 255};
+    double radius{0.01};
+    double threshold{0.12};
+    double softness{0.05};
+    double strength{1.0};
+    bool inverted{};
+
+    friend constexpr bool operator==(
+        const InkContourOperation&,
+        const InkContourOperation&) = default;
 };
 
 using LayerOperation = std::variant<
@@ -235,7 +304,11 @@ using LayerOperation = std::variant<
     RectanglesOperation,
     CirclesOperation,
     SurfacePatternOperation,
-    SurfaceFilterOperation>;
+    SurfaceFilterOperation,
+    PosteriseOperation,
+    ColourRampOperation,
+    PaletteOperation,
+    InkContourOperation>;
 
 struct MaterialLayer {
     bool enabled{true};
@@ -287,6 +360,14 @@ struct LayerLimits {
     static constexpr double maximumSurfaceControl = 1.0;
     static constexpr double minimumFilterRadius = 0.0;
     static constexpr double maximumFilterRadius = 0.25;
+    static constexpr std::uint32_t minimumPosteriseBands = 2;
+    static constexpr std::uint32_t maximumPosteriseBands = 16;
+    static constexpr std::size_t minimumColourStops = 2;
+    static constexpr std::size_t maximumColourStops = 8;
+    static constexpr double minimumFilterSensitivity = 0.0;
+    static constexpr double maximumFilterSensitivity = 1.0;
+    static constexpr double minimumContourSoftness = 0.0;
+    static constexpr double maximumContourSoftness = 0.5;
 };
 
 [[nodiscard]] constexpr MaterialLayer makeNoiseLayer(std::uint64_t seedOffset = 0)
@@ -439,6 +520,50 @@ struct LayerLimits {
         {}};
 }
 
+[[nodiscard]] constexpr MaterialLayer makePosteriseLayer()
+{
+    return MaterialLayer{
+        true,
+        1.0,
+        CompositeMode::blend,
+        PosteriseOperation{},
+        {},
+        {}};
+}
+
+[[nodiscard]] inline MaterialLayer makeColourRampLayer()
+{
+    return MaterialLayer{
+        true,
+        1.0,
+        CompositeMode::blend,
+        ColourRampOperation{},
+        {},
+        {}};
+}
+
+[[nodiscard]] inline MaterialLayer makePaletteLayer()
+{
+    return MaterialLayer{
+        true,
+        1.0,
+        CompositeMode::blend,
+        PaletteOperation{},
+        {},
+        {}};
+}
+
+[[nodiscard]] constexpr MaterialLayer makeInkContourLayer()
+{
+    return MaterialLayer{
+        true,
+        1.0,
+        CompositeMode::blend,
+        InkContourOperation{},
+        {},
+        {}};
+}
+
 [[nodiscard]] constexpr std::uint32_t rotationDegrees(QuarterTurn rotation)
 {
     return static_cast<std::uint32_t>(rotation) * 90U;
@@ -486,6 +611,14 @@ struct LayerLimits {
         return "surface_pattern";
     case 12:
         return "surface_filter";
+    case 13:
+        return "posterise";
+    case 14:
+        return "colour_ramp";
+    case 15:
+        return "palette";
+    case 16:
+        return "ink_contour";
     default:
         return "unknown";
     }
@@ -529,6 +662,33 @@ struct LayerLimits {
         return "cavity";
     case SurfaceFilterKind::peaks:
         return "peaks";
+    case SurfaceFilterKind::edgeAwareSoften:
+        return "edge_aware_soften";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view processingTargetName(
+    ProcessingTarget target)
+{
+    switch (target) {
+    case ProcessingTarget::colour:
+        return "colour";
+    case ProcessingTarget::scalar:
+        return "scalar";
+    case ProcessingTarget::colourAndScalar:
+        return "all";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view colourRampModeName(ColourRampMode mode)
+{
+    switch (mode) {
+    case ColourRampMode::linear:
+        return "linear";
+    case ColourRampMode::stepped:
+        return "stepped";
     }
     return "unknown";
 }

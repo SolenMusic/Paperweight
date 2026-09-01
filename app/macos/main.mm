@@ -172,6 +172,13 @@
 @property(nonatomic, strong) NSTextField* displacementValue;
 @property(nonatomic, strong) NSSlider* previewNormalSlider;
 @property(nonatomic, strong) NSTextField* previewNormalValue;
+@property(nonatomic, strong) NSButton* toonLightingCheckbox;
+@property(nonatomic, strong) NSSlider* toonBandsSlider;
+@property(nonatomic, strong) NSTextField* toonBandsValue;
+@property(nonatomic, strong) NSSlider* toonSpecularSlider;
+@property(nonatomic, strong) NSTextField* toonSpecularValue;
+@property(nonatomic, strong) NSSlider* toonRimSlider;
+@property(nonatomic, strong) NSTextField* toonRimValue;
 @property(nonatomic, strong) NSSlider* animationPhaseSlider;
 @property(nonatomic, strong) NSTextField* animationPhaseValue;
 @property(nonatomic, strong) NSSlider* animationSpeedSlider;
@@ -240,6 +247,39 @@
 @property(nonatomic, strong) NSTextField* patternValueFourValue;
 @property(nonatomic, strong) NSStackView* surfaceKindRow;
 @property(nonatomic, strong) NSPopUpButton* surfaceKindPopup;
+@property(nonatomic, strong) NSStackView* processingTargetRow;
+@property(nonatomic, strong) NSPopUpButton* processingTargetPopup;
+@property(nonatomic, strong) NSStackView* filterSensitivityRow;
+@property(nonatomic, strong) NSSlider* filterSensitivitySlider;
+@property(nonatomic, strong) NSTextField* filterSensitivityValue;
+@property(nonatomic, strong) NSStackView* posteriseBandsRow;
+@property(nonatomic, strong) NSSlider* posteriseBandsSlider;
+@property(nonatomic, strong) NSTextField* posteriseBandsValue;
+@property(nonatomic, strong) NSStackView* rampModeRow;
+@property(nonatomic, strong) NSPopUpButton* rampModePopup;
+@property(nonatomic, strong) NSStackView* colourEntriesGroup;
+@property(nonatomic, strong) NSMutableArray<NSStackView*>* colourEntryRows;
+@property(nonatomic, strong) NSMutableArray<NSTextField*>* colourEntryLabels;
+@property(nonatomic, strong) NSMutableArray<NSSlider*>* colourPositionSliders;
+@property(nonatomic, strong) NSMutableArray<NSTextField*>* colourPositionValues;
+@property(nonatomic, strong) NSMutableArray<NSColorWell*>* colourEntryWells;
+@property(nonatomic, strong) NSButton* addColourEntryButton;
+@property(nonatomic, strong) NSButton* removeColourEntryButton;
+@property(nonatomic, strong) NSStackView* inkColourRow;
+@property(nonatomic, strong) NSColorWell* inkColourWell;
+@property(nonatomic, strong) NSStackView* inkRadiusRow;
+@property(nonatomic, strong) NSSlider* inkRadiusSlider;
+@property(nonatomic, strong) NSTextField* inkRadiusValue;
+@property(nonatomic, strong) NSStackView* inkThresholdRow;
+@property(nonatomic, strong) NSSlider* inkThresholdSlider;
+@property(nonatomic, strong) NSTextField* inkThresholdValue;
+@property(nonatomic, strong) NSStackView* inkSoftnessRow;
+@property(nonatomic, strong) NSSlider* inkSoftnessSlider;
+@property(nonatomic, strong) NSTextField* inkSoftnessValue;
+@property(nonatomic, strong) NSStackView* inkStrengthRow;
+@property(nonatomic, strong) NSSlider* inkStrengthSlider;
+@property(nonatomic, strong) NSTextField* inkStrengthValue;
+@property(nonatomic, strong) NSButton* inkInvertedCheckbox;
 @property(nonatomic, strong) NSButton* equalMortarWidthCheckbox;
 @property(nonatomic, strong) NSButton* physicalBrickCheckbox;
 @property(nonatomic, strong) NSStackView* physicalBrickWidthRow;
@@ -564,12 +604,47 @@ NSString* operationDisplayName(const paperweight::LayerOperation& operation)
             return @"Cavity Filter";
         case paperweight::SurfaceFilterKind::peaks:
             return @"Peaks Filter";
+        case paperweight::SurfaceFilterKind::edgeAwareSoften:
+            return @"Edge-aware Soften";
         }
         return @"Surface Filter";
     }
+    case 13:
+        return @"Posterise";
+    case 14:
+        return @"Colour Ramp";
+    case 15:
+        return @"Palette";
+    case 16:
+        return @"Ink Contours";
     default:
         return @"Unknown";
     }
+}
+
+paperweight::ProcessingTarget processingTargetAtIndex(NSInteger index)
+{
+    switch (index) {
+    case 1:
+        return paperweight::ProcessingTarget::scalar;
+    case 2:
+        return paperweight::ProcessingTarget::colourAndScalar;
+    default:
+        return paperweight::ProcessingTarget::colour;
+    }
+}
+
+NSInteger processingTargetIndex(paperweight::ProcessingTarget target)
+{
+    switch (target) {
+    case paperweight::ProcessingTarget::colour:
+        return 0;
+    case paperweight::ProcessingTarget::scalar:
+        return 1;
+    case paperweight::ProcessingTarget::colourAndScalar:
+        return 2;
+    }
+    return 0;
 }
 
 paperweight::MaterialLayer* layerAt(paperweight::Material& material, NSInteger index)
@@ -716,6 +791,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @[ @"Knotty Wood", @"knotty-wood" ],
         @[ @"Marble Veins", @"marble-veins" ],
         @[ @"Eroded Terrain", @"eroded-terrain" ],
+        @[ @"Toon Dungeon", @"toon-dungeon" ],
+        @[ @"Painted Metal", @"painted-metal" ],
+        @[ @"Graphic Marble", @"graphic-marble" ],
     ];
     for (NSArray<NSString*>* showcase in showcases) {
         auto* item = [showcaseMenu addItemWithTitle:showcase[0]
@@ -1110,6 +1188,23 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.previewNormalSlider = static_cast<NSSlider*>(previewNormalRow.views[1]);
     self.previewNormalValue = static_cast<NSTextField*>(previewNormalRow.views[2]);
 
+    self.toonLightingCheckbox = [NSButton checkboxWithTitle:@"Toon lighting"
+                                                      target:self
+                                                      action:@selector(preview3DParameterChanged:)];
+    self.toonLightingCheckbox.toolTip =
+        @"Preview the material with discrete light bands and graphic highlights.";
+    auto* toonBandsRow = makePreviewSliderRow(@"Light bands", 2.0, 6.0, 3.0, self);
+    self.toonBandsSlider = static_cast<NSSlider*>(toonBandsRow.views[1]);
+    self.toonBandsValue = static_cast<NSTextField*>(toonBandsRow.views[2]);
+    self.toonBandsSlider.numberOfTickMarks = 5;
+    self.toonBandsSlider.allowsTickMarkValuesOnly = YES;
+    auto* toonSpecularRow = makePreviewSliderRow(@"Highlight", 0.0, 1.0, 0.55, self);
+    self.toonSpecularSlider = static_cast<NSSlider*>(toonSpecularRow.views[1]);
+    self.toonSpecularValue = static_cast<NSTextField*>(toonSpecularRow.views[2]);
+    auto* toonRimRow = makePreviewSliderRow(@"Rim light", 0.0, 1.0, 0.18, self);
+    self.toonRimSlider = static_cast<NSSlider*>(toonRimRow.views[1]);
+    self.toonRimValue = static_cast<NSTextField*>(toonRimRow.views[2]);
+
     self.colourMapCheckbox = [NSButton checkboxWithTitle:@"Colour"
                                                    target:self
                                                    action:@selector(previewMapToggled:)];
@@ -1172,6 +1267,11 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         mapsSecondRow,
         displacementRow,
         previewNormalRow,
+        makeLabel(@"Stylised lighting"),
+        self.toonLightingCheckbox,
+        toonBandsRow,
+        toonSpecularRow,
+        toonRimRow,
         makeLabel(@"Animated inspection"),
         animationPhaseRow,
         animationSpeedRow,
@@ -1258,6 +1358,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         [mapsSecondRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
         [displacementRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
         [previewNormalRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
+        [toonBandsRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
+        [toonSpecularRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
+        [toonRimRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
         [animationPhaseRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
         [animationSpeedRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
         [animationButtons.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
@@ -1313,6 +1416,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @"Scatter",
         @"Streaks",
         @"Surface Filter",
+        @"Posterise",
+        @"Colour Ramp",
+        @"Palette",
+        @"Ink Contours",
     ]];
     auto* addLayerButton = [NSButton buttonWithTitle:@"Add"
                                               target:self
@@ -1448,6 +1555,136 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.surfaceKindRow.alignment = NSLayoutAttributeCenterY;
     self.surfaceKindRow.spacing = 8.0;
 
+    auto* processingTargetLabel = makeLabel(@"Affect");
+    [processingTargetLabel.widthAnchor constraintEqualToConstant:72.0].active = YES;
+    self.processingTargetPopup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+    [self.processingTargetPopup addItemsWithTitles:@[
+        @"Colour only", @"Surface only", @"Colour + surface",
+    ]];
+    self.processingTargetPopup.target = self;
+    self.processingTargetPopup.action = @selector(styliseParameterChanged:);
+    self.processingTargetRow = [NSStackView stackViewWithViews:@[
+        processingTargetLabel, self.processingTargetPopup,
+    ]];
+    self.processingTargetRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    self.processingTargetRow.alignment = NSLayoutAttributeCenterY;
+    self.processingTargetRow.spacing = 8.0;
+
+    self.filterSensitivityRow = makeLayerSliderRow(
+        @"Sensitivity", 0.0, 1.0, 0.2, self);
+    self.filterSensitivitySlider = static_cast<NSSlider*>(self.filterSensitivityRow.views[1]);
+    self.filterSensitivityValue = static_cast<NSTextField*>(self.filterSensitivityRow.views[2]);
+    self.filterSensitivitySlider.action = @selector(styliseParameterChanged:);
+
+    self.posteriseBandsRow = makeLayerSliderRow(
+        @"Bands", paperweight::LayerLimits::minimumPosteriseBands,
+        paperweight::LayerLimits::maximumPosteriseBands, 4.0, self);
+    self.posteriseBandsSlider = static_cast<NSSlider*>(self.posteriseBandsRow.views[1]);
+    self.posteriseBandsValue = static_cast<NSTextField*>(self.posteriseBandsRow.views[2]);
+    self.posteriseBandsSlider.action = @selector(styliseParameterChanged:);
+    self.posteriseBandsSlider.numberOfTickMarks =
+        paperweight::LayerLimits::maximumPosteriseBands -
+        paperweight::LayerLimits::minimumPosteriseBands + 1;
+    self.posteriseBandsSlider.allowsTickMarkValuesOnly = YES;
+
+    auto* rampModeLabel = makeLabel(@"Ramp");
+    [rampModeLabel.widthAnchor constraintEqualToConstant:72.0].active = YES;
+    self.rampModePopup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+    [self.rampModePopup addItemsWithTitles:@[@"Smooth", @"Stepped"]];
+    self.rampModePopup.target = self;
+    self.rampModePopup.action = @selector(styliseParameterChanged:);
+    self.rampModeRow = [NSStackView stackViewWithViews:@[
+        rampModeLabel, self.rampModePopup,
+    ]];
+    self.rampModeRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    self.rampModeRow.alignment = NSLayoutAttributeCenterY;
+    self.rampModeRow.spacing = 8.0;
+
+    self.colourEntryRows = [NSMutableArray array];
+    self.colourEntryLabels = [NSMutableArray array];
+    self.colourPositionSliders = [NSMutableArray array];
+    self.colourPositionValues = [NSMutableArray array];
+    self.colourEntryWells = [NSMutableArray array];
+    self.colourEntriesGroup = [[NSStackView alloc] initWithFrame:NSZeroRect];
+    self.colourEntriesGroup.orientation = NSUserInterfaceLayoutOrientationVertical;
+    self.colourEntriesGroup.alignment = NSLayoutAttributeLeading;
+    self.colourEntriesGroup.spacing = 6.0;
+    for (NSInteger index = 0;
+         index < static_cast<NSInteger>(paperweight::LayerLimits::maximumColourStops);
+         ++index) {
+        auto* entryLabel = makeLabel([NSString stringWithFormat:@"Stop %ld", index + 1]);
+        [entryLabel.widthAnchor constraintEqualToConstant:52.0].active = YES;
+        auto* position = [NSSlider sliderWithValue:index == 0 ? 0.0 : 1.0
+                                          minValue:0.0
+                                          maxValue:1.0
+                                            target:self
+                                            action:@selector(styliseParameterChanged:)];
+        position.continuous = YES;
+        position.tag = index;
+        auto* value = makeLabel(index == 0 ? @"0.00" : @"1.00");
+        value.alignment = NSTextAlignmentRight;
+        value.font = [NSFont monospacedDigitSystemFontOfSize:11.0
+                                                       weight:NSFontWeightRegular];
+        [value.widthAnchor constraintEqualToConstant:34.0].active = YES;
+        auto* well = [[NSColorWell alloc] initWithFrame:NSZeroRect];
+        well.target = self;
+        well.action = @selector(styliseColourChanged:);
+        well.tag = index;
+        well.accessibilityLabel = [NSString stringWithFormat:@"Colour %ld", index + 1];
+        [well.widthAnchor constraintEqualToConstant:36.0].active = YES;
+        [well.heightAnchor constraintEqualToConstant:25.0].active = YES;
+        auto* entryRow = [NSStackView stackViewWithViews:@[entryLabel, position, value, well]];
+        entryRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+        entryRow.alignment = NSLayoutAttributeCenterY;
+        entryRow.spacing = 5.0;
+        [self.colourEntriesGroup addArrangedSubview:entryRow];
+        [entryRow.widthAnchor constraintEqualToAnchor:self.colourEntriesGroup.widthAnchor].active = YES;
+        [self.colourEntryRows addObject:entryRow];
+        [self.colourEntryLabels addObject:entryLabel];
+        [self.colourPositionSliders addObject:position];
+        [self.colourPositionValues addObject:value];
+        [self.colourEntryWells addObject:well];
+    }
+    self.addColourEntryButton = [NSButton buttonWithTitle:@"Add Colour"
+                                                    target:self
+                                                    action:@selector(addStyliseColour:)];
+    self.removeColourEntryButton = [NSButton buttonWithTitle:@"Remove Colour"
+                                                       target:self
+                                                       action:@selector(removeStyliseColour:)];
+    auto* colourEntryButtons = [NSStackView stackViewWithViews:@[
+        self.addColourEntryButton, self.removeColourEntryButton,
+    ]];
+    colourEntryButtons.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    colourEntryButtons.distribution = NSStackViewDistributionFillEqually;
+    colourEntryButtons.spacing = 6.0;
+    [self.colourEntriesGroup addArrangedSubview:colourEntryButtons];
+    [colourEntryButtons.widthAnchor constraintEqualToAnchor:self.colourEntriesGroup.widthAnchor].active = YES;
+
+    self.inkColourRow = makeColourRow(@"Ink colour", {24, 24, 28, 255}, self);
+    self.inkColourWell = static_cast<NSColorWell*>(self.inkColourRow.views[1]);
+    self.inkColourWell.action = @selector(styliseColourChanged:);
+    self.inkRadiusRow = makeLayerSliderRow(@"Radius", 0.0, 0.25, 0.01, self);
+    self.inkRadiusSlider = static_cast<NSSlider*>(self.inkRadiusRow.views[1]);
+    self.inkRadiusValue = static_cast<NSTextField*>(self.inkRadiusRow.views[2]);
+    self.inkRadiusSlider.action = @selector(styliseParameterChanged:);
+    self.inkThresholdRow = makeLayerSliderRow(@"Threshold", 0.0, 1.0, 0.12, self);
+    self.inkThresholdSlider = static_cast<NSSlider*>(self.inkThresholdRow.views[1]);
+    self.inkThresholdValue = static_cast<NSTextField*>(self.inkThresholdRow.views[2]);
+    self.inkThresholdSlider.action = @selector(styliseParameterChanged:);
+    self.inkSoftnessRow = makeLayerSliderRow(
+        @"Softness", paperweight::LayerLimits::minimumContourSoftness,
+        paperweight::LayerLimits::maximumContourSoftness, 0.05, self);
+    self.inkSoftnessSlider = static_cast<NSSlider*>(self.inkSoftnessRow.views[1]);
+    self.inkSoftnessValue = static_cast<NSTextField*>(self.inkSoftnessRow.views[2]);
+    self.inkSoftnessSlider.action = @selector(styliseParameterChanged:);
+    self.inkStrengthRow = makeLayerSliderRow(@"Strength", 0.0, 1.0, 1.0, self);
+    self.inkStrengthSlider = static_cast<NSSlider*>(self.inkStrengthRow.views[1]);
+    self.inkStrengthValue = static_cast<NSTextField*>(self.inkStrengthRow.views[2]);
+    self.inkStrengthSlider.action = @selector(styliseParameterChanged:);
+    self.inkInvertedCheckbox = [NSButton checkboxWithTitle:@"Ink flat regions"
+                                                      target:self
+                                                      action:@selector(styliseParameterChanged:)];
+
     self.equalMortarWidthCheckbox = [NSButton
         checkboxWithTitle:@"Equal horizontal/vertical mortar"
                    target:self
@@ -1560,6 +1797,17 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.equalMortarWidthCheckbox,
         self.patternDirectionRow,
         self.patternSeedRow,
+        self.processingTargetRow,
+        self.filterSensitivityRow,
+        self.posteriseBandsRow,
+        self.rampModeRow,
+        self.colourEntriesGroup,
+        self.inkColourRow,
+        self.inkRadiusRow,
+        self.inkThresholdRow,
+        self.inkSoftnessRow,
+        self.inkStrengthRow,
+        self.inkInvertedCheckbox,
     ]];
     self.layerSettingsGroup.orientation = NSUserInterfaceLayoutOrientationVertical;
     self.layerSettingsGroup.alignment = NSLayoutAttributeLeading;
@@ -1745,6 +1993,18 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         [self.patternValueFourRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.surfaceKindRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.surfaceKindPopup.trailingAnchor constraintEqualToAnchor:self.surfaceKindRow.trailingAnchor],
+        [self.processingTargetRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.processingTargetPopup.trailingAnchor constraintEqualToAnchor:self.processingTargetRow.trailingAnchor],
+        [self.filterSensitivityRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.posteriseBandsRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.rampModeRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.rampModePopup.trailingAnchor constraintEqualToAnchor:self.rampModeRow.trailingAnchor],
+        [self.colourEntriesGroup.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.inkColourRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.inkRadiusRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.inkThresholdRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.inkSoftnessRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.inkStrengthRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.patternDirectionRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.patternSeedRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.patternDirectionControl.trailingAnchor
@@ -1900,6 +2160,17 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.physicalBrickSummary.hidden = YES;
         self.patternDirectionRow.hidden = YES;
         self.patternSeedRow.hidden = YES;
+        self.processingTargetRow.hidden = YES;
+        self.filterSensitivityRow.hidden = YES;
+        self.posteriseBandsRow.hidden = YES;
+        self.rampModeRow.hidden = YES;
+        self.colourEntriesGroup.hidden = YES;
+        self.inkColourRow.hidden = YES;
+        self.inkRadiusRow.hidden = YES;
+        self.inkThresholdRow.hidden = YES;
+        self.inkSoftnessRow.hidden = YES;
+        self.inkStrengthRow.hidden = YES;
+        self.inkInvertedCheckbox.hidden = YES;
         [self updateLayerInspectorTabVisibility];
         return;
     }
@@ -1936,6 +2207,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     const auto* circles = std::get_if<paperweight::CirclesOperation>(&layer->operation);
     const auto* surface = std::get_if<paperweight::SurfacePatternOperation>(&layer->operation);
     const auto* filter = std::get_if<paperweight::SurfaceFilterOperation>(&layer->operation);
+    const auto* posterise = std::get_if<paperweight::PosteriseOperation>(&layer->operation);
+    const auto* ramp = std::get_if<paperweight::ColourRampOperation>(&layer->operation);
+    const auto* palette = std::get_if<paperweight::PaletteOperation>(&layer->operation);
+    const auto* ink = std::get_if<paperweight::InkContourOperation>(&layer->operation);
     self.noiseSeedRow.hidden = noise == nullptr;
     self.solidColourRow.hidden = solid == nullptr;
     self.levelsLowRow.hidden = levels == nullptr;
@@ -1957,6 +2232,17 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.physicalBrickSummary.hidden = YES;
     self.patternDirectionRow.hidden = YES;
     self.patternSeedRow.hidden = YES;
+    self.processingTargetRow.hidden = YES;
+    self.filterSensitivityRow.hidden = YES;
+    self.posteriseBandsRow.hidden = YES;
+    self.rampModeRow.hidden = YES;
+    self.colourEntriesGroup.hidden = YES;
+    self.inkColourRow.hidden = YES;
+    self.inkRadiusRow.hidden = YES;
+    self.inkThresholdRow.hidden = YES;
+    self.inkSoftnessRow.hidden = YES;
+    self.inkStrengthRow.hidden = YES;
+    self.inkInvertedCheckbox.hidden = YES;
 
     if (noise != nullptr) {
         self.noiseSeedOffsetField.stringValue = [NSString
@@ -2179,6 +2465,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
             @"Slope",
             @"Cavity",
             @"Peaks",
+            @"Edge-aware Soften",
         ]];
         [self.surfaceKindPopup selectItemAtIndex:static_cast<NSInteger>(filter->kind)];
         showValue(self.patternValueOneRow, self.patternValueOneLabel,
@@ -2187,6 +2474,77 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         showValue(self.patternValueTwoRow, self.patternValueTwoLabel,
                   self.patternValueTwoSlider, self.patternValueTwoValue,
                   @"Strength", 0.0, 1.0, filter->strength);
+        self.processingTargetRow.hidden = NO;
+        [self.processingTargetPopup selectItemAtIndex:processingTargetIndex(filter->target)];
+        if (filter->kind == paperweight::SurfaceFilterKind::edgeAwareSoften) {
+            self.filterSensitivityRow.hidden = NO;
+            self.filterSensitivitySlider.doubleValue = filter->sensitivity;
+            self.filterSensitivityValue.stringValue = [NSString
+                stringWithFormat:@"%.2f", filter->sensitivity];
+        }
+    } else if (posterise != nullptr) {
+        self.posteriseBandsRow.hidden = NO;
+        self.processingTargetRow.hidden = NO;
+        self.posteriseBandsSlider.doubleValue = posterise->bands;
+        self.posteriseBandsValue.stringValue = [NSString
+            stringWithFormat:@"%u", posterise->bands];
+        [self.processingTargetPopup selectItemAtIndex:processingTargetIndex(posterise->target)];
+    } else if (ramp != nullptr || palette != nullptr) {
+        const BOOL isRamp = ramp != nullptr;
+        self.rampModeRow.hidden = !isRamp;
+        self.colourEntriesGroup.hidden = NO;
+        if (isRamp) {
+            [self.rampModePopup selectItemAtIndex:
+                ramp->mode == paperweight::ColourRampMode::stepped ? 1 : 0];
+        }
+        const std::size_t count = isRamp ? ramp->stops.size() : palette->colours.size();
+        for (NSUInteger index = 0; index < self.colourEntryRows.count; ++index) {
+            NSStackView* row = self.colourEntryRows[index];
+            row.hidden = index >= count;
+            if (index >= count) {
+                continue;
+            }
+            NSTextField* label = self.colourEntryLabels[index];
+            NSSlider* position = self.colourPositionSliders[index];
+            NSTextField* positionValue = self.colourPositionValues[index];
+            NSColorWell* well = self.colourEntryWells[index];
+            label.stringValue = [NSString
+                stringWithFormat:isRamp ? @"Stop %lu" : @"Colour %lu", index + 1];
+            position.hidden = !isRamp;
+            positionValue.hidden = !isRamp;
+            if (isRamp) {
+                position.doubleValue = ramp->stops[index].position;
+                position.enabled = index != 0 && index + 1 != count;
+                positionValue.stringValue = [NSString
+                    stringWithFormat:@"%.2f", ramp->stops[index].position];
+                well.color = colourFromRgba8(ramp->stops[index].colour);
+            } else {
+                well.color = colourFromRgba8(palette->colours[index]);
+            }
+        }
+        self.addColourEntryButton.enabled =
+            count < paperweight::LayerLimits::maximumColourStops;
+        self.removeColourEntryButton.enabled =
+            count > paperweight::LayerLimits::minimumColourStops;
+    } else if (ink != nullptr) {
+        self.inkColourRow.hidden = NO;
+        self.inkRadiusRow.hidden = NO;
+        self.inkThresholdRow.hidden = NO;
+        self.inkSoftnessRow.hidden = NO;
+        self.inkStrengthRow.hidden = NO;
+        self.inkInvertedCheckbox.hidden = NO;
+        self.inkColourWell.color = colourFromRgba8(ink->colour);
+        self.inkRadiusSlider.doubleValue = ink->radius;
+        self.inkThresholdSlider.doubleValue = ink->threshold;
+        self.inkSoftnessSlider.doubleValue = ink->softness;
+        self.inkStrengthSlider.doubleValue = ink->strength;
+        self.inkRadiusValue.stringValue = [NSString stringWithFormat:@"%.2f", ink->radius];
+        self.inkThresholdValue.stringValue = [NSString stringWithFormat:@"%.2f", ink->threshold];
+        self.inkSoftnessValue.stringValue = [NSString stringWithFormat:@"%.2f", ink->softness];
+        self.inkStrengthValue.stringValue = [NSString stringWithFormat:@"%.2f", ink->strength];
+        self.inkInvertedCheckbox.state = ink->inverted
+            ? NSControlStateValueOn
+            : NSControlStateValueOff;
     }
 
     const auto& transform = layer->transform;
@@ -2344,6 +2702,18 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     case 16:
         material_.layers.push_back(paperweight::makeSurfaceFilterLayer());
         break;
+    case 17:
+        material_.layers.push_back(paperweight::makePosteriseLayer());
+        break;
+    case 18:
+        material_.layers.push_back(paperweight::makeColourRampLayer());
+        break;
+    case 19:
+        material_.layers.push_back(paperweight::makePaletteLayer());
+        break;
+    case 20:
+        material_.layers.push_back(paperweight::makeInkContourLayer());
+        break;
     default:
         return;
     }
@@ -2414,6 +2784,156 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         return;
     }
     solid->colour = rgba8FromColour(self.solidColourWell.color);
+    [self regeneratePreview];
+    [self markDirty];
+}
+
+- (void)styliseColourChanged:(NSColorWell*)sender
+{
+    auto* layer = layerAt(material_, selectedLayer_);
+    if (layer == nullptr) {
+        return;
+    }
+    if (auto* ink = std::get_if<paperweight::InkContourOperation>(&layer->operation)) {
+        ink->colour = rgba8FromColour(self.inkColourWell.color);
+    } else if (auto* ramp = std::get_if<paperweight::ColourRampOperation>(&layer->operation)) {
+        const auto index = static_cast<std::size_t>(sender.tag);
+        if (index >= ramp->stops.size()) {
+            return;
+        }
+        ramp->stops[index].colour = rgba8FromColour(sender.color);
+    } else if (auto* palette = std::get_if<paperweight::PaletteOperation>(&layer->operation)) {
+        const auto index = static_cast<std::size_t>(sender.tag);
+        if (index >= palette->colours.size()) {
+            return;
+        }
+        palette->colours[index] = rgba8FromColour(sender.color);
+    } else {
+        return;
+    }
+    [self regeneratePreview];
+    [self markDirty];
+}
+
+- (void)styliseParameterChanged:(id)sender
+{
+    auto* layer = layerAt(material_, selectedLayer_);
+    if (layer == nullptr) {
+        return;
+    }
+    if (auto* filter = std::get_if<paperweight::SurfaceFilterOperation>(&layer->operation)) {
+        filter->sensitivity = self.filterSensitivitySlider.doubleValue;
+        filter->target = processingTargetAtIndex(self.processingTargetPopup.indexOfSelectedItem);
+        self.filterSensitivityValue.stringValue = [NSString
+            stringWithFormat:@"%.2f", filter->sensitivity];
+    } else if (auto* posterise = std::get_if<paperweight::PosteriseOperation>(&layer->operation)) {
+        posterise->bands = static_cast<std::uint32_t>(
+            std::llround(self.posteriseBandsSlider.doubleValue));
+        posterise->target = processingTargetAtIndex(
+            self.processingTargetPopup.indexOfSelectedItem);
+        self.posteriseBandsValue.stringValue = [NSString
+            stringWithFormat:@"%u", posterise->bands];
+    } else if (auto* ramp = std::get_if<paperweight::ColourRampOperation>(&layer->operation)) {
+        ramp->mode = self.rampModePopup.indexOfSelectedItem == 1
+            ? paperweight::ColourRampMode::stepped
+            : paperweight::ColourRampMode::linear;
+        if ([sender isKindOfClass:NSSlider.class]) {
+            auto* slider = static_cast<NSSlider*>(sender);
+            const auto index = static_cast<std::size_t>(slider.tag);
+            if (index > 0 && index + 1 < ramp->stops.size()) {
+                const double minimum = ramp->stops[index - 1].position + 0.01;
+                const double maximum = ramp->stops[index + 1].position - 0.01;
+                ramp->stops[index].position = std::clamp(
+                    slider.doubleValue, minimum, maximum);
+                slider.doubleValue = ramp->stops[index].position;
+                self.colourPositionValues[index].stringValue = [NSString
+                    stringWithFormat:@"%.2f", ramp->stops[index].position];
+            }
+        }
+    } else if (auto* ink = std::get_if<paperweight::InkContourOperation>(&layer->operation)) {
+        ink->radius = self.inkRadiusSlider.doubleValue;
+        ink->threshold = self.inkThresholdSlider.doubleValue;
+        ink->softness = self.inkSoftnessSlider.doubleValue;
+        ink->strength = self.inkStrengthSlider.doubleValue;
+        ink->inverted = self.inkInvertedCheckbox.state == NSControlStateValueOn;
+        self.inkRadiusValue.stringValue = [NSString stringWithFormat:@"%.2f", ink->radius];
+        self.inkThresholdValue.stringValue = [NSString stringWithFormat:@"%.2f", ink->threshold];
+        self.inkSoftnessValue.stringValue = [NSString stringWithFormat:@"%.2f", ink->softness];
+        self.inkStrengthValue.stringValue = [NSString stringWithFormat:@"%.2f", ink->strength];
+    } else {
+        return;
+    }
+    [self regeneratePreview];
+    [self markDirty];
+}
+
+- (void)addStyliseColour:(id)sender
+{
+    static_cast<void>(sender);
+    auto* layer = layerAt(material_, selectedLayer_);
+    if (layer == nullptr) {
+        return;
+    }
+    if (auto* ramp = std::get_if<paperweight::ColourRampOperation>(&layer->operation)) {
+        if (ramp->stops.size() >= paperweight::LayerLimits::maximumColourStops) {
+            return;
+        }
+        const auto right = ramp->stops.end() - 1;
+        const auto left = right - 1;
+        const auto averageChannel = [](std::uint8_t a, std::uint8_t b) {
+            return static_cast<std::uint8_t>((static_cast<unsigned>(a) + b) / 2U);
+        };
+        const paperweight::Rgba8 colour{
+            averageChannel(left->colour.red, right->colour.red),
+            averageChannel(left->colour.green, right->colour.green),
+            averageChannel(left->colour.blue, right->colour.blue),
+            averageChannel(left->colour.alpha, right->colour.alpha),
+        };
+        ramp->stops.insert(right, {
+            (left->position + right->position) * 0.5,
+            colour,
+        });
+    } else if (auto* palette = std::get_if<paperweight::PaletteOperation>(&layer->operation)) {
+        if (palette->colours.size() >= paperweight::LayerLimits::maximumColourStops) {
+            return;
+        }
+        const auto& first = palette->colours.front();
+        const auto& last = palette->colours.back();
+        palette->colours.push_back({
+            static_cast<std::uint8_t>((static_cast<unsigned>(first.red) + last.red) / 2U),
+            static_cast<std::uint8_t>((static_cast<unsigned>(first.green) + last.green) / 2U),
+            static_cast<std::uint8_t>((static_cast<unsigned>(first.blue) + last.blue) / 2U),
+            static_cast<std::uint8_t>((static_cast<unsigned>(first.alpha) + last.alpha) / 2U),
+        });
+    } else {
+        return;
+    }
+    [self refreshLayerInspector];
+    [self regeneratePreview];
+    [self markDirty];
+}
+
+- (void)removeStyliseColour:(id)sender
+{
+    static_cast<void>(sender);
+    auto* layer = layerAt(material_, selectedLayer_);
+    if (layer == nullptr) {
+        return;
+    }
+    if (auto* ramp = std::get_if<paperweight::ColourRampOperation>(&layer->operation)) {
+        if (ramp->stops.size() <= paperweight::LayerLimits::minimumColourStops) {
+            return;
+        }
+        ramp->stops.erase(ramp->stops.end() - 2);
+    } else if (auto* palette = std::get_if<paperweight::PaletteOperation>(&layer->operation)) {
+        if (palette->colours.size() <= paperweight::LayerLimits::minimumColourStops) {
+            return;
+        }
+        palette->colours.pop_back();
+    } else {
+        return;
+    }
+    [self refreshLayerInspector];
     [self regeneratePreview];
     [self markDirty];
 }
@@ -2734,6 +3254,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         }
         filter->radius = self.patternValueOneSlider.doubleValue;
         filter->strength = self.patternValueTwoSlider.doubleValue;
+        filter->target = processingTargetAtIndex(
+            self.processingTargetPopup.indexOfSelectedItem);
     } else {
         return;
     }
@@ -2743,6 +3265,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.layerTypeLabel.stringValue = [NSString
             stringWithFormat:@"%ld. %@", selectedLayer_ + 1, operationDisplayName(layer->operation)];
         [self rebuildLayerList];
+        [self refreshLayerInspector];
     }
     [self regeneratePreview];
     [self markDirty];
@@ -3027,6 +3550,11 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.material3DPreviewView.ambientIntensity = self.ambientIntensitySlider.doubleValue;
     self.material3DPreviewView.displacementStrength = self.displacementSlider.doubleValue;
     self.material3DPreviewView.previewNormalStrength = self.previewNormalSlider.doubleValue;
+    self.material3DPreviewView.toonLightingEnabled =
+        self.toonLightingCheckbox.state == NSControlStateValueOn;
+    self.material3DPreviewView.toonBandCount = self.toonBandsSlider.doubleValue;
+    self.material3DPreviewView.toonSpecularThreshold = self.toonSpecularSlider.doubleValue;
+    self.material3DPreviewView.toonRimStrength = self.toonRimSlider.doubleValue;
     self.material3DPreviewView.animationPhase = self.animationPhaseSlider.doubleValue;
     self.material3DPreviewView.animationSpeed = self.animationSpeedSlider.doubleValue;
     [self updatePreview3DControlLabels];
@@ -3046,6 +3574,16 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         stringWithFormat:@"%.2f", self.displacementSlider.doubleValue];
     self.previewNormalValue.stringValue = [NSString
         stringWithFormat:@"%.2f", self.previewNormalSlider.doubleValue];
+    self.toonBandsValue.stringValue = [NSString
+        stringWithFormat:@"%.0f", self.toonBandsSlider.doubleValue];
+    self.toonSpecularValue.stringValue = [NSString
+        stringWithFormat:@"%.2f", self.toonSpecularSlider.doubleValue];
+    self.toonRimValue.stringValue = [NSString
+        stringWithFormat:@"%.2f", self.toonRimSlider.doubleValue];
+    const BOOL toonEnabled = self.toonLightingCheckbox.state == NSControlStateValueOn;
+    self.toonBandsSlider.enabled = toonEnabled;
+    self.toonSpecularSlider.enabled = toonEnabled;
+    self.toonRimSlider.enabled = toonEnabled;
     self.animationPhaseValue.stringValue = [NSString
         stringWithFormat:@"%.2f", self.animationPhaseSlider.doubleValue];
     self.animationSpeedValue.stringValue = [NSString

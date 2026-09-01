@@ -16,6 +16,7 @@ struct PreviewUniforms {
     float4 lightDirection;
     float4 settings;
     float4 mapSettings;
+    float4 toonSettings;
 };
 
 struct PreviewVaryings {
@@ -93,6 +94,15 @@ fragment float4 paperweightPreviewFragment(
     float ambient = uniforms.settings.y;
     float intensity = uniforms.settings.x;
     float rim = pow(1.0 - max(dot(surfaceNormal, viewDirection), 0.0), 3.0) * 0.08;
+
+    if (uniforms.toonSettings.x > 0.5) {
+        float bands = max(round(uniforms.toonSettings.y), 2.0);
+        diffuse = floor(diffuse * bands) / (bands - 1.0);
+        diffuse = clamp(diffuse, 0.0, 1.0);
+        specular = step(uniforms.toonSettings.z, specular);
+        rim = smoothstep(0.55, 0.82,
+            1.0 - max(dot(surfaceNormal, viewDirection), 0.0)) * uniforms.toonSettings.w;
+    }
 
     float3 colour = baseColour * (ambient + diffuse * intensity);
     colour += float3(specular * specularStrength * intensity + rim);
