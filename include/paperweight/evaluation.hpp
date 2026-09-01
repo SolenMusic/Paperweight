@@ -4,6 +4,7 @@
 #include <paperweight/layer.hpp>
 #include <paperweight/material.hpp>
 #include <paperweight/output.hpp>
+#include <paperweight/organic.hpp>
 #include <paperweight/region.hpp>
 #include <paperweight/scatter.hpp>
 
@@ -47,6 +48,16 @@ struct EvaluatedCoordinates {
 [[nodiscard]] EvaluatedSample evaluateScatterOperation(
     const ScatterOperation& operation,
     const ScatterLayout& layout,
+    const EvaluationContext& context);
+
+[[nodiscard]] EvaluatedSample evaluateOrganicCrackOperation(
+    const OrganicCrackOperation& operation,
+    const OrganicCrackLayout& layout,
+    const EvaluationContext& context);
+
+[[nodiscard]] EvaluatedSample evaluateLeafClusterOperation(
+    const LeafClusterOperation& operation,
+    const LeafClusterLayout& layout,
     const EvaluationContext& context);
 
 [[nodiscard]] EvaluatedSample evaluateOperation(

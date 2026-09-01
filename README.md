@@ -13,14 +13,13 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-v0.0.16 is the current Deterministic Instance Scattering release. A stable,
-pixel-independent candidate pass places shape stamps across the seamless tile
-torus, rejects them using explicit spacing and overlap rules, and orders visible
-instances with exact integer priorities. Up to four weighted populations vary
-scale, aspect, rotation, colour, height, and roughness without depending on
-resolution, worker scheduling, or container order. Density and exclusion masks
-are sampled only at candidate centres. Editable courtyard gravel, debris, and
-foliage-foundation showcases exercise the complete path.
+v0.0.17 is the current Organic Structures release. Anisotropic cellular plates,
+hierarchical crack networks, four analytic leaf silhouettes, leaf ribs and veins,
+stable overlapping clusters, four species presets, and cavity- or boundary-driven
+moss and lichen now extend the portable graph vocabulary. Every placement and
+region identity is derived from stable hashes; coordinates wrap on the tile
+torus, and worker scheduling never changes the result. Editable cel forest bark
+and castle foliage showcases exercise colour, height, normal, and roughness.
 
 The staged work is tracked in [GitHub Issues](https://github.com/SolenMusic/Paperweight/issues).
 
@@ -29,7 +28,7 @@ The staged work is tracked in [GitHub Issues](https://github.com/SolenMusic/Pape
 ```text
 Portable C++20 core
   image buffers, deterministic primitives, periodic noise,
-  structural, course-layout, sculpting, shape, lattice, scatter, and surface generators,
+  structural, course-layout, sculpting, shape, lattice, scatter, organic, and surface generators,
   exact region identity and fields,
   neighbourhood filters,
   layer-to-graph compiler, graph validation/evaluation,
@@ -42,7 +41,9 @@ Native macOS AppKit frontend
   Objective-C++ glue only; no material-generation logic
 ```
 
-See [docs/architecture.md](docs/architecture.md) and [docs/roadmap.md](docs/roadmap.md).
+See [docs/architecture.md](docs/architecture.md),
+[docs/organic-structures.md](docs/organic-structures.md), and
+[docs/roadmap.md](docs/roadmap.md).
 Performance methodology and reproducible baseline measurements live in
 [docs/performance.md](docs/performance.md).
 
@@ -64,14 +65,15 @@ stone, painted metal, graphic marble, castle flagstone, two castle masonry
 styles, castle roof slates, cel forest rock, sculpted flagstone, worn masonry,
 chamfered roof slate, a diamond castle window, a detailed crate, decorative
 fasteners, masonry corner variation, cel courtyard gravel, scattered debris,
-and an initial foliage population. These are the practical forerunners of the
+an initial foliage population, cel forest bark, and layered castle foliage.
+These are the practical forerunners of the
 planned seedless template library. Region Stones demonstrates repeatable
 per-cell variation, while Course Random gives every row one stable value.
 
-Format-version-1 through version-12 `.pmat` files still open with their
-historical output intact; saving migrates them to canonical format version 13.
-Version 13 adds deterministic instance placement, populations, attributes,
-shape stamps, and candidate-centre masks. Exact block
+Format-version-1 through version-13 `.pmat` files still open with their
+historical output intact; saving migrates them to canonical format version 14.
+Version 14 adds organic cells, branching cracks, parametric leaf clusters, and
+organic accumulation. Exact block
 and parent-course keys are evaluator metadata, not pixel channels, so they are
 never stored in lossy floating-point form.
 The editor does not invent a redundant graph syntax for the existing layer recipe:
@@ -148,6 +150,11 @@ fields expose the same analytic boundary. Shape Boolean combines one of those
 local shapes with the accumulated mask, while Seam-safe Lattice creates line or
 diamond grids from whole-tile winding counts. Local shape rotation is free;
 lattice direction remains restricted to repeat-compatible windings.
+Add Organic Cells for stretched bark-like plates, Organic Cracks for periodic
+trunks and seeded branch hierarchies, Leaf Clusters for analytic foliage, and
+Organic Accumulation for moss, lichen, or colour growth driven by cavities,
+boundaries, height, or the authored scalar. Species presets fill a complete
+editable leaf recipe but deliberately preserve the material seed.
 Add Instance Scatter to place an analytic shape as a torus-safe population.
 The native controls cover candidate density and jitter, spacing and overlap,
 population creation and selection, scale/aspect/rotation ranges, colour pairs,

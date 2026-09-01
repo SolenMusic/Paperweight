@@ -2,6 +2,7 @@
 
 #include <paperweight/hash.hpp>
 #include <paperweight/noise.hpp>
+#include <paperweight/organic.hpp>
 #include <paperweight/sculpt.hpp>
 #include <paperweight/scatter.hpp>
 #include <paperweight/shape.hpp>
@@ -444,6 +445,71 @@ EvaluatedSample evaluateScatterOperation(
     return result;
 }
 
+EvaluatedSample evaluateOrganicCrackOperation(
+    const OrganicCrackOperation& operation,
+    const OrganicCrackLayout& layout,
+    const EvaluationContext& context)
+{
+    const auto crack = evaluateOrganicCracks(
+        operation,
+        layout,
+        context.u,
+        context.v);
+    auto result = sampleFromScalar(context.material, crack.coverage);
+    result.region = crack.region;
+    return result;
+}
+
+EvaluatedSample evaluateLeafClusterOperation(
+    const LeafClusterOperation& operation,
+    const LeafClusterLayout& layout,
+    const EvaluationContext& context)
+{
+    const auto leaf = evaluateLeafCluster(operation, layout, context.u, context.v);
+    if (!leaf.region.valid) {
+        return sampleFromScalar(context.material, 0.0);
+    }
+    if (operation.field == LeafField::material) {
+        const auto background = sampleFromColour(context.material.lowColour);
+        const double attribute = context.output == MaterialOutput::roughness
+            ? leaf.roughness
+            : leaf.height;
+        const auto blend = [amount = leaf.coverage](double from, std::uint8_t to) {
+            return from + (static_cast<double>(to) / 255.0 - from) * amount;
+        };
+        return {
+            attribute * leaf.coverage,
+            blend(background.red, leaf.colour.red),
+            blend(background.green, leaf.colour.green),
+            blend(background.blue, leaf.colour.blue),
+            blend(background.alpha, leaf.colour.alpha),
+            leaf.region,
+        };
+    }
+    double value = leaf.coverage;
+    switch (operation.field) {
+    case LeafField::material:
+    case LeafField::fill:
+        value = leaf.coverage;
+        break;
+    case LeafField::edge:
+        value = leaf.edge;
+        break;
+    case LeafField::midrib:
+        value = leaf.midrib;
+        break;
+    case LeafField::veins:
+        value = leaf.veins;
+        break;
+    case LeafField::instanceRandom:
+        value = leaf.random * leaf.coverage;
+        break;
+    }
+    auto result = sampleFromScalar(context.material, value);
+    result.region = leaf.region;
+    return result;
+}
+
 EvaluatedSample evaluateOperation(
     const LayerOperation& operation,
     const EvaluationContext& context,
@@ -624,6 +690,71 @@ EvaluatedSample evaluateOperation(
                     result.red = value;
                     result.green = value;
                     result.blue = value;
+                }
+                return result;
+            },
+            [&context](const OrganicCellOperation& organic) {
+                const auto sample = evaluateOrganicCells(
+                    organic,
+                    context.u,
+                    context.v,
+                    context.material.seed);
+                auto result = sampleFromScalar(context.material, sample.value);
+                result.region = sample.region;
+                return result;
+            },
+            [&context](const OrganicCrackOperation& organic) {
+                return evaluateOrganicCrackOperation(
+                    organic,
+                    buildOrganicCrackLayout(organic, context.material.seed),
+                    context);
+            },
+            [&context](const LeafClusterOperation& leaves) {
+                return evaluateLeafClusterOperation(
+                    leaves,
+                    buildLeafClusterLayout(leaves, context.material.seed),
+                    context);
+            },
+            [&input, &context](const OrganicAccumulationOperation& organic) {
+                const auto growth = evaluateOrganicAccumulation(
+                    organic,
+                    input.scalar,
+                    input.region,
+                    context.u,
+                    context.v,
+                    context.material.seed);
+                auto result = input;
+                if (organic.kind == OrganicAccumulationKind::colourVariation) {
+                    if (affectsColour(organic.target)) {
+                        const double factor = 1.0 +
+                            (growth.variation * 2.0 - 1.0) * organic.variation * growth.amount;
+                        result.red = std::clamp(result.red * factor, 0.0, 1.0);
+                        result.green = std::clamp(result.green * factor, 0.0, 1.0);
+                        result.blue = std::clamp(result.blue * factor, 0.0, 1.0);
+                    }
+                } else if (affectsColour(organic.target)) {
+                    const auto channel = [amount = growth.variation](
+                        std::uint8_t from,
+                        std::uint8_t to) {
+                        return static_cast<std::uint8_t>(std::round(
+                            static_cast<double>(from) +
+                            (static_cast<double>(to) - static_cast<double>(from)) * amount));
+                    };
+                    const Rgba8 colour{
+                        channel(organic.lowColour.red, organic.highColour.red),
+                        channel(organic.lowColour.green, organic.highColour.green),
+                        channel(organic.lowColour.blue, organic.highColour.blue),
+                        channel(organic.lowColour.alpha, organic.highColour.alpha),
+                    };
+                    const auto blend = [amount = growth.amount](double from, std::uint8_t to) {
+                        return from + (static_cast<double>(to) / 255.0 - from) * amount;
+                    };
+                    result.red = blend(input.red, colour.red);
+                    result.green = blend(input.green, colour.green);
+                    result.blue = blend(input.blue, colour.blue);
+                }
+                if (affectsScalar(organic.target)) {
+                    result.scalar = growth.amount;
                 }
                 return result;
             },

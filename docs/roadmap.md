@@ -167,11 +167,15 @@ the targets for later organic structures. See
 
 ## v0.0.17 - Organic Structures
 
-Build anisotropic bark regions, branching crack networks, parametric leaf
-silhouettes, midrib and vein masks, stable overlapping clusters, and moss or
-lichen accumulation from the preceding general-purpose tools. Named bark and
-foliage results remain editable templates rather than special evaluation paths.
-This targets cel bark at 90-98 percent and dense castle foliage at 80-95 percent.
+Implemented: anisotropic bark regions, branching crack networks, parametric
+ovate, lanceolate, cordate, and lobed leaf silhouettes, midrib and vein masks,
+stable overlapping clusters, four species presets, and moss or lichen
+accumulation driven by cavities, boundaries, height, or authored masks. Named
+bark and foliage results remain editable `.pmat` templates rather than special
+evaluation paths. Canonical format version 14, graph integration, native
+controls, benchmarks, golden maps, and cross-worker tests cover the complete
+path. This targets cel bark at 90-98 percent and dense castle foliage at 80-95
+percent.
 See [roadmap issue #133](https://github.com/SolenMusic/Paperweight/issues/133).
 
 ## v0.0.18 - Reference Materials and Stylised Baking

@@ -56,7 +56,8 @@ std::optional<GeneratorOperation> generatorOperation(const LayerOperation& opera
                           std::is_same_v<Operation, InkContourOperation> ||
                           std::is_same_v<Operation, RegionFieldOperation> ||
                           std::is_same_v<Operation, RegionSurfaceOperation> ||
-                          std::is_same_v<Operation, ShapeBooleanOperation>) {
+                          std::is_same_v<Operation, ShapeBooleanOperation> ||
+                          std::is_same_v<Operation, OrganicAccumulationOperation>) {
                 return std::nullopt;
             } else {
                 return GeneratorOperation{value};
@@ -119,6 +120,9 @@ std::optional<std::string> validateProcessingNode(const ProcessingNode& node)
             },
             [&layer](const ShapeBooleanProcessing& shape) {
                 layer.operation = shape.parameters;
+            },
+            [&layer](const OrganicAccumulationProcessing& organic) {
+                layer.operation = organic.parameters;
             },
         },
         node.operation);
@@ -190,6 +194,9 @@ std::vector<GraphNodeId> dependencies(const GraphNode& node)
                         },
                         [](const ShapeBooleanProcessing& shape) {
                             return std::vector<GraphNodeId>{shape.input};
+                        },
+                        [](const OrganicAccumulationProcessing& organic) {
+                            return std::vector<GraphNodeId>{organic.input};
                         },
                     },
                     processing.operation);
@@ -395,6 +402,11 @@ std::optional<GraphError> validateMaterialGraph(const MaterialGraph& graph)
                                     shape.input,
                                     GraphNodeCategory::generator);
                             },
+                            [&checkInput](const OrganicAccumulationProcessing& organic) {
+                                return checkInput(
+                                    organic.input,
+                                    GraphNodeCategory::generator);
+                            },
                         },
                         processing.operation);
                 },
@@ -557,6 +569,11 @@ GraphCompilationResult compileMaterialGraph(const Material& material)
                            std::get_if<ShapeBooleanOperation>(&layer.operation)) {
                 source = addProcessing(
                     ShapeBooleanProcessing{accumulated, *shape},
+                    layerIndex);
+            } else if (const auto* organic =
+                           std::get_if<OrganicAccumulationOperation>(&layer.operation)) {
+                source = addProcessing(
+                    OrganicAccumulationProcessing{accumulated, *organic},
                     layerIndex);
             } else {
                 const auto operation = generatorOperation(layer.operation);

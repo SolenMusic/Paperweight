@@ -32,7 +32,10 @@ using GeneratorOperation = std::variant<
     CourseLayoutOperation,
     ShapePrimitiveOperation,
     LatticeOperation,
-    ScatterOperation>;
+    ScatterOperation,
+    OrganicCellOperation,
+    OrganicCrackOperation,
+    LeafClusterOperation>;
 
 struct GeneratorNode {
     GraphNodeId id{invalidGraphNodeId};
@@ -145,6 +148,15 @@ struct ShapeBooleanProcessing {
         const ShapeBooleanProcessing&) = default;
 };
 
+struct OrganicAccumulationProcessing {
+    GraphNodeId input{invalidGraphNodeId};
+    OrganicAccumulationOperation parameters;
+
+    friend constexpr bool operator==(
+        const OrganicAccumulationProcessing&,
+        const OrganicAccumulationProcessing&) = default;
+};
+
 using ProcessingOperation = std::variant<
     LevelsProcessing,
     ThresholdProcessing,
@@ -156,7 +168,8 @@ using ProcessingOperation = std::variant<
     InkContourProcessing,
     RegionFieldProcessing,
     RegionSurfaceProcessing,
-    ShapeBooleanProcessing>;
+    ShapeBooleanProcessing,
+    OrganicAccumulationProcessing>;
 
 struct ProcessingNode {
     GraphNodeId id{invalidGraphNodeId};

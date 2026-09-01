@@ -6,6 +6,7 @@
 #include <paperweight/layer.hpp>
 #include <paperweight/material.hpp>
 #include <paperweight/noise.hpp>
+#include <paperweight/organic.hpp>
 #include <paperweight/pmat.hpp>
 #include <paperweight/region.hpp>
 #include <paperweight/scatter.hpp>
@@ -118,7 +119,7 @@ void testVersion()
 {
     constexpr paperweight::Version expected{0, 0, 16};
     static_assert(paperweight::currentVersion == expected);
-    expect(paperweight::versionString() == "0.0.16", "version string is 0.0.16");
+    expect(paperweight::versionString() == "0.0.17", "version string is 0.0.17");
 }
 
 void testImage()
@@ -916,7 +917,7 @@ void testRegionAttributes()
 
     const auto serialised = paperweight::serialisePmat(layered);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 13") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 14") != std::string::npos &&
                text->find("operation = region_field") != std::string::npos,
            "region fields introduced in version 9 serialise canonically as current .pmat");
     if (text != nullptr) {
@@ -925,8 +926,8 @@ void testRegionAttributes()
                    std::get<paperweight::Material>(reparsed) == layered,
                "region-field materials round-trip exactly through canonical .pmat");
         auto premature = *text;
-        const auto marker = premature.find("pmat.version = 13");
-        premature.replace(marker, std::string("pmat.version = 13").size(),
+        const auto marker = premature.find("pmat.version = 14");
+        premature.replace(marker, std::string("pmat.version = 14").size(),
                           "pmat.version = 8");
         const auto result = paperweight::parsePmat(premature);
         expect(std::holds_alternative<paperweight::ParseDiagnostic>(result) &&
@@ -1101,7 +1102,7 @@ void testCourseLayouts()
 
     const auto serialised = paperweight::serialisePmat(physicalMaterial);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 13") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 14") != std::string::npos &&
                text->find("operation = course_layout") != std::string::npos &&
                text->find("course.sizing = physical") != std::string::npos,
            "physical course layouts serialise explicitly in .pmat version 10");
@@ -1111,8 +1112,8 @@ void testCourseLayouts()
                    std::get<paperweight::Material>(reparsed) == physicalMaterial,
                "course layouts round-trip exactly through .pmat version 10");
         auto premature = *text;
-        const auto marker = premature.find("pmat.version = 13");
-        premature.replace(marker, std::string("pmat.version = 13").size(),
+        const auto marker = premature.find("pmat.version = 14");
+        premature.replace(marker, std::string("pmat.version = 14").size(),
                           "pmat.version = 9");
         const auto rejected = paperweight::parsePmat(premature);
         expect(std::holds_alternative<paperweight::ParseDiagnostic>(rejected) &&
@@ -1328,7 +1329,7 @@ void testRegionSurfaceSculpting()
 
     const auto serialised = paperweight::serialisePmat(material);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 13") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 14") != std::string::npos &&
                text->find("operation = region_surface") != std::string::npos &&
                text->find("sculpt.faceted_normals = true") != std::string::npos,
            "region sculpture serialises explicitly in .pmat version 11");
@@ -1338,8 +1339,8 @@ void testRegionSurfaceSculpting()
                    std::get<paperweight::Material>(reparsed) == material,
                "region sculpture round-trips exactly through .pmat version 11");
         auto premature = *text;
-        const auto marker = premature.find("pmat.version = 13");
-        premature.replace(marker, std::string("pmat.version = 13").size(),
+        const auto marker = premature.find("pmat.version = 14");
+        premature.replace(marker, std::string("pmat.version = 14").size(),
                           "pmat.version = 10");
         const auto rejected = paperweight::parsePmat(premature);
         expect(std::holds_alternative<paperweight::ParseDiagnostic>(rejected) &&
@@ -1570,7 +1571,7 @@ void testShapePrimitivesAndLattices()
 
     const auto serialised = paperweight::serialisePmat(graphMaterial);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 13") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 14") != std::string::npos &&
                text->find("operation = shape_boolean") != std::string::npos &&
                text->find("shape.vertex.5.y") != std::string::npos &&
                text->find("lattice.winding_x = 5") != std::string::npos,
@@ -1581,8 +1582,8 @@ void testShapePrimitivesAndLattices()
                    std::get<paperweight::Material>(reparsed) == graphMaterial,
                "shape and lattice materials round-trip exactly through .pmat version 12");
         auto premature = *text;
-        const auto marker = premature.find("pmat.version = 13");
-        premature.replace(marker, std::string("pmat.version = 13").size(),
+        const auto marker = premature.find("pmat.version = 14");
+        premature.replace(marker, std::string("pmat.version = 14").size(),
                           "pmat.version = 11");
         const auto rejected = paperweight::parsePmat(premature);
         expect(std::holds_alternative<paperweight::ParseDiagnostic>(rejected) &&
@@ -1805,7 +1806,7 @@ void testDeterministicScatter()
     const auto serialised = paperweight::serialisePmat(material);
     const auto* scatterText = std::get_if<std::string>(&serialised);
     expect(scatterText != nullptr &&
-               scatterText->find("pmat.version = 13") != std::string::npos &&
+               scatterText->find("pmat.version = 14") != std::string::npos &&
                scatterText->find("scatter.population.1.colour_high") != std::string::npos &&
                scatterText->find("scatter.exclusion_mask.enabled") != std::string::npos,
            "scatter populations, attributes, and masks serialise explicitly in .pmat version 13");
@@ -1815,8 +1816,8 @@ void testDeterministicScatter()
         expect(reparsed != nullptr && *reparsed == material,
                "deterministic scatter materials round-trip exactly through .pmat version 13");
         auto premature = *scatterText;
-        const auto marker = premature.find("pmat.version = 13");
-        premature.replace(marker, std::string("pmat.version = 13").size(),
+        const auto marker = premature.find("pmat.version = 14");
+        premature.replace(marker, std::string("pmat.version = 14").size(),
                           "pmat.version = 12");
         const auto rejected = paperweight::parsePmat(premature);
         const auto* diagnostic = std::get_if<paperweight::ParseDiagnostic>(&rejected);
@@ -1881,6 +1882,225 @@ void testDeterministicScatter()
                        serialImage->pixels().end(),
                        parallelImage->pixels().begin()),
                "scatter output is byte-identical between serial and multi-worker evaluation");
+    }
+}
+
+void testOrganicStructures()
+{
+    constexpr std::uint64_t seed = 170017;
+
+    auto cells = paperweight::OrganicCellOperation{};
+    cells.columns = 11;
+    cells.rows = 5;
+    cells.anisotropy = 3.1;
+    cells.irregularity = 0.41;
+    const auto cell = paperweight::evaluateOrganicCells(cells, -0.237, 0.681, seed);
+    const auto wrappedCell = paperweight::evaluateOrganicCells(cells, 0.763, 1.681, seed);
+    expect(cell == wrappedCell && cell.region.valid,
+           "anisotropic organic cells repeat exactly across both tile boundaries");
+    expect(cell.value >= 0.0 && cell.value <= 1.0 &&
+               cell.boundary >= 0.0 && cell.boundary <= 1.0,
+           "organic cell fields remain normalised");
+    cells.direction = paperweight::OrganicDirection::horizontal;
+    const auto horizontalCell = paperweight::evaluateOrganicCells(cells, -0.237, 0.681, seed);
+    expect(horizontalCell.region.key != cell.region.key || horizontalCell.value != cell.value,
+           "organic cell direction changes plate orientation deterministically");
+
+    auto cracks = paperweight::OrganicCrackOperation{};
+    cracks.roots = 6;
+    cracks.segments = 8;
+    cracks.branchLevels = 4;
+    cracks.branchProbability = 0.92;
+    cracks.seedOffset = 71;
+    const auto crackLayout = paperweight::buildOrganicCrackLayout(cracks, seed);
+    expect(crackLayout == paperweight::buildOrganicCrackLayout(cracks, seed) &&
+               !crackLayout.segments.empty(),
+           "crack trunks, branches, and splitting order are deterministic");
+    expect(std::any_of(
+               crackLayout.segments.begin(),
+               crackLayout.segments.end(),
+               [](const auto& segment) { return segment.hierarchy > 0; }),
+           "branching crack layouts contain hierarchical child segments");
+    const auto crack = paperweight::evaluateOrganicCracks(
+        cracks, crackLayout, -0.119, 0.407);
+    const auto wrappedCrack = paperweight::evaluateOrganicCracks(
+        cracks, crackLayout, 0.881, 1.407);
+    expect(crack == wrappedCrack,
+           "branching crack networks are mathematically periodic");
+
+    constexpr std::array species{
+        paperweight::LeafSpecies::ivy,
+        paperweight::LeafSpecies::laurel,
+        paperweight::LeafSpecies::oak,
+        paperweight::LeafSpecies::ash,
+    };
+    std::array<paperweight::LeafClusterOperation, species.size()> presets{};
+    for (std::size_t index = 0; index < species.size(); ++index) {
+        presets[index] = paperweight::leafSpeciesPreset(species[index]);
+    }
+    expect(presets[0] != presets[1] && presets[1] != presets[2] && presets[2] != presets[3],
+           "ivy, laurel, oak, and ash presets expose distinct analytic leaf models");
+    bool everySpeciesHasLeafAndVeinCoverage = true;
+    for (std::size_t index = 0; index < presets.size(); ++index) {
+        auto preset = presets[index];
+        preset.columns = 2;
+        preset.rows = 2;
+        preset.density = 1.0;
+        preset.seedOffset = 200 + index;
+        const auto presetLayout = paperweight::buildLeafClusterLayout(preset, seed);
+        double maximumFill = 0.0;
+        double maximumMidrib = 0.0;
+        double maximumVeins = 0.0;
+        for (std::uint32_t y = 0; y < 48; ++y) {
+            for (std::uint32_t x = 0; x < 48; ++x) {
+                const auto sample = paperweight::evaluateLeafCluster(
+                    preset,
+                    presetLayout,
+                    (static_cast<double>(x) + 0.5) / 48.0,
+                    (static_cast<double>(y) + 0.5) / 48.0);
+                maximumFill = std::max(maximumFill, sample.coverage);
+                maximumMidrib = std::max(maximumMidrib, sample.midrib);
+                maximumVeins = std::max(maximumVeins, sample.veins);
+            }
+        }
+        everySpeciesHasLeafAndVeinCoverage = everySpeciesHasLeafAndVeinCoverage &&
+            maximumFill > 0.0 && maximumMidrib > 0.0 && maximumVeins > 0.0;
+    }
+    expect(everySpeciesHasLeafAndVeinCoverage,
+           "every species preset produces visible analytic silhouettes, midribs, and veins");
+
+    auto leaves = presets[0];
+    leaves.columns = 4;
+    leaves.rows = 4;
+    leaves.leavesPerCluster = 9;
+    leaves.density = 1.0;
+    leaves.seedOffset = 117;
+    const auto leafLayout = paperweight::buildLeafClusterLayout(leaves, seed);
+    expect(leafLayout == paperweight::buildLeafClusterLayout(leaves, seed) &&
+               leafLayout.instances.size() == 4U * 4U * 9U,
+           "leaf cluster placement, overlap order, and per-leaf attributes are stable");
+    const auto& authoredLeaf = leafLayout.instances.front();
+    const auto leaf = paperweight::evaluateLeafCluster(
+        leaves, leafLayout, authoredLeaf.centreU, authoredLeaf.centreV);
+    const auto wrappedLeaf = paperweight::evaluateLeafCluster(
+        leaves, leafLayout, authoredLeaf.centreU + 1.0, authoredLeaf.centreV - 1.0);
+    expect(leaf.region.key == wrappedLeaf.region.key && leaf.coverage > 0.0 &&
+               leaf.region.valid &&
+               std::abs(leaf.coverage - wrappedLeaf.coverage) <= 1.0e-12 &&
+               std::abs(leaf.height - wrappedLeaf.height) <= 1.0e-12,
+           "overlapping leaf silhouettes and height ordering wrap as one toroidal population");
+    for (const auto field : std::array{
+             paperweight::LeafField::fill,
+             paperweight::LeafField::edge,
+             paperweight::LeafField::midrib,
+             paperweight::LeafField::veins,
+         }) {
+        leaves.field = field;
+        const auto detail = paperweight::evaluateLeafCluster(
+            leaves, leafLayout, authoredLeaf.centreU, authoredLeaf.centreV);
+        expect(detail.coverage >= 0.0 && detail.coverage <= 1.0,
+               "leaf fill, edge, midrib, and vein masks remain normalised");
+    }
+
+    auto accumulation = paperweight::OrganicAccumulationOperation{};
+    const paperweight::RegionSample cavityRegion{
+        42, 0.31, 0.72, 0.66, 0.18, true, 7, true};
+    const auto moss = paperweight::evaluateOrganicAccumulation(
+        accumulation, 0.35, cavityRegion, -0.213, 0.779, seed);
+    const auto wrappedMoss = paperweight::evaluateOrganicAccumulation(
+        accumulation, 0.35, cavityRegion, 0.787, 1.779, seed);
+    expect(std::abs(moss.amount - wrappedMoss.amount) <= 1.0e-12 &&
+               std::abs(moss.variation - wrappedMoss.variation) <= 1.0e-12 &&
+               moss.amount >= 0.0 && moss.amount <= 1.0,
+           "cavity-driven moss and lichen accumulation is seamless and bounded");
+
+    auto material = paperweight::Material{};
+    material.seed = seed;
+    auto cellLayer = paperweight::makeOrganicCellLayer();
+    std::get<paperweight::OrganicCellOperation>(cellLayer.operation) = cells;
+    auto crackLayer = paperweight::makeOrganicCrackLayer();
+    std::get<paperweight::OrganicCrackOperation>(crackLayer.operation) = cracks;
+    auto leafLayer = paperweight::makeLeafClusterLayer();
+    leaves.field = paperweight::LeafField::material;
+    std::get<paperweight::LeafClusterOperation>(leafLayer.operation) = leaves;
+    auto accumulationLayer = paperweight::makeOrganicAccumulationLayer();
+    std::get<paperweight::OrganicAccumulationOperation>(accumulationLayer.operation) =
+        accumulation;
+    material.layers = {cellLayer, crackLayer, leafLayer, accumulationLayer};
+    expect(!paperweight::validateMaterial(material).has_value(),
+           "a composed organic material validates");
+    auto invalidLeaves = material;
+    std::get<paperweight::LeafClusterOperation>(
+        invalidLeaves.layers[2].operation).clusterSpread = 0.7;
+    expect(paperweight::validateMaterial(invalidLeaves).has_value(),
+           "unbounded wrapped leaf clusters fail validation before evaluation");
+
+    const auto compiled = paperweight::compileMaterialGraph(material);
+    const auto* graph = std::get_if<paperweight::MaterialGraph>(&compiled);
+    bool foundCells = false;
+    bool foundCracks = false;
+    bool foundLeaves = false;
+    bool foundAccumulation = false;
+    if (graph != nullptr) {
+        for (const auto& node : graph->nodes) {
+            if (const auto* generator = std::get_if<paperweight::GeneratorNode>(&node)) {
+                foundCells = foundCells || std::holds_alternative<
+                    paperweight::OrganicCellOperation>(generator->operation);
+                foundCracks = foundCracks || std::holds_alternative<
+                    paperweight::OrganicCrackOperation>(generator->operation);
+                foundLeaves = foundLeaves || std::holds_alternative<
+                    paperweight::LeafClusterOperation>(generator->operation);
+            } else if (const auto* processing = std::get_if<paperweight::ProcessingNode>(&node)) {
+                foundAccumulation = foundAccumulation || std::holds_alternative<
+                    paperweight::OrganicAccumulationProcessing>(processing->operation);
+            }
+        }
+    }
+    expect(graph != nullptr && foundCells && foundCracks && foundLeaves && foundAccumulation,
+           "organic generators and accumulation compile into reusable graph objects");
+
+    const auto serialised = paperweight::serialisePmat(material);
+    const auto* organicText = std::get_if<std::string>(&serialised);
+    expect(organicText != nullptr &&
+               organicText->find("pmat.version = 14") != std::string::npos &&
+               organicText->find("leaf.vein_pairs") != std::string::npos &&
+               organicText->find("organic.accumulation.kind") != std::string::npos,
+           "organic structures serialise explicitly in .pmat version 14");
+    if (organicText != nullptr) {
+        const auto reparsed = paperweight::parsePmat(*organicText);
+        expect(std::holds_alternative<paperweight::Material>(reparsed) &&
+                   std::get<paperweight::Material>(reparsed) == material,
+               "organic materials round-trip exactly through .pmat version 14");
+        auto premature = *organicText;
+        const auto marker = premature.find("pmat.version = 14");
+        premature.replace(marker, std::string("pmat.version = 14").size(),
+                          "pmat.version = 13");
+        const auto rejected = paperweight::parsePmat(premature);
+        const auto* diagnostic = std::get_if<paperweight::ParseDiagnostic>(&rejected);
+        expect(diagnostic != nullptr && diagnostic->message.find(
+                   "require .pmat version 14") != std::string::npos,
+               "organic fields cannot be smuggled into older .pmat versions");
+    }
+
+    for (const auto output : std::array{
+             paperweight::MaterialOutput::colour,
+             paperweight::MaterialOutput::height,
+             paperweight::MaterialOutput::normal,
+             paperweight::MaterialOutput::roughness,
+         }) {
+        paperweight::GenerationRequest request{
+            material, 48, 40, output, std::nullopt, std::nullopt, 1};
+        const auto serial = paperweight::generate(request);
+        request.workerCount = 4;
+        const auto parallel = paperweight::generate(request);
+        const auto* serialImage = std::get_if<paperweight::Image>(&serial);
+        const auto* parallelImage = std::get_if<paperweight::Image>(&parallel);
+        expect(serialImage != nullptr && parallelImage != nullptr &&
+                   std::equal(
+                       serialImage->pixels().begin(),
+                       serialImage->pixels().end(),
+                       parallelImage->pixels().begin()),
+               "organic output is byte-identical between serial and multi-worker evaluation");
     }
 }
 
@@ -2057,9 +2277,9 @@ void testAdvancedSurfaceOperations()
                    std::get<paperweight::Material>(reparsed) == material,
                "advanced surface recipes round-trip through .pmat version 8 exactly");
         auto premature = *text;
-        const auto marker = premature.find("pmat.version = 13");
+        const auto marker = premature.find("pmat.version = 14");
         if (marker != std::string::npos) {
-            premature.replace(marker, std::string("pmat.version = 13").size(),
+            premature.replace(marker, std::string("pmat.version = 14").size(),
                               "pmat.version = 7");
         }
         const auto prematureResult = paperweight::parsePmat(premature);
@@ -2228,7 +2448,7 @@ void testStylisedOperations()
 
     const auto serialised = paperweight::serialisePmat(stylised);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 13") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 14") != std::string::npos &&
                text->find("operation = colour_ramp") != std::string::npos &&
                text->find("operation = ink_contour") != std::string::npos,
            "stylisation serialises in the human-readable .pmat v9 format");
@@ -2949,7 +3169,7 @@ void testPmat()
 {
     constexpr std::string_view canonical =
         "# Paperweight procedural material\n"
-        "pmat.version = 13\n"
+        "pmat.version = 14\n"
         "material.type = fbm\n"
         "material.seed = 18431\n"
         "material.width = 1m\n"
@@ -3147,6 +3367,14 @@ void testPmat()
             "foliage-foundation.pmat",
             {6813157508644990685ULL, 2005882756118611684ULL,
              7502967856720897219ULL, 13905972822234435030ULL}},
+        ShowcaseGolden{
+            "cel-forest-bark.pmat",
+            {2509963531123175871ULL, 3988434259909993061ULL,
+             8627026506781116848ULL, 5772535463161954292ULL}},
+        ShowcaseGolden{
+            "castle-foliage.pmat",
+            {276924794914850489ULL, 3285099816653324683ULL,
+             18331613028805405465ULL, 6658970271216751497ULL}},
     };
     constexpr std::array outputs{
         paperweight::MaterialOutput::colour,
@@ -3207,13 +3435,13 @@ void testPmat()
         legacyBrickMaterial.layers = {paperweight::makeBrickGridLayer()};
         auto versionFourBrick = std::get<std::string>(
             paperweight::serialisePmat(legacyBrickMaterial));
-        const auto versionMarkerPosition = versionFourBrick.find("pmat.version = 13");
+        const auto versionMarkerPosition = versionFourBrick.find("pmat.version = 14");
         expect(versionMarkerPosition != std::string::npos,
                "current brick fixture declares format version 12");
         if (versionMarkerPosition != std::string::npos) {
             versionFourBrick.replace(
                 versionMarkerPosition,
-                std::string("pmat.version = 13").size(),
+                std::string("pmat.version = 14").size(),
                 "pmat.version = 4");
         }
         for (const auto& field : {
@@ -3536,7 +3764,7 @@ void testPmat()
         }
     };
 
-    expectDiagnostic("pmat.version = 14\n", 1, "unsupported");
+    expectDiagnostic("pmat.version = 15\n", 1, "unsupported");
     expectDiagnostic("unknown.key = 1\n", 1, "unknown key");
     expectDiagnostic("pmat.version = 1\npmat.version = 1\n", 2, "duplicate");
     expectDiagnostic("pmat.version = nope\n", 1, "integer");
@@ -3658,6 +3886,7 @@ int main()
     testRegionSurfaceSculpting();
     testShapePrimitivesAndLattices();
     testDeterministicScatter();
+    testOrganicStructures();
     testAdvancedSurfaceOperations();
     testStylisedOperations();
     testMaterialGraph();

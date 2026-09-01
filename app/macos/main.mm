@@ -8,6 +8,7 @@
 #include <paperweight/generator.hpp>
 #include <paperweight/hash.hpp>
 #include <paperweight/layer.hpp>
+#include <paperweight/organic.hpp>
 #include <paperweight/pmat.hpp>
 
 #include <algorithm>
@@ -660,6 +661,14 @@ NSString* operationDisplayName(const paperweight::LayerOperation& operation)
         return @"Seam-safe Lattice";
     case 23:
         return @"Instance Scatter";
+    case 24:
+        return @"Organic Cells";
+    case 25:
+        return @"Organic Cracks";
+    case 26:
+        return @"Leaf Clusters";
+    case 27:
+        return @"Organic Accumulation";
     default:
         return @"Unknown";
     }
@@ -872,6 +881,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @[ @"Cel Courtyard Gravel", @"cel-courtyard-gravel" ],
         @[ @"Scattered Debris", @"scattered-debris" ],
         @[ @"Foliage Foundation", @"foliage-foundation" ],
+        @[ @"Cel Forest Bark", @"cel-forest-bark" ],
+        @[ @"Castle Foliage", @"castle-foliage" ],
     ];
     for (NSArray<NSString*>* showcase in showcases) {
         auto* item = [showcaseMenu addItemWithTitle:showcase[0]
@@ -1505,6 +1516,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @"Shape Boolean",
         @"Seam-safe Lattice",
         @"Instance Scatter",
+        @"Organic Cells",
+        @"Organic Cracks",
+        @"Leaf Clusters",
+        @"Organic Accumulation",
     ]];
     auto* addLayerButton = [NSButton buttonWithTitle:@"Add"
                                               target:self
@@ -2373,6 +2388,11 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         : shapeBoolean != nullptr ? &shapeBoolean->shape : nullptr;
     const auto* lattice = std::get_if<paperweight::LatticeOperation>(&layer->operation);
     const auto* scatter = std::get_if<paperweight::ScatterOperation>(&layer->operation);
+    const auto* organicCells = std::get_if<paperweight::OrganicCellOperation>(&layer->operation);
+    const auto* organicCracks = std::get_if<paperweight::OrganicCrackOperation>(&layer->operation);
+    const auto* leaves = std::get_if<paperweight::LeafClusterOperation>(&layer->operation);
+    const auto* accumulation =
+        std::get_if<paperweight::OrganicAccumulationOperation>(&layer->operation);
     self.noiseSeedRow.hidden = noise == nullptr;
     self.solidColourRow.hidden = solid == nullptr;
     self.levelsLowRow.hidden = levels == nullptr;
@@ -2877,6 +2897,291 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.facetedNormalsCheckbox.toolTip =
             @"Exclude candidates with a seamless deterministic noise mask.";
         [self updateLayerInspectorLiveValueLabels];
+    } else if (organicCells != nullptr) {
+        self.surfaceKindRow.hidden = NO;
+        [self.surfaceKindPopup removeAllItems];
+        [self.surfaceKindPopup addItemsWithTitles:@[
+            @"Bark plates", @"Plate boundaries", @"Region variation",
+        ]];
+        [self.surfaceKindPopup selectItemAtIndex:static_cast<NSInteger>(organicCells->field)];
+        self.courseFieldRow.hidden = NO;
+        [self.courseFieldPopup removeAllItems];
+        [self.courseFieldPopup addItemsWithTitles:@[@"Vertical grain", @"Horizontal grain"]];
+        [self.courseFieldPopup selectItemAtIndex:static_cast<NSInteger>(organicCells->direction)];
+        showCount(self.patternCountXRow, self.patternCountXLabel,
+                  self.patternCountXSlider, self.patternCountXValue,
+                  @"Columns", organicCells->columns);
+        showCount(self.patternCountYRow, self.patternCountYLabel,
+                  self.patternCountYSlider, self.patternCountYValue,
+                  @"Rows", organicCells->rows);
+        showValue(self.patternValueOneRow, self.patternValueOneLabel,
+                  self.patternValueOneSlider, self.patternValueOneValue,
+                  @"Anisotropy", paperweight::LayerLimits::minimumOrganicAnisotropy,
+                  paperweight::LayerLimits::maximumOrganicAnisotropy,
+                  organicCells->anisotropy);
+        showValue(self.patternValueTwoRow, self.patternValueTwoLabel,
+                  self.patternValueTwoSlider, self.patternValueTwoValue,
+                  @"Jitter", 0.0, 1.0, organicCells->jitter);
+        showValue(self.patternValueThreeRow, self.patternValueThreeLabel,
+                  self.patternValueThreeSlider, self.patternValueThreeValue,
+                  @"Irregularity", 0.0, 1.0, organicCells->irregularity);
+        showValue(self.patternValueFourRow, self.patternValueFourLabel,
+                  self.patternValueFourSlider, self.patternValueFourValue,
+                  @"Gap", 0.0, 1.0, organicCells->gap);
+        self.courseSoftnessRow.hidden = NO;
+        static_cast<NSTextField*>(self.courseSoftnessRow.views[0]).stringValue = @"Softness";
+        self.courseSoftnessSlider.minValue = 0.0;
+        self.courseSoftnessSlider.maxValue = 0.25;
+        self.courseSoftnessSlider.doubleValue = organicCells->softness;
+        self.courseSoftnessValue.stringValue = [NSString
+            stringWithFormat:@"%.3f", organicCells->softness];
+        self.patternSeedRow.hidden = NO;
+        self.patternSeedOffsetField.stringValue = [NSString
+            stringWithFormat:@"%llu", organicCells->seedOffset];
+    } else if (organicCracks != nullptr) {
+        self.surfaceKindRow.hidden = NO;
+        [self.surfaceKindPopup removeAllItems];
+        [self.surfaceKindPopup addItemsWithTitles:@[
+            @"All cracks", @"Trunks", @"Branches", @"Hierarchy", @"Distance",
+        ]];
+        [self.surfaceKindPopup selectItemAtIndex:static_cast<NSInteger>(organicCracks->field)];
+        self.courseFieldRow.hidden = NO;
+        [self.courseFieldPopup removeAllItems];
+        [self.courseFieldPopup addItemsWithTitles:@[@"Vertical", @"Horizontal"]];
+        [self.courseFieldPopup selectItemAtIndex:static_cast<NSInteger>(organicCracks->direction)];
+        showCount(self.patternCountXRow, self.patternCountXLabel,
+                  self.patternCountXSlider, self.patternCountXValue,
+                  @"Root cracks", organicCracks->roots);
+        self.patternCountXSlider.maxValue = paperweight::LayerLimits::maximumCrackRoots;
+        showCount(self.patternCountYRow, self.patternCountYLabel,
+                  self.patternCountYSlider, self.patternCountYValue,
+                  @"Segments", organicCracks->segments);
+        self.patternCountYSlider.minValue = 2.0;
+        self.patternCountYSlider.maxValue = paperweight::LayerLimits::maximumCrackSegments;
+        showValue(self.patternValueOneRow, self.patternValueOneLabel,
+                  self.patternValueOneSlider, self.patternValueOneValue,
+                  @"Branch chance", 0.0, 1.0, organicCracks->branchProbability);
+        showValue(self.patternValueTwoRow, self.patternValueTwoLabel,
+                  self.patternValueTwoSlider, self.patternValueTwoValue,
+                  @"Bend", 0.0, 1.0, organicCracks->bend);
+        showValue(self.patternValueThreeRow, self.patternValueThreeLabel,
+                  self.patternValueThreeSlider, self.patternValueThreeValue,
+                  @"Width", 0.001, 0.25, organicCracks->width);
+        showValue(self.patternValueFourRow, self.patternValueFourLabel,
+                  self.patternValueFourSlider, self.patternValueFourValue,
+                  @"Branch taper", 0.0, 1.0, organicCracks->taper);
+        self.posteriseBandsRow.hidden = NO;
+        static_cast<NSTextField*>(self.posteriseBandsRow.views[0]).stringValue = @"Branch levels";
+        self.posteriseBandsSlider.minValue = 0.0;
+        self.posteriseBandsSlider.maxValue = paperweight::LayerLimits::maximumCrackBranchLevels;
+        self.posteriseBandsSlider.numberOfTickMarks =
+            paperweight::LayerLimits::maximumCrackBranchLevels + 1;
+        self.posteriseBandsSlider.allowsTickMarkValuesOnly = YES;
+        self.posteriseBandsSlider.doubleValue = organicCracks->branchLevels;
+        self.posteriseBandsValue.stringValue = [NSString
+            stringWithFormat:@"%u", organicCracks->branchLevels];
+        self.courseSoftnessRow.hidden = NO;
+        static_cast<NSTextField*>(self.courseSoftnessRow.views[0]).stringValue = @"Softness";
+        self.courseSoftnessSlider.minValue = 0.0;
+        self.courseSoftnessSlider.maxValue = 0.25;
+        self.courseSoftnessSlider.doubleValue = organicCracks->softness;
+        self.courseSoftnessValue.stringValue = [NSString
+            stringWithFormat:@"%.3f", organicCracks->softness];
+        self.patternSeedRow.hidden = NO;
+        self.patternSeedOffsetField.stringValue = [NSString
+            stringWithFormat:@"%llu", organicCracks->seedOffset];
+    } else if (leaves != nullptr) {
+        self.rampModeRow.hidden = NO;
+        static_cast<NSTextField*>(self.rampModeRow.views[0]).stringValue = @"Species";
+        [self.rampModePopup removeAllItems];
+        [self.rampModePopup addItemsWithTitles:@[
+            @"Custom", @"Ivy", @"Laurel", @"Oak", @"Ash",
+        ]];
+        [self.rampModePopup selectItemAtIndex:0];
+        self.surfaceKindRow.hidden = NO;
+        [self.surfaceKindPopup removeAllItems];
+        [self.surfaceKindPopup addItemsWithTitles:@[
+            @"Ovate", @"Lanceolate", @"Cordate", @"Lobed",
+        ]];
+        [self.surfaceKindPopup selectItemAtIndex:static_cast<NSInteger>(leaves->profile)];
+        self.courseFieldRow.hidden = NO;
+        [self.courseFieldPopup removeAllItems];
+        [self.courseFieldPopup addItemsWithTitles:@[
+            @"Material outputs", @"Fill", @"Edge", @"Midrib", @"Veins", @"Leaf variation",
+        ]];
+        [self.courseFieldPopup selectItemAtIndex:static_cast<NSInteger>(leaves->field)];
+        self.processingTargetRow.hidden = NO;
+        static_cast<NSTextField*>(self.processingTargetRow.views[0]).stringValue = @"Cluster";
+        [self.processingTargetPopup removeAllItems];
+        [self.processingTargetPopup addItemsWithTitles:@[
+            @"Radial", @"Fan", @"Vine", @"Canopy",
+        ]];
+        [self.processingTargetPopup selectItemAtIndex:static_cast<NSInteger>(leaves->pattern)];
+        showCount(self.patternCountXRow, self.patternCountXLabel,
+                  self.patternCountXSlider, self.patternCountXValue,
+                  @"Clusters X", leaves->columns);
+        showCount(self.patternCountYRow, self.patternCountYLabel,
+                  self.patternCountYSlider, self.patternCountYValue,
+                  @"Clusters Y", leaves->rows);
+        showValue(self.patternValueOneRow, self.patternValueOneLabel,
+                  self.patternValueOneSlider, self.patternValueOneValue,
+                  @"Density", 0.0, 1.0, leaves->density);
+        showValue(self.patternValueTwoRow, self.patternValueTwoLabel,
+                  self.patternValueTwoSlider, self.patternValueTwoValue,
+                  @"Spread", 0.0, paperweight::LayerLimits::maximumLeafExtent,
+                  leaves->clusterSpread);
+        showValue(self.patternValueThreeRow, self.patternValueThreeLabel,
+                  self.patternValueThreeSlider, self.patternValueThreeValue,
+                  @"Leaf length", 0.001, paperweight::LayerLimits::maximumLeafExtent,
+                  leaves->leafLength);
+        showValue(self.patternValueFourRow, self.patternValueFourLabel,
+                  self.patternValueFourSlider, self.patternValueFourValue,
+                  @"Leaf width", 0.001, paperweight::LayerLimits::maximumLeafExtent,
+                  leaves->leafWidth);
+        self.posteriseBandsRow.hidden = NO;
+        static_cast<NSTextField*>(self.posteriseBandsRow.views[0]).stringValue = @"Leaves / cluster";
+        self.posteriseBandsSlider.minValue = 1.0;
+        self.posteriseBandsSlider.maxValue = paperweight::LayerLimits::maximumLeavesPerCluster;
+        self.posteriseBandsSlider.numberOfTickMarks = 0;
+        self.posteriseBandsSlider.allowsTickMarkValuesOnly = NO;
+        self.posteriseBandsSlider.doubleValue = leaves->leavesPerCluster;
+        self.posteriseBandsValue.stringValue = [NSString
+            stringWithFormat:@"%u", leaves->leavesPerCluster];
+        self.courseGapRow.hidden = NO;
+        static_cast<NSTextField*>(self.courseGapRow.views[0]).stringValue = @"Scale variation";
+        self.courseGapSlider.minValue = 0.0;
+        self.courseGapSlider.maxValue = 0.9;
+        self.courseGapSlider.doubleValue = leaves->scaleVariation;
+        self.courseGapValue.stringValue = [NSString stringWithFormat:@"%.2f", leaves->scaleVariation];
+        self.courseSoftnessRow.hidden = NO;
+        static_cast<NSTextField*>(self.courseSoftnessRow.views[0]).stringValue = @"Rotation variation";
+        self.courseSoftnessSlider.minValue = 0.0;
+        self.courseSoftnessSlider.maxValue = 360.0;
+        self.courseSoftnessSlider.doubleValue = leaves->rotationVariation;
+        self.courseSoftnessValue.stringValue = [NSString stringWithFormat:@"%.0f°", leaves->rotationVariation];
+        self.courseOverlapRow.hidden = NO;
+        static_cast<NSTextField*>(self.courseOverlapRow.views[0]).stringValue = @"Direction";
+        self.courseOverlapSlider.minValue = -360.0;
+        self.courseOverlapSlider.maxValue = 360.0;
+        self.courseOverlapSlider.doubleValue = leaves->directionDegrees;
+        self.courseOverlapValue.stringValue = [NSString stringWithFormat:@"%.0f°", leaves->directionDegrees];
+        self.filterSensitivityRow.hidden = NO;
+        static_cast<NSTextField*>(self.filterSensitivityRow.views[0]).stringValue = @"Edge softness";
+        self.filterSensitivitySlider.minValue = 0.0;
+        self.filterSensitivitySlider.maxValue = 0.25;
+        self.filterSensitivitySlider.doubleValue = leaves->softness;
+        self.filterSensitivityValue.stringValue = [NSString stringWithFormat:@"%.3f", leaves->softness];
+        self.inkRadiusRow.hidden = NO;
+        static_cast<NSTextField*>(self.inkRadiusRow.views[0]).stringValue = @"Silhouette taper";
+        self.inkRadiusSlider.minValue = 0.2;
+        self.inkRadiusSlider.maxValue = 2.0;
+        self.inkRadiusSlider.doubleValue = leaves->taper;
+        self.inkRadiusValue.stringValue = [NSString stringWithFormat:@"%.2f", leaves->taper];
+        self.inkThresholdRow.hidden = NO;
+        static_cast<NSTextField*>(self.inkThresholdRow.views[0]).stringValue = @"Base notch";
+        self.inkThresholdSlider.minValue = 0.0;
+        self.inkThresholdSlider.maxValue = 1.0;
+        self.inkThresholdSlider.doubleValue = leaves->baseNotch;
+        self.inkThresholdValue.stringValue = [NSString stringWithFormat:@"%.2f", leaves->baseNotch];
+        self.inkSoftnessRow.hidden = NO;
+        static_cast<NSTextField*>(self.inkSoftnessRow.views[0]).stringValue = @"Serration";
+        self.inkSoftnessSlider.minValue = 0.0;
+        self.inkSoftnessSlider.maxValue = 0.8;
+        self.inkSoftnessSlider.doubleValue = leaves->serration;
+        self.inkSoftnessValue.stringValue = [NSString stringWithFormat:@"%.2f", leaves->serration];
+        self.inkStrengthRow.hidden = NO;
+        static_cast<NSTextField*>(self.inkStrengthRow.views[0]).stringValue = @"Lobing";
+        self.inkStrengthSlider.minValue = 0.0;
+        self.inkStrengthSlider.maxValue = 0.8;
+        self.inkStrengthSlider.doubleValue = leaves->lobing;
+        self.inkStrengthValue.stringValue = [NSString stringWithFormat:@"%.2f", leaves->lobing];
+        self.levelsLowRow.hidden = NO;
+        static_cast<NSTextField*>(self.levelsLowRow.views[0]).stringValue = @"Minimum height";
+        self.levelsLowSlider.doubleValue = leaves->minimumHeight;
+        self.levelsHighRow.hidden = NO;
+        static_cast<NSTextField*>(self.levelsHighRow.views[0]).stringValue = @"Maximum height";
+        self.levelsHighSlider.doubleValue = leaves->maximumHeight;
+        self.levelsGammaRow.hidden = NO;
+        static_cast<NSTextField*>(self.levelsGammaRow.views[0]).stringValue = @"Min roughness";
+        self.levelsGammaSlider.minValue = 0.0;
+        self.levelsGammaSlider.maxValue = 1.0;
+        self.levelsGammaSlider.doubleValue = leaves->minimumRoughness;
+        self.thresholdRow.hidden = NO;
+        static_cast<NSTextField*>(self.thresholdRow.views[0]).stringValue = @"Max roughness";
+        self.thresholdSlider.doubleValue = leaves->maximumRoughness;
+        self.colourEntriesGroup.hidden = NO;
+        for (NSUInteger colourIndex = 0; colourIndex < self.colourEntryRows.count; ++colourIndex) {
+            self.colourEntryRows[colourIndex].hidden = colourIndex >= 2;
+            if (colourIndex < 2) {
+                self.colourEntryLabels[colourIndex].stringValue =
+                    colourIndex == 0 ? @"Leaf low" : @"Leaf high";
+                self.colourPositionSliders[colourIndex].hidden = YES;
+                self.colourPositionValues[colourIndex].hidden = YES;
+                self.colourEntryWells[colourIndex].color = colourFromRgba8(
+                    colourIndex == 0 ? leaves->lowColour : leaves->highColour);
+            }
+        }
+        self.addColourEntryButton.enabled = NO;
+        self.removeColourEntryButton.enabled = NO;
+        self.patternSeedRow.hidden = NO;
+        self.patternSeedOffsetField.stringValue = [NSString
+            stringWithFormat:@"%llu", leaves->seedOffset];
+    } else if (accumulation != nullptr) {
+        self.surfaceKindRow.hidden = NO;
+        [self.surfaceKindPopup removeAllItems];
+        [self.surfaceKindPopup addItemsWithTitles:@[@"Moss", @"Lichen", @"Colour variation"]];
+        [self.surfaceKindPopup selectItemAtIndex:static_cast<NSInteger>(accumulation->kind)];
+        self.courseFieldRow.hidden = NO;
+        [self.courseFieldPopup removeAllItems];
+        [self.courseFieldPopup addItemsWithTitles:@[
+            @"Cavities", @"Boundaries", @"Low height", @"Authored mask",
+        ]];
+        [self.courseFieldPopup selectItemAtIndex:static_cast<NSInteger>(accumulation->source)];
+        showCount(self.patternCountXRow, self.patternCountXLabel,
+                  self.patternCountXSlider, self.patternCountXValue,
+                  @"Growth scale", accumulation->scale);
+        showValue(self.patternValueOneRow, self.patternValueOneLabel,
+                  self.patternValueOneSlider, self.patternValueOneValue,
+                  @"Coverage", 0.0, 1.0, accumulation->coverage);
+        showValue(self.patternValueTwoRow, self.patternValueTwoLabel,
+                  self.patternValueTwoSlider, self.patternValueTwoValue,
+                  @"Softness", 0.0, 0.5, accumulation->softness);
+        showValue(self.patternValueThreeRow, self.patternValueThreeLabel,
+                  self.patternValueThreeSlider, self.patternValueThreeValue,
+                  @"Moisture bias", 0.0, 1.0, accumulation->moistureBias);
+        showValue(self.patternValueFourRow, self.patternValueFourLabel,
+                  self.patternValueFourSlider, self.patternValueFourValue,
+                  @"Breakup", 0.0, 1.0, accumulation->breakup);
+        self.courseGapRow.hidden = NO;
+        static_cast<NSTextField*>(self.courseGapRow.views[0]).stringValue = @"Colour variation";
+        self.courseGapSlider.minValue = 0.0;
+        self.courseGapSlider.maxValue = 1.0;
+        self.courseGapSlider.doubleValue = accumulation->variation;
+        self.courseGapValue.stringValue = [NSString stringWithFormat:@"%.2f", accumulation->variation];
+        self.processingTargetRow.hidden = NO;
+        static_cast<NSTextField*>(self.processingTargetRow.views[0]).stringValue = @"Affect";
+        [self.processingTargetPopup removeAllItems];
+        [self.processingTargetPopup addItemsWithTitles:@[
+            @"Colour only", @"Surface only", @"Colour + surface",
+        ]];
+        [self.processingTargetPopup selectItemAtIndex:processingTargetIndex(accumulation->target)];
+        self.colourEntriesGroup.hidden = NO;
+        for (NSUInteger colourIndex = 0; colourIndex < self.colourEntryRows.count; ++colourIndex) {
+            self.colourEntryRows[colourIndex].hidden = colourIndex >= 2;
+            if (colourIndex < 2) {
+                self.colourEntryLabels[colourIndex].stringValue =
+                    colourIndex == 0 ? @"Growth low" : @"Growth high";
+                self.colourPositionSliders[colourIndex].hidden = YES;
+                self.colourPositionValues[colourIndex].hidden = YES;
+                self.colourEntryWells[colourIndex].color = colourFromRgba8(
+                    colourIndex == 0 ? accumulation->lowColour : accumulation->highColour);
+            }
+        }
+        self.addColourEntryButton.enabled = NO;
+        self.removeColourEntryButton.enabled = NO;
+        self.patternSeedRow.hidden = NO;
+        self.patternSeedOffsetField.stringValue = [NSString
+            stringWithFormat:@"%llu", accumulation->seedOffset];
     } else if (editableShape != nullptr) {
         self.surfaceKindRow.hidden = NO;
         [self.surfaceKindPopup removeAllItems];
@@ -3435,6 +3740,18 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         material_.layers.push_back(paperweight::makeScatterLayer());
         selectedScatterPopulation_ = 0;
         break;
+    case 28:
+        material_.layers.push_back(paperweight::makeOrganicCellLayer());
+        break;
+    case 29:
+        material_.layers.push_back(paperweight::makeOrganicCrackLayer());
+        break;
+    case 30:
+        material_.layers.push_back(paperweight::makeLeafClusterLayer());
+        break;
+    case 31:
+        material_.layers.push_back(paperweight::makeOrganicAccumulationLayer());
+        break;
     default:
         return;
     }
@@ -3526,6 +3843,24 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         } else {
             population.highColour = rgba8FromColour(sender.color);
         }
+    } else if (auto* leaves =
+                   std::get_if<paperweight::LeafClusterOperation>(&layer->operation)) {
+        if (sender.tag == 0) {
+            leaves->lowColour = rgba8FromColour(sender.color);
+        } else if (sender.tag == 1) {
+            leaves->highColour = rgba8FromColour(sender.color);
+        } else {
+            return;
+        }
+    } else if (auto* growth =
+                   std::get_if<paperweight::OrganicAccumulationOperation>(&layer->operation)) {
+        if (sender.tag == 0) {
+            growth->lowColour = rgba8FromColour(sender.color);
+        } else if (sender.tag == 1) {
+            growth->highColour = rgba8FromColour(sender.color);
+        } else {
+            return;
+        }
     } else if (auto* ink = std::get_if<paperweight::InkContourOperation>(&layer->operation)) {
         ink->colour = rgba8FromColour(self.inkColourWell.color);
     } else if (auto* ramp = std::get_if<paperweight::ColourRampOperation>(&layer->operation)) {
@@ -3602,6 +3937,54 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
             stringWithFormat:@"%.0f", population.minimumRotation];
         self.inkStrengthValue.stringValue = [NSString
             stringWithFormat:@"%.0f", population.maximumRotation];
+    } else if (auto* cracks =
+                   std::get_if<paperweight::OrganicCrackOperation>(&layer->operation)) {
+        cracks->branchLevels = static_cast<std::uint32_t>(std::clamp(
+            std::llround(self.posteriseBandsSlider.doubleValue),
+            0LL,
+            static_cast<long long>(paperweight::LayerLimits::maximumCrackBranchLevels)));
+        self.posteriseBandsSlider.doubleValue = cracks->branchLevels;
+        self.posteriseBandsValue.stringValue = [NSString
+            stringWithFormat:@"%u", cracks->branchLevels];
+    } else if (auto* leaves =
+                   std::get_if<paperweight::LeafClusterOperation>(&layer->operation)) {
+        if (sender == self.rampModePopup && self.rampModePopup.indexOfSelectedItem > 0) {
+            const auto field = leaves->field;
+            const auto seedOffset = leaves->seedOffset;
+            *leaves = paperweight::leafSpeciesPreset(static_cast<paperweight::LeafSpecies>(
+                self.rampModePopup.indexOfSelectedItem - 1));
+            leaves->field = field;
+            leaves->seedOffset = seedOffset;
+            [self refreshLayerInspector];
+            [self rebuildLayerList];
+        } else {
+            if (sender == self.processingTargetPopup) {
+                leaves->pattern = static_cast<paperweight::LeafClusterPattern>(
+                    self.processingTargetPopup.indexOfSelectedItem);
+            }
+            leaves->leavesPerCluster = static_cast<std::uint32_t>(std::clamp(
+                std::llround(self.posteriseBandsSlider.doubleValue),
+                1LL,
+                static_cast<long long>(paperweight::LayerLimits::maximumLeavesPerCluster)));
+            leaves->softness = self.filterSensitivitySlider.doubleValue;
+            leaves->taper = self.inkRadiusSlider.doubleValue;
+            leaves->baseNotch = self.inkThresholdSlider.doubleValue;
+            leaves->serration = self.inkSoftnessSlider.doubleValue;
+            leaves->lobing = self.inkStrengthSlider.doubleValue;
+            self.posteriseBandsSlider.doubleValue = leaves->leavesPerCluster;
+            self.posteriseBandsValue.stringValue = [NSString
+                stringWithFormat:@"%u", leaves->leavesPerCluster];
+            self.filterSensitivityValue.stringValue = [NSString
+                stringWithFormat:@"%.3f", leaves->softness];
+            self.inkRadiusValue.stringValue = [NSString stringWithFormat:@"%.2f", leaves->taper];
+            self.inkThresholdValue.stringValue = [NSString stringWithFormat:@"%.2f", leaves->baseNotch];
+            self.inkSoftnessValue.stringValue = [NSString stringWithFormat:@"%.2f", leaves->serration];
+            self.inkStrengthValue.stringValue = [NSString stringWithFormat:@"%.2f", leaves->lobing];
+        }
+    } else if (auto* growth =
+                   std::get_if<paperweight::OrganicAccumulationOperation>(&layer->operation)) {
+        growth->target = processingTargetAtIndex(
+            self.processingTargetPopup.indexOfSelectedItem);
     } else if (auto* filter = std::get_if<paperweight::SurfaceFilterOperation>(&layer->operation)) {
         filter->sensitivity = self.filterSensitivitySlider.doubleValue;
         filter->target = processingTargetAtIndex(self.processingTargetPopup.indexOfSelectedItem);
@@ -3867,6 +4250,24 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.levelsHighSlider.doubleValue = population.maximumHeight;
         self.levelsGammaSlider.doubleValue = population.minimumRoughness;
         self.thresholdSlider.doubleValue = population.maximumRoughness;
+    } else if (auto* leaves =
+                   std::get_if<paperweight::LeafClusterOperation>(&layer->operation)) {
+        leaves->minimumHeight = std::min(
+            self.levelsLowSlider.doubleValue,
+            self.levelsHighSlider.doubleValue);
+        leaves->maximumHeight = std::max(
+            self.levelsLowSlider.doubleValue,
+            self.levelsHighSlider.doubleValue);
+        leaves->minimumRoughness = std::min(
+            self.levelsGammaSlider.doubleValue,
+            self.thresholdSlider.doubleValue);
+        leaves->maximumRoughness = std::max(
+            self.levelsGammaSlider.doubleValue,
+            self.thresholdSlider.doubleValue);
+        self.levelsLowSlider.doubleValue = leaves->minimumHeight;
+        self.levelsHighSlider.doubleValue = leaves->maximumHeight;
+        self.levelsGammaSlider.doubleValue = leaves->minimumRoughness;
+        self.thresholdSlider.doubleValue = leaves->maximumRoughness;
     }
 
     [self updateLayerInspectorLiveValueLabels];
@@ -4245,6 +4646,88 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
             self.facetedNormalsCheckbox.state == NSControlStateValueOn;
         if (parsedSeed) {
             sculpt->seedOffset = *parsedSeed;
+        }
+    } else if (auto* cells =
+                   std::get_if<paperweight::OrganicCellOperation>(&layer->operation)) {
+        if (sender == self.surfaceKindPopup) {
+            cells->field = static_cast<paperweight::OrganicCellField>(
+                self.surfaceKindPopup.indexOfSelectedItem);
+        }
+        if (sender == self.courseFieldPopup) {
+            cells->direction = static_cast<paperweight::OrganicDirection>(
+                self.courseFieldPopup.indexOfSelectedItem);
+        }
+        cells->columns = countX;
+        cells->rows = countY;
+        cells->anisotropy = self.patternValueOneSlider.doubleValue;
+        cells->jitter = self.patternValueTwoSlider.doubleValue;
+        cells->irregularity = self.patternValueThreeSlider.doubleValue;
+        cells->gap = self.patternValueFourSlider.doubleValue;
+        cells->softness = self.courseSoftnessSlider.doubleValue;
+        if (parsedSeed) {
+            cells->seedOffset = *parsedSeed;
+        }
+    } else if (auto* cracks =
+                   std::get_if<paperweight::OrganicCrackOperation>(&layer->operation)) {
+        if (sender == self.surfaceKindPopup) {
+            cracks->field = static_cast<paperweight::OrganicCrackField>(
+                self.surfaceKindPopup.indexOfSelectedItem);
+        }
+        if (sender == self.courseFieldPopup) {
+            cracks->direction = static_cast<paperweight::OrganicDirection>(
+                self.courseFieldPopup.indexOfSelectedItem);
+        }
+        cracks->roots = std::min(countX, paperweight::LayerLimits::maximumCrackRoots);
+        cracks->segments = std::clamp<std::uint32_t>(
+            countY, 2, paperweight::LayerLimits::maximumCrackSegments);
+        cracks->branchProbability = self.patternValueOneSlider.doubleValue;
+        cracks->bend = self.patternValueTwoSlider.doubleValue;
+        cracks->width = self.patternValueThreeSlider.doubleValue;
+        cracks->taper = self.patternValueFourSlider.doubleValue;
+        cracks->softness = self.courseSoftnessSlider.doubleValue;
+        if (parsedSeed) {
+            cracks->seedOffset = *parsedSeed;
+        }
+    } else if (auto* leaves =
+                   std::get_if<paperweight::LeafClusterOperation>(&layer->operation)) {
+        if (sender == self.surfaceKindPopup) {
+            leaves->profile = static_cast<paperweight::LeafProfile>(
+                self.surfaceKindPopup.indexOfSelectedItem);
+        }
+        if (sender == self.courseFieldPopup) {
+            leaves->field = static_cast<paperweight::LeafField>(
+                self.courseFieldPopup.indexOfSelectedItem);
+        }
+        leaves->columns = countX;
+        leaves->rows = countY;
+        leaves->density = self.patternValueOneSlider.doubleValue;
+        leaves->clusterSpread = self.patternValueTwoSlider.doubleValue;
+        leaves->leafLength = self.patternValueThreeSlider.doubleValue;
+        leaves->leafWidth = self.patternValueFourSlider.doubleValue;
+        leaves->scaleVariation = self.courseGapSlider.doubleValue;
+        leaves->rotationVariation = self.courseSoftnessSlider.doubleValue;
+        leaves->directionDegrees = self.courseOverlapSlider.doubleValue;
+        if (parsedSeed) {
+            leaves->seedOffset = *parsedSeed;
+        }
+    } else if (auto* growth =
+                   std::get_if<paperweight::OrganicAccumulationOperation>(&layer->operation)) {
+        if (sender == self.surfaceKindPopup) {
+            growth->kind = static_cast<paperweight::OrganicAccumulationKind>(
+                self.surfaceKindPopup.indexOfSelectedItem);
+        }
+        if (sender == self.courseFieldPopup) {
+            growth->source = static_cast<paperweight::OrganicAccumulationSource>(
+                self.courseFieldPopup.indexOfSelectedItem);
+        }
+        growth->scale = countX;
+        growth->coverage = self.patternValueOneSlider.doubleValue;
+        growth->softness = self.patternValueTwoSlider.doubleValue;
+        growth->moistureBias = self.patternValueThreeSlider.doubleValue;
+        growth->breakup = self.patternValueFourSlider.doubleValue;
+        growth->variation = self.courseGapSlider.doubleValue;
+        if (parsedSeed) {
+            growth->seedOffset = *parsedSeed;
         }
     } else if (auto* scatter =
                    std::get_if<paperweight::ScatterOperation>(&layer->operation)) {

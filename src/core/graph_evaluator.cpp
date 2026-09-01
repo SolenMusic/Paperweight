@@ -1,6 +1,7 @@
 #include "graph_evaluator.hpp"
 
 #include <paperweight/scatter.hpp>
+#include <paperweight/organic.hpp>
 #include <paperweight/surface.hpp>
 
 #include <algorithm>
@@ -41,6 +42,18 @@ struct ScatterPlan {
     CoordinateTransform transform;
     ScatterOperation operation;
     ScatterLayout layout;
+};
+
+struct OrganicCrackPlan {
+    CoordinateTransform transform;
+    OrganicCrackOperation operation;
+    OrganicCrackLayout layout;
+};
+
+struct LeafClusterPlan {
+    CoordinateTransform transform;
+    LeafClusterOperation operation;
+    LeafClusterLayout layout;
 };
 
 struct LevelsPlan {
@@ -101,6 +114,11 @@ struct ShapeBooleanPlan {
     ShapeBooleanOperation parameters;
 };
 
+struct OrganicAccumulationPlan {
+    std::size_t input{};
+    OrganicAccumulationOperation parameters;
+};
+
 struct MaskPlan {
     CoordinateTransform transform;
     LayerMask mask;
@@ -113,6 +131,8 @@ struct OutputPlan {
 using EvaluationPlan = std::variant<
     GeneratorPlan,
     ScatterPlan,
+    OrganicCrackPlan,
+    LeafClusterPlan,
     LevelsPlan,
     ThresholdPlan,
     PosterisePlan,
@@ -124,6 +144,7 @@ using EvaluationPlan = std::variant<
     RegionFieldPlan,
     RegionSurfacePlan,
     ShapeBooleanPlan,
+    OrganicAccumulationPlan,
     MaskPlan,
     OutputPlan>;
 
@@ -180,6 +201,22 @@ public:
                                 generator.transform,
                                 *scatter,
                                 buildScatterLayout(*scatter, material_.seed),
+                            };
+                        }
+                        if (const auto* cracks =
+                                std::get_if<OrganicCrackOperation>(&generator.operation)) {
+                            return OrganicCrackPlan{
+                                generator.transform,
+                                *cracks,
+                                buildOrganicCrackLayout(*cracks, material_.seed),
+                            };
+                        }
+                        if (const auto* leaves =
+                                std::get_if<LeafClusterOperation>(&generator.operation)) {
+                            return LeafClusterPlan{
+                                generator.transform,
+                                *leaves,
+                                buildLeafClusterLayout(*leaves, material_.seed),
                             };
                         }
                         return GeneratorPlan{
@@ -263,6 +300,13 @@ public:
                                         shape.parameters,
                                     };
                                 },
+                                [&indexOf](
+                                    const OrganicAccumulationProcessing& organic) -> EvaluationPlan {
+                                    return OrganicAccumulationPlan{
+                                        indexOf(organic.input),
+                                        organic.parameters,
+                                    };
+                                },
                             },
                             processing.operation);
                     },
@@ -334,6 +378,32 @@ private:
                     return evaluateScatterOperation(
                         scatter.operation,
                         scatter.layout,
+                        transformed);
+                },
+                [&context](const OrganicCrackPlan& cracks) {
+                    const auto coordinates = transformCoordinates(cracks.transform, context);
+                    const EvaluationContext transformed{
+                        context.material,
+                        coordinates.u,
+                        coordinates.v,
+                        context.output,
+                    };
+                    return evaluateOrganicCrackOperation(
+                        cracks.operation,
+                        cracks.layout,
+                        transformed);
+                },
+                [&context](const LeafClusterPlan& leaves) {
+                    const auto coordinates = transformCoordinates(leaves.transform, context);
+                    const EvaluationContext transformed{
+                        context.material,
+                        coordinates.u,
+                        coordinates.v,
+                        context.output,
+                    };
+                    return evaluateLeafClusterOperation(
+                        leaves.operation,
+                        leaves.layout,
                         transformed);
                 },
                 [this, &context, cacheResult](const LevelsPlan& levels) {
@@ -534,6 +604,13 @@ private:
                     const auto input = evaluateNode(shape.input, context, cacheResult);
                     return evaluateOperation(
                         LayerOperation{shape.parameters},
+                        context,
+                        input);
+                },
+                [this, &context, cacheResult](const OrganicAccumulationPlan& organic) {
+                    const auto input = evaluateNode(organic.input, context, cacheResult);
+                    return evaluateOperation(
+                        LayerOperation{organic.parameters},
                         context,
                         input);
                 },
