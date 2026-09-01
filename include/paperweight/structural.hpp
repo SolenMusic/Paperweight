@@ -4,6 +4,7 @@
 
 #include <paperweight/layer.hpp>
 #include <paperweight/physical.hpp>
+#include <paperweight/region.hpp>
 
 namespace paperweight {
 
@@ -14,6 +15,15 @@ struct RepeatedCoordinate {
     friend constexpr bool operator==(
         const RepeatedCoordinate&,
         const RepeatedCoordinate&) = default;
+};
+
+struct StructuralSample {
+    double value{};
+    RegionSample region;
+
+    friend constexpr bool operator==(
+        const StructuralSample&,
+        const StructuralSample&) = default;
 };
 
 [[nodiscard]] double wrapUnit(double value);
@@ -31,6 +41,12 @@ struct RepeatedCoordinate {
     double u,
     double v);
 
+[[nodiscard]] StructuralSample evaluateBrickGridSample(
+    const BrickGridOperation& operation,
+    const PhysicalSize& materialSize,
+    double u,
+    double v);
+
 [[nodiscard]] double evaluateBrickGrid(
     const BrickGridOperation& operation,
     const PhysicalSize& materialSize,
@@ -42,7 +58,18 @@ struct RepeatedCoordinate {
     double u,
     double v);
 
+[[nodiscard]] StructuralSample evaluateTileGridSample(
+    const TileGridOperation& operation,
+    double u,
+    double v);
+
 [[nodiscard]] double evaluateWorleyCells(
+    const WorleyCellsOperation& operation,
+    double u,
+    double v,
+    std::uint64_t materialSeed);
+
+[[nodiscard]] StructuralSample evaluateWorleyCellsSample(
     const WorleyCellsOperation& operation,
     double u,
     double v,
@@ -54,7 +81,18 @@ struct RepeatedCoordinate {
     double v,
     std::uint64_t materialSeed);
 
+[[nodiscard]] StructuralSample evaluateRandomCellsSample(
+    const RandomCellsOperation& operation,
+    double u,
+    double v,
+    std::uint64_t materialSeed);
+
 [[nodiscard]] double evaluateLines(
+    const LinesOperation& operation,
+    double u,
+    double v);
+
+[[nodiscard]] StructuralSample evaluateLinesSample(
     const LinesOperation& operation,
     double u,
     double v);
@@ -64,7 +102,17 @@ struct RepeatedCoordinate {
     double u,
     double v);
 
+[[nodiscard]] StructuralSample evaluateRectanglesSample(
+    const RectanglesOperation& operation,
+    double u,
+    double v);
+
 [[nodiscard]] double evaluateCircles(
+    const CirclesOperation& operation,
+    double u,
+    double v);
+
+[[nodiscard]] StructuralSample evaluateCirclesSample(
     const CirclesOperation& operation,
     double u,
     double v);

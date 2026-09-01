@@ -617,6 +617,8 @@ NSString* operationDisplayName(const paperweight::LayerOperation& operation)
         return @"Palette";
     case 16:
         return @"Ink Contours";
+    case 17:
+        return @"Region Field";
     default:
         return @"Unknown";
     }
@@ -794,6 +796,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @[ @"Toon Dungeon", @"toon-dungeon" ],
         @[ @"Painted Metal", @"painted-metal" ],
         @[ @"Graphic Marble", @"graphic-marble" ],
+        @[ @"Region Stones", @"region-stones" ],
     ];
     for (NSArray<NSString*>* showcase in showcases) {
         auto* item = [showcaseMenu addItemWithTitle:showcase[0]
@@ -1420,6 +1423,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @"Colour Ramp",
         @"Palette",
         @"Ink Contours",
+        @"Region Field",
     ]];
     auto* addLayerButton = [NSButton buttonWithTitle:@"Add"
                                               target:self
@@ -2211,6 +2215,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     const auto* ramp = std::get_if<paperweight::ColourRampOperation>(&layer->operation);
     const auto* palette = std::get_if<paperweight::PaletteOperation>(&layer->operation);
     const auto* ink = std::get_if<paperweight::InkContourOperation>(&layer->operation);
+    const auto* region = std::get_if<paperweight::RegionFieldOperation>(&layer->operation);
     self.noiseSeedRow.hidden = noise == nullptr;
     self.solidColourRow.hidden = solid == nullptr;
     self.levelsLowRow.hidden = levels == nullptr;
@@ -2243,6 +2248,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.inkSoftnessRow.hidden = YES;
     self.inkStrengthRow.hidden = YES;
     self.inkInvertedCheckbox.hidden = YES;
+    self.inkInvertedCheckbox.title = @"Ink flat regions";
 
     if (noise != nullptr) {
         self.noiseSeedOffsetField.stringValue = [NSString
@@ -2482,6 +2488,40 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
             self.filterSensitivityValue.stringValue = [NSString
                 stringWithFormat:@"%.2f", filter->sensitivity];
         }
+    } else if (region != nullptr) {
+        self.surfaceKindRow.hidden = NO;
+        [self.surfaceKindPopup removeAllItems];
+        [self.surfaceKindPopup addItemsWithTitles:@[
+            @"Seeded Random",
+            @"Local U",
+            @"Local V",
+            @"Distance to Centre",
+            @"Distance to Boundary",
+        ]];
+        [self.surfaceKindPopup selectItemAtIndex:static_cast<NSInteger>(region->field)];
+        self.patternCountXRow.hidden = NO;
+        self.patternCountXLabel.stringValue = @"Channel";
+        self.patternCountXSlider.minValue = 0.0;
+        self.patternCountXSlider.maxValue = paperweight::LayerLimits::maximumRegionChannel;
+        self.patternCountXSlider.doubleValue = region->channel;
+        self.patternCountXValue.stringValue = [NSString
+            stringWithFormat:@"%u", region->channel];
+        showValue(self.patternValueOneRow, self.patternValueOneLabel,
+                  self.patternValueOneSlider, self.patternValueOneValue,
+                  @"Output low", 0.0, 1.0, region->outputLow);
+        showValue(self.patternValueTwoRow, self.patternValueTwoLabel,
+                  self.patternValueTwoSlider, self.patternValueTwoValue,
+                  @"Output high", 0.0, 1.0, region->outputHigh);
+        self.patternSeedRow.hidden = NO;
+        self.patternSeedOffsetField.stringValue = [NSString
+            stringWithFormat:@"%llu", region->seedOffset];
+        self.processingTargetRow.hidden = NO;
+        [self.processingTargetPopup selectItemAtIndex:processingTargetIndex(region->target)];
+        self.inkInvertedCheckbox.hidden = NO;
+        self.inkInvertedCheckbox.title = @"Invert field";
+        self.inkInvertedCheckbox.state = region->inverted
+            ? NSControlStateValueOn
+            : NSControlStateValueOff;
     } else if (posterise != nullptr) {
         self.posteriseBandsRow.hidden = NO;
         self.processingTargetRow.hidden = NO;
@@ -2714,6 +2754,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     case 20:
         material_.layers.push_back(paperweight::makeInkContourLayer());
         break;
+    case 21:
+        material_.layers.push_back(paperweight::makeRegionFieldLayer());
+        break;
     default:
         return;
     }
@@ -2860,6 +2903,11 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.inkThresholdValue.stringValue = [NSString stringWithFormat:@"%.2f", ink->threshold];
         self.inkSoftnessValue.stringValue = [NSString stringWithFormat:@"%.2f", ink->softness];
         self.inkStrengthValue.stringValue = [NSString stringWithFormat:@"%.2f", ink->strength];
+    } else if (auto* region =
+                   std::get_if<paperweight::RegionFieldOperation>(&layer->operation)) {
+        region->target = processingTargetAtIndex(
+            self.processingTargetPopup.indexOfSelectedItem);
+        region->inverted = self.inkInvertedCheckbox.state == NSControlStateValueOn;
     } else {
         return;
     }
@@ -3256,6 +3304,18 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         filter->strength = self.patternValueTwoSlider.doubleValue;
         filter->target = processingTargetAtIndex(
             self.processingTargetPopup.indexOfSelectedItem);
+    } else if (auto* region =
+                   std::get_if<paperweight::RegionFieldOperation>(&layer->operation)) {
+        if (sender == self.surfaceKindPopup) {
+            region->field = static_cast<paperweight::RegionFieldKind>(
+                self.surfaceKindPopup.indexOfSelectedItem);
+        }
+        region->channel = countX;
+        region->outputLow = self.patternValueOneSlider.doubleValue;
+        region->outputHigh = self.patternValueTwoSlider.doubleValue;
+        if (parsedSeed) {
+            region->seedOffset = *parsedSeed;
+        }
     } else {
         return;
     }

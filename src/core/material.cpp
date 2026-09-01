@@ -460,6 +460,34 @@ std::optional<std::string> validateMaterial(const Material& material)
                         return prefix +
                             "ink contour strength must be finite and between 0 and 1";
                     }
+                } else if constexpr (std::is_same_v<Operation, RegionFieldOperation>) {
+                    switch (operation.field) {
+                    case RegionFieldKind::random:
+                    case RegionFieldKind::localU:
+                    case RegionFieldKind::localV:
+                    case RegionFieldKind::centreDistance:
+                    case RegionFieldKind::boundaryDistance:
+                        break;
+                    default:
+                        return prefix + "region field kind is not supported";
+                    }
+                    if (operation.channel > LayerLimits::maximumRegionChannel) {
+                        return prefix + "region random channel must be between 0 and 255";
+                    }
+                    if (!validRange(
+                            operation.outputLow,
+                            LayerLimits::minimumLevel,
+                            LayerLimits::maximumLevel) ||
+                        !validRange(
+                            operation.outputHigh,
+                            LayerLimits::minimumLevel,
+                            LayerLimits::maximumLevel)) {
+                        return prefix +
+                            "region field output range must be finite and between 0 and 1";
+                    }
+                    if (!validProcessingTarget(operation.target)) {
+                        return prefix + "region field target is not supported";
+                    }
                 }
                 return std::nullopt;
             },

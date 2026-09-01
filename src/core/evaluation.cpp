@@ -57,6 +57,7 @@ EvaluatedSample sampleFromColour(const Rgba8& colour)
         green,
         blue,
         channelToUnit(colour.alpha),
+        {},
     };
 }
 
@@ -73,7 +74,17 @@ EvaluatedSample sampleFromScalar(const Material& material, double scalar)
         interpolate(low.green, high.green),
         interpolate(low.blue, high.blue),
         interpolate(low.alpha, high.alpha),
+        {},
     };
+}
+
+EvaluatedSample sampleFromStructural(
+    const Material& material,
+    const StructuralSample& structural)
+{
+    auto result = sampleFromScalar(material, structural.value);
+    result.region = structural.region;
+    return result;
 }
 
 EvaluatedSample noiseSample(const EvaluationContext& context, std::uint64_t seedOffset)
@@ -106,6 +117,7 @@ EvaluatedSample levelsSample(const EvaluatedSample& input, const LevelsOperation
         applyLevels(input.green, levels),
         applyLevels(input.blue, levels),
         input.alpha,
+        input.region,
     };
 }
 
@@ -117,10 +129,12 @@ EvaluatedSample thresholdSample(
     if (input.scalar >= threshold.threshold) {
         auto result = sampleFromColour(context.material.highColour);
         result.scalar = 1.0;
+        result.region = input.region;
         return result;
     }
     auto result = sampleFromColour(context.material.lowColour);
     result.scalar = 0.0;
+    result.region = input.region;
     return result;
 }
 
@@ -179,6 +193,7 @@ EvaluatedSample colourRampSample(
         channel(lower->colour.green, upper->colour.green),
         channel(lower->colour.blue, upper->colour.blue),
         channel(lower->colour.alpha, upper->colour.alpha),
+        input.region,
     };
 }
 
@@ -217,7 +232,56 @@ EvaluatedSample paletteSample(
         mapped.green,
         mapped.blue,
         mapped.alpha,
+        input.region,
     };
+}
+
+EvaluatedSample regionFieldSample(
+    const EvaluatedSample& input,
+    const EvaluationContext& context,
+    const RegionFieldOperation& operation)
+{
+    double value = 0.0;
+    if (input.region.valid) {
+        switch (operation.field) {
+        case RegionFieldKind::random:
+            value = regionRandom(
+                context.material.seed,
+                input.region.key,
+                operation.seedOffset,
+                operation.channel);
+            break;
+        case RegionFieldKind::localU:
+            value = input.region.localU;
+            break;
+        case RegionFieldKind::localV:
+            value = input.region.localV;
+            break;
+        case RegionFieldKind::centreDistance:
+            value = input.region.centreDistance;
+            break;
+        case RegionFieldKind::boundaryDistance:
+            value = input.region.boundaryDistance;
+            break;
+        }
+    }
+    value = std::clamp(value, 0.0, 1.0);
+    if (operation.inverted) {
+        value = 1.0 - value;
+    }
+    value = operation.outputLow +
+        (operation.outputHigh - operation.outputLow) * value;
+
+    auto result = input;
+    if (affectsScalar(operation.target)) {
+        result.scalar = value;
+    }
+    if (affectsColour(operation.target)) {
+        result.red = value;
+        result.green = value;
+        result.blue = value;
+    }
+    return result;
 }
 
 double compositeChannel(double background, double source, CompositeMode mode, double opacity)
@@ -345,51 +409,51 @@ EvaluatedSample evaluateOperation(
                 return paletteSample(input, palette);
             },
             [&context](const BrickGridOperation& brick) {
-                return sampleFromScalar(
+                return sampleFromStructural(
                     context.material,
-                    evaluateBrickGrid(
+                    evaluateBrickGridSample(
                         brick,
                         context.material.physicalSize,
                         context.u,
                         context.v));
             },
             [&context](const TileGridOperation& tile) {
-                return sampleFromScalar(
+                return sampleFromStructural(
                     context.material,
-                    evaluateTileGrid(tile, context.u, context.v));
+                    evaluateTileGridSample(tile, context.u, context.v));
             },
             [&context](const WorleyCellsOperation& worley) {
-                return sampleFromScalar(
+                return sampleFromStructural(
                     context.material,
-                    evaluateWorleyCells(
+                    evaluateWorleyCellsSample(
                         worley,
                         context.u,
                         context.v,
                         context.material.seed));
             },
             [&context](const RandomCellsOperation& cells) {
-                return sampleFromScalar(
+                return sampleFromStructural(
                     context.material,
-                    evaluateRandomCells(
+                    evaluateRandomCellsSample(
                         cells,
                         context.u,
                         context.v,
                         context.material.seed));
             },
             [&context](const LinesOperation& lines) {
-                return sampleFromScalar(
+                return sampleFromStructural(
                     context.material,
-                    evaluateLines(lines, context.u, context.v));
+                    evaluateLinesSample(lines, context.u, context.v));
             },
             [&context](const RectanglesOperation& rectangles) {
-                return sampleFromScalar(
+                return sampleFromStructural(
                     context.material,
-                    evaluateRectangles(rectangles, context.u, context.v));
+                    evaluateRectanglesSample(rectangles, context.u, context.v));
             },
             [&context](const CirclesOperation& circles) {
-                return sampleFromScalar(
+                return sampleFromStructural(
                     context.material,
-                    evaluateCircles(circles, context.u, context.v));
+                    evaluateCirclesSample(circles, context.u, context.v));
             },
             [&context](const SurfacePatternOperation& surface) {
                 return sampleFromScalar(
@@ -421,10 +485,14 @@ EvaluatedSample evaluateOperation(
                     affectsColour(filter.target) ? apply(input.green) : input.green,
                     affectsColour(filter.target) ? apply(input.blue) : input.blue,
                     input.alpha,
+                    input.region,
                 };
             },
             [&input](const InkContourOperation&) {
                 return input;
+            },
+            [&input, &context](const RegionFieldOperation& regionField) {
+                return regionFieldSample(input, context, regionField);
             },
         },
         operation);
@@ -437,13 +505,18 @@ EvaluatedSample compositeSamples(
     double opacity)
 {
     const double amount = std::clamp(opacity, 0.0, 1.0);
-    return {
+    auto result = EvaluatedSample{
         compositeChannel(background.scalar, source.scalar, mode, amount),
         compositeChannel(background.red, source.red, mode, amount),
         compositeChannel(background.green, source.green, mode, amount),
         compositeChannel(background.blue, source.blue, mode, amount),
         compositeChannel(background.alpha, source.alpha, mode, amount),
+        {},
     };
+    result.region = amount > 0.0 && source.region.valid
+        ? source.region
+        : background.region;
+    return result;
 }
 
 EvaluatedSample evaluateMaterialSample(const Material& material, double u, double v)

@@ -103,13 +103,16 @@ light. The preview effect never enters `.pmat` data or exported maps.
 
 ## v0.0.12 - Regions and Attributes
 
-Give every structural region a stable integer identity, region-local
+Implemented: give every structural region a stable integer identity, region-local
 coordinates, boundary and centre distances, and independent seeded random
 channels. Allow these fields to drive colour, scalar height, roughness,
 parameters, and masks without changing region geometry. Identity must remain
 independent of pixels, resolution, worker scheduling, architecture, and
-container traversal. This is the shared foundation for all later layouts and
-instances. See [roadmap issue #128](https://github.com/SolenMusic/Paperweight/issues/128).
+container traversal. The native editor exposes the operation and includes a
+Region Stones showcase. `.pmat` version 9 persists the field selection while
+the exact integer identity stays evaluator metadata. This is the shared
+foundation for all later layouts and instances. See
+[roadmap issue #128](https://github.com/SolenMusic/Paperweight/issues/128).
 
 ## v0.0.13 - Masonry and Courses
 

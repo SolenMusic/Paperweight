@@ -16,6 +16,10 @@ foreach(material IN ITEMS
     knotty-wood
     marble-veins
     eroded-terrain
+    toon-dungeon
+    painted-metal
+    graphic-marble
+    region-stones
 )
     configure_file(
         "${PROJECT_SOURCE_DIR}/examples/materials/${material}.pmat"

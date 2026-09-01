@@ -32,6 +32,7 @@ foreach(showcase IN ITEMS
     toon-dungeon
     painted-metal
     graphic-marble
+    region-stones
 )
     configure_file(
         "${PROJECT_SOURCE_DIR}/examples/materials/${showcase}.pmat"

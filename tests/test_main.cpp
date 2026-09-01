@@ -7,6 +7,7 @@
 #include <paperweight/material.hpp>
 #include <paperweight/noise.hpp>
 #include <paperweight/pmat.hpp>
+#include <paperweight/region.hpp>
 #include <paperweight/structural.hpp>
 #include <paperweight/surface.hpp>
 #include <paperweight/version.hpp>
@@ -112,9 +113,9 @@ paperweight::Material materialWithNoiseParameters(
 
 void testVersion()
 {
-    constexpr paperweight::Version expected{0, 0, 11};
+    constexpr paperweight::Version expected{0, 0, 12};
     static_assert(paperweight::currentVersion == expected);
-    expect(paperweight::versionString() == "0.0.11", "version string is 0.0.11");
+    expect(paperweight::versionString() == "0.0.12", "version string is 0.0.12");
 }
 
 void testImage()
@@ -280,8 +281,8 @@ void testLayerEvaluation()
     expectNear(solid.alpha, 128.0 / 255.0, 1.0e-12,
                "solid-colour operation preserves alpha");
 
-    const paperweight::EvaluatedSample background{0.25, 0.2, 0.4, 0.6, 0.8};
-    const paperweight::EvaluatedSample source{0.8, 0.9, 0.5, 0.25, 0.4};
+    const paperweight::EvaluatedSample background{0.25, 0.2, 0.4, 0.6, 0.8, {}};
+    const paperweight::EvaluatedSample source{0.8, 0.9, 0.5, 0.25, 0.4, {}};
     const auto blended = paperweight::compositeSamples(
         background, source, paperweight::CompositeMode::blend, 0.5);
     expectNear(blended.scalar, 0.525, 1.0e-12, "blend interpolates scalar values");
@@ -700,6 +701,243 @@ void testStructuralGenerators()
            "invalid circle radii are diagnosed");
 }
 
+void testRegionAttributes()
+{
+    const auto key = paperweight::makeRegionKey(
+        0x74696c6567726964ULL,
+        2,
+        3);
+    expect(key == 0x9b7350fc67ba2645ULL,
+           "region keys match their exact 64-bit golden vector");
+    expectNear(
+        paperweight::regionRandom(18431, key, 17, 0),
+        0.9114368622244505,
+        0.0,
+        "region random channel zero matches its golden vector");
+    expectNear(
+        paperweight::regionRandom(18431, key, 17, 1),
+        0.15465807587006541,
+        0.0,
+        "independent region random channels match their golden vectors");
+
+    const paperweight::TileGridOperation tile{5, 4, 0.1, 0.02};
+    const auto tileSample = paperweight::evaluateTileGridSample(tile, 0.37, 0.61);
+    const auto tileRepeat = paperweight::evaluateTileGridSample(tile, 1.37, -0.39);
+    expect(tileSample.region.valid && tileSample.region.key == tileRepeat.region.key,
+           "tile region identity repeats exactly across both seams");
+    expectNear(tileSample.region.localU, tileRepeat.region.localU, 1.0e-12,
+               "region-local U is independent of the sampled tile repeat");
+    expectNear(tileSample.region.localV, tileRepeat.region.localV, 1.0e-12,
+               "region-local V is independent of the sampled tile repeat");
+    expect(tileSample.region.centreDistance >= 0.0 &&
+               tileSample.region.centreDistance <= 1.0 &&
+               tileSample.region.boundaryDistance >= 0.0 &&
+               tileSample.region.boundaryDistance <= 1.0,
+           "region distance fields stay normalised");
+    const auto neighbouringTile = paperweight::evaluateTileGridSample(tile, 0.57, 0.61);
+    expect(tileSample.region.key != neighbouringTile.region.key,
+           "neighbouring structural cells receive different integer keys");
+
+    paperweight::WorleyCellsOperation worley;
+    worley.columns = 7;
+    worley.rows = 6;
+    worley.jitter = 0.84;
+    worley.seedOffset = 91;
+    const auto worleySample = paperweight::evaluateWorleyCellsSample(
+        worley, -0.17, 0.43, 18431);
+    const auto worleyRepeat = paperweight::evaluateWorleyCellsSample(
+        worley, 0.83, 1.43, 18431);
+    expect(worleySample.region.key == worleyRepeat.region.key,
+           "Worley ownership remains stable for cells crossing tile seams");
+    expectNear(worleySample.region.boundaryDistance,
+               worleyRepeat.region.boundaryDistance,
+               1.0e-12,
+               "Worley boundary distance remains periodic");
+
+    paperweight::Material material;
+    material.seed = 18431;
+    const paperweight::EvaluationContext context{material, 0.2, 0.3};
+    paperweight::EvaluatedSample input{0.72, 0.15, 0.35, 0.55, 1.0, {}};
+    input.region = tileSample.region;
+    const paperweight::RegionFieldOperation colourField{
+        paperweight::RegionFieldKind::random,
+        17,
+        1,
+        0.2,
+        0.8,
+        false,
+        paperweight::ProcessingTarget::colour,
+    };
+    const auto colourResult = paperweight::evaluateOperation(
+        colourField, context, input);
+    expectNear(colourResult.scalar, input.scalar, 0.0,
+               "colour-targeted region fields preserve scalar structure");
+    expect(colourResult.region.key == input.region.key &&
+               colourResult.red == colourResult.green &&
+               colourResult.green == colourResult.blue,
+           "region processing preserves exact identity while producing a colour field");
+
+    auto localField = colourField;
+    localField.field = paperweight::RegionFieldKind::localU;
+    localField.outputLow = 0.0;
+    localField.outputHigh = 1.0;
+    localField.target = paperweight::ProcessingTarget::scalar;
+    const auto localResult = paperweight::evaluateOperation(localField, context, input);
+    expectNear(localResult.scalar, input.region.localU, 0.0,
+               "region-local coordinates are selectable as scalar graph values");
+    expectNear(localResult.red, input.red, 0.0,
+               "scalar-targeted region fields preserve authored colour");
+
+    auto source = input;
+    source.region = neighbouringTile.region;
+    const auto hiddenSource = paperweight::compositeSamples(
+        input, source, paperweight::CompositeMode::blend, 0.0);
+    const auto visibleSource = paperweight::compositeSamples(
+        input, source, paperweight::CompositeMode::blend, 0.25);
+    expect(hiddenSource.region.key == input.region.key &&
+               visibleSource.region.key == source.region.key,
+           "composites change active region only for a visible structural source");
+
+    paperweight::EvaluatedSample noRegion{0.5, 0.5, 0.5, 0.5, 1.0, {}};
+    auto fallback = localField;
+    fallback.outputLow = 0.25;
+    fallback.outputHigh = 0.75;
+    expectNear(
+        paperweight::evaluateOperation(fallback, context, noRegion).scalar,
+        0.25,
+        0.0,
+        "a missing active region uses the documented field-zero fallback");
+
+    paperweight::Material layered;
+    layered.seed = 18431;
+    layered.layers = {
+        paperweight::makeWorleyCellsLayer(),
+        paperweight::makeRegionFieldLayer(),
+    };
+    auto& variation = std::get<paperweight::RegionFieldOperation>(
+        layered.layers.back().operation);
+    variation.seedOffset = 901;
+    variation.channel = 3;
+    variation.outputLow = 0.55;
+    variation.outputHigh = 1.0;
+    layered.layers.back().compositeMode = paperweight::CompositeMode::multiply;
+    const auto compiled = paperweight::compileMaterialGraph(layered);
+    const auto* graph = std::get_if<paperweight::MaterialGraph>(&compiled);
+    bool foundRegionProcessor = false;
+    if (graph != nullptr) {
+        for (const auto& node : graph->nodes) {
+            if (const auto* processing = std::get_if<paperweight::ProcessingNode>(&node)) {
+                foundRegionProcessor = foundRegionProcessor ||
+                    std::holds_alternative<paperweight::RegionFieldProcessing>(
+                        processing->operation);
+            }
+        }
+    }
+    expect(graph != nullptr && foundRegionProcessor,
+           "region-field layers compile into reusable processing nodes");
+
+    paperweight::MaterialGraph maskGraph;
+    maskGraph.nodes = {
+        paperweight::GeneratorNode{1, std::nullopt, {}, worley},
+        paperweight::ProcessingNode{2, std::nullopt,
+            paperweight::RegionFieldProcessing{1, localField}},
+        paperweight::GeneratorNode{3, std::nullopt, {},
+            paperweight::SolidColourOperation{{255, 255, 255, 255}}},
+        paperweight::ProcessingNode{4, std::nullopt,
+            paperweight::CompositeProcessing{
+                3, 1, paperweight::GraphNodeId{2},
+                paperweight::CompositeMode::blend, 1.0}},
+        paperweight::OutputNode{5, paperweight::MaterialOutput::colour, 4},
+        paperweight::OutputNode{6, paperweight::MaterialOutput::height, 2},
+        paperweight::OutputNode{7, paperweight::MaterialOutput::normal, 2},
+        paperweight::OutputNode{8, paperweight::MaterialOutput::roughness, 2},
+    };
+    expect(!paperweight::validateMaterialGraph(maskGraph).has_value(),
+           "value-producing region processors are accepted as graph masks");
+
+    auto channelZero = colourField;
+    channelZero.target = paperweight::ProcessingTarget::colourAndScalar;
+    channelZero.channel = 0;
+    auto channelOne = channelZero;
+    channelOne.channel = 1;
+    auto channelTwo = channelZero;
+    channelTwo.channel = 2;
+    paperweight::MaterialGraph routedGraph;
+    routedGraph.nodes = {
+        paperweight::GeneratorNode{1, std::nullopt, {}, tile},
+        paperweight::ProcessingNode{2, std::nullopt,
+            paperweight::RegionFieldProcessing{1, channelZero}},
+        paperweight::ProcessingNode{3, std::nullopt,
+            paperweight::RegionFieldProcessing{1, channelOne}},
+        paperweight::ProcessingNode{4, std::nullopt,
+            paperweight::RegionFieldProcessing{1, channelTwo}},
+        paperweight::OutputNode{5, paperweight::MaterialOutput::colour, 2},
+        paperweight::OutputNode{6, paperweight::MaterialOutput::height, 3},
+        paperweight::OutputNode{7, paperweight::MaterialOutput::normal, 3},
+        paperweight::OutputNode{8, paperweight::MaterialOutput::roughness, 4},
+    };
+    expect(!paperweight::validateMaterialGraph(routedGraph).has_value(),
+           "independent region channels can route to colour, surface, and roughness outputs");
+    const auto routedColour = paperweight::evaluateMaterialGraphSample(
+        material, routedGraph, paperweight::MaterialOutput::colour, 0.37, 0.61);
+    const auto routedHeight = paperweight::evaluateMaterialGraphSample(
+        material, routedGraph, paperweight::MaterialOutput::height, 0.37, 0.61);
+    const auto routedRoughness = paperweight::evaluateMaterialGraphSample(
+        material, routedGraph, paperweight::MaterialOutput::roughness, 0.37, 0.61);
+    expect(routedColour.scalar != routedHeight.scalar &&
+               routedHeight.scalar != routedRoughness.scalar,
+           "independently routed region attributes use distinct deterministic values");
+
+    for (const auto output : paperweight::materialOutputs) {
+        paperweight::GenerationRequest request{
+            layered,
+            72,
+            56,
+            output,
+            std::nullopt,
+            std::nullopt,
+        };
+        request.workerCount = 1;
+        const auto serial = paperweight::generate(request);
+        request.workerCount = 4;
+        const auto parallel = paperweight::generate(request);
+        const auto* serialImage = std::get_if<paperweight::Image>(&serial);
+        const auto* parallelImage = std::get_if<paperweight::Image>(&parallel);
+        expect(serialImage != nullptr && parallelImage != nullptr &&
+                   std::equal(
+                       serialImage->pixels().begin(),
+                       serialImage->pixels().end(),
+                       parallelImage->pixels().begin()),
+               "region attributes are byte-identical with one or four workers");
+    }
+
+    const auto serialised = paperweight::serialisePmat(layered);
+    const auto* text = std::get_if<std::string>(&serialised);
+    expect(text != nullptr && text->find("pmat.version = 9") != std::string::npos &&
+               text->find("operation = region_field") != std::string::npos,
+           "region fields serialise in human-readable .pmat version 9");
+    if (text != nullptr) {
+        const auto reparsed = paperweight::parsePmat(*text);
+        expect(std::holds_alternative<paperweight::Material>(reparsed) &&
+                   std::get<paperweight::Material>(reparsed) == layered,
+               "region-field materials round-trip exactly through .pmat version 9");
+        auto premature = *text;
+        const auto marker = premature.find("pmat.version = 9");
+        premature.replace(marker, std::string("pmat.version = 9").size(),
+                          "pmat.version = 8");
+        const auto result = paperweight::parsePmat(premature);
+        expect(std::holds_alternative<paperweight::ParseDiagnostic>(result) &&
+                   std::get<paperweight::ParseDiagnostic>(result).message.find(
+                       "require .pmat version 9") != std::string::npos,
+               "older .pmat versions reject region-field operations explicitly");
+    }
+
+    auto invalid = layered;
+    std::get<paperweight::RegionFieldOperation>(invalid.layers.back().operation).channel = 256;
+    expect(paperweight::validateMaterial(invalid).has_value(),
+           "out-of-range region random channels are diagnosed");
+}
+
 void testAdvancedSurfaceOperations()
 {
     auto material = paperweight::Material{};
@@ -873,9 +1111,9 @@ void testAdvancedSurfaceOperations()
                    std::get<paperweight::Material>(reparsed) == material,
                "advanced surface recipes round-trip through .pmat version 8 exactly");
         auto premature = *text;
-        const auto marker = premature.find("pmat.version = 8");
+        const auto marker = premature.find("pmat.version = 9");
         if (marker != std::string::npos) {
-            premature.replace(marker, std::string("pmat.version = 8").size(),
+            premature.replace(marker, std::string("pmat.version = 9").size(),
                               "pmat.version = 7");
         }
         const auto prematureResult = paperweight::parsePmat(premature);
@@ -899,7 +1137,7 @@ void testStylisedOperations()
 {
     paperweight::Material material;
     const paperweight::EvaluationContext context{material, 0.25, 0.75};
-    const paperweight::EvaluatedSample input{0.62, 0.12, 0.54, 0.91, 1.0};
+    const paperweight::EvaluatedSample input{0.62, 0.12, 0.54, 0.91, 1.0, {}};
 
     const auto colourPosterised = paperweight::evaluateOperation(
         paperweight::PosteriseOperation{3, paperweight::ProcessingTarget::colour},
@@ -941,7 +1179,7 @@ void testStylisedOperations()
 
     paperweight::PaletteOperation palette;
     palette.colours = {{255, 0, 0, 255}, {0, 0, 255, 255}};
-    const paperweight::EvaluatedSample tie{0.4, 1.0, 0.0, 1.0, 1.0};
+    const paperweight::EvaluatedSample tie{0.4, 1.0, 0.0, 1.0, 1.0, {}};
     const auto quantised = paperweight::evaluateOperation(palette, context, tie);
     expectNear(quantised.red, 1.0, 0.0,
                "palette ties select the first authored colour deterministically");
@@ -1044,15 +1282,15 @@ void testStylisedOperations()
 
     const auto serialised = paperweight::serialisePmat(stylised);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 8") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 9") != std::string::npos &&
                text->find("operation = colour_ramp") != std::string::npos &&
                text->find("operation = ink_contour") != std::string::npos,
-           "stylisation serialises in the human-readable .pmat v8 format");
+           "stylisation serialises in the human-readable .pmat v9 format");
     if (text != nullptr) {
         const auto reparsed = paperweight::parsePmat(*text);
         expect(std::holds_alternative<paperweight::Material>(reparsed) &&
                    std::get<paperweight::Material>(reparsed) == stylised,
-               "stylised materials round-trip through .pmat v8 exactly");
+               "stylised materials round-trip through .pmat v9 exactly");
     }
 }
 
@@ -1765,7 +2003,7 @@ void testPmat()
 {
     constexpr std::string_view canonical =
         "# Paperweight procedural material\n"
-        "pmat.version = 8\n"
+        "pmat.version = 9\n"
         "material.type = fbm\n"
         "material.seed = 18431\n"
         "material.width = 1m\n"
@@ -1899,6 +2137,10 @@ void testPmat()
             "graphic-marble.pmat",
             {5673632620284603551ULL, 4843462098491275796ULL,
              13736793143684132695ULL, 5671637863622030837ULL}},
+        ShowcaseGolden{
+            "region-stones.pmat",
+            {3145964603081166891ULL, 3288223741196907183ULL,
+             12168598463037332862ULL, 5149046671055124938ULL}},
     };
     constexpr std::array outputs{
         paperweight::MaterialOutput::colour,
@@ -1959,13 +2201,13 @@ void testPmat()
         legacyBrickMaterial.layers = {paperweight::makeBrickGridLayer()};
         auto versionFourBrick = std::get<std::string>(
             paperweight::serialisePmat(legacyBrickMaterial));
-        const auto versionMarkerPosition = versionFourBrick.find("pmat.version = 8");
+        const auto versionMarkerPosition = versionFourBrick.find("pmat.version = 9");
         expect(versionMarkerPosition != std::string::npos,
-               "current brick fixture declares format version 8");
+               "current brick fixture declares format version 9");
         if (versionMarkerPosition != std::string::npos) {
             versionFourBrick.replace(
                 versionMarkerPosition,
-                std::string("pmat.version = 8").size(),
+                std::string("pmat.version = 9").size(),
                 "pmat.version = 4");
         }
         for (const auto& field : {
@@ -2288,7 +2530,7 @@ void testPmat()
         }
     };
 
-    expectDiagnostic("pmat.version = 9\n", 1, "unsupported");
+    expectDiagnostic("pmat.version = 10\n", 1, "unsupported");
     expectDiagnostic("unknown.key = 1\n", 1, "unknown key");
     expectDiagnostic("pmat.version = 1\npmat.version = 1\n", 2, "duplicate");
     expectDiagnostic("pmat.version = nope\n", 1, "integer");
@@ -2405,6 +2647,7 @@ int main()
     testLayerEvaluation();
     testMasksAndWarping();
     testStructuralGenerators();
+    testRegionAttributes();
     testAdvancedSurfaceOperations();
     testStylisedOperations();
     testMaterialGraph();
