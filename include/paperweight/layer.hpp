@@ -109,6 +109,43 @@ struct RegionFieldOperation {
         const RegionFieldOperation&) = default;
 };
 
+enum class RegionSurfaceField : std::uint8_t {
+    height = 0,
+    cavity = 1,
+    outerEdge = 2,
+    exposedFace = 3,
+    facet = 4,
+    wear = 5,
+};
+
+enum class BevelProfile : std::uint8_t {
+    rounded = 0,
+    chamfered = 1,
+    handCut = 2,
+};
+
+struct RegionSurfaceOperation {
+    RegionSurfaceField field{RegionSurfaceField::height};
+    BevelProfile profile{BevelProfile::rounded};
+    double bevelWidth{0.35};
+    double bevelHeight{0.8};
+    std::uint32_t facetCount{5};
+    double facetStrength{0.25};
+    double centrePeak{0.15};
+    double slopeStrength{0.08};
+    double chipAmount{0.08};
+    std::uint32_t chipScale{8};
+    double wearAmount{0.12};
+    double erosionAmount{0.06};
+    std::uint64_t seedOffset{};
+    bool facetedNormals{};
+    ProcessingTarget target{ProcessingTarget::scalar};
+
+    friend constexpr bool operator==(
+        const RegionSurfaceOperation&,
+        const RegionSurfaceOperation&) = default;
+};
+
 struct PosteriseOperation {
     std::uint32_t bands{4};
     ProcessingTarget target{ProcessingTarget::colour};
@@ -377,7 +414,8 @@ using LayerOperation = std::variant<
     PaletteOperation,
     InkContourOperation,
     RegionFieldOperation,
-    CourseLayoutOperation>;
+    CourseLayoutOperation,
+    RegionSurfaceOperation>;
 
 struct MaterialLayer {
     bool enabled{true};
@@ -442,6 +480,12 @@ struct LayerLimits {
     static constexpr double maximumLayoutVariation = 1.0;
     static constexpr double minimumLayoutOverlap = 0.0;
     static constexpr double maximumLayoutOverlap = 0.95;
+    static constexpr double minimumBevelWidth = 0.001;
+    static constexpr double maximumBevelWidth = 1.0;
+    static constexpr std::uint32_t minimumFacetCount = 3;
+    static constexpr std::uint32_t maximumFacetCount = 16;
+    static constexpr std::uint32_t minimumChipScale = 1;
+    static constexpr std::uint32_t maximumChipScale = 64;
 };
 
 [[nodiscard]] constexpr MaterialLayer makeNoiseLayer(std::uint64_t seedOffset = 0)
@@ -660,6 +704,17 @@ struct LayerLimits {
         {}};
 }
 
+[[nodiscard]] constexpr MaterialLayer makeRegionSurfaceLayer()
+{
+    return MaterialLayer{
+        true,
+        1.0,
+        CompositeMode::blend,
+        RegionSurfaceOperation{},
+        {},
+        {}};
+}
+
 [[nodiscard]] constexpr std::uint32_t rotationDegrees(QuarterTurn rotation)
 {
     return static_cast<std::uint32_t>(rotation) * 90U;
@@ -719,9 +774,44 @@ struct LayerLimits {
         return "region_field";
     case 18:
         return "course_layout";
+    case 19:
+        return "region_surface";
     default:
         return "unknown";
     }
+}
+
+[[nodiscard]] constexpr std::string_view regionSurfaceFieldName(
+    RegionSurfaceField field)
+{
+    switch (field) {
+    case RegionSurfaceField::height:
+        return "height";
+    case RegionSurfaceField::cavity:
+        return "cavity";
+    case RegionSurfaceField::outerEdge:
+        return "outer_edge";
+    case RegionSurfaceField::exposedFace:
+        return "exposed_face";
+    case RegionSurfaceField::facet:
+        return "facet";
+    case RegionSurfaceField::wear:
+        return "wear";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view bevelProfileName(BevelProfile profile)
+{
+    switch (profile) {
+    case BevelProfile::rounded:
+        return "rounded";
+    case BevelProfile::chamfered:
+        return "chamfered";
+    case BevelProfile::handCut:
+        return "hand_cut";
+    }
+    return "unknown";
 }
 
 [[nodiscard]] constexpr std::string_view regionFieldKindName(RegionFieldKind field)

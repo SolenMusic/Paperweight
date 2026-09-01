@@ -54,7 +54,8 @@ std::optional<GeneratorOperation> generatorOperation(const LayerOperation& opera
                           std::is_same_v<Operation, ColourRampOperation> ||
                           std::is_same_v<Operation, PaletteOperation> ||
                           std::is_same_v<Operation, InkContourOperation> ||
-                          std::is_same_v<Operation, RegionFieldOperation>) {
+                          std::is_same_v<Operation, RegionFieldOperation> ||
+                          std::is_same_v<Operation, RegionSurfaceOperation>) {
                 return std::nullopt;
             } else {
                 return GeneratorOperation{value};
@@ -111,6 +112,9 @@ std::optional<std::string> validateProcessingNode(const ProcessingNode& node)
             },
             [&layer](const RegionFieldProcessing& field) {
                 layer.operation = field.parameters;
+            },
+            [&layer](const RegionSurfaceProcessing& surface) {
+                layer.operation = surface.parameters;
             },
         },
         node.operation);
@@ -176,6 +180,9 @@ std::vector<GraphNodeId> dependencies(const GraphNode& node)
                         },
                         [](const RegionFieldProcessing& field) {
                             return std::vector<GraphNodeId>{field.input};
+                        },
+                        [](const RegionSurfaceProcessing& surface) {
+                            return std::vector<GraphNodeId>{surface.input};
                         },
                     },
                     processing.operation);
@@ -371,6 +378,11 @@ std::optional<GraphError> validateMaterialGraph(const MaterialGraph& graph)
                                     field.input,
                                     GraphNodeCategory::generator);
                             },
+                            [&checkInput](const RegionSurfaceProcessing& surface) {
+                                return checkInput(
+                                    surface.input,
+                                    GraphNodeCategory::generator);
+                            },
                         },
                         processing.operation);
                 },
@@ -523,6 +535,11 @@ GraphCompilationResult compileMaterialGraph(const Material& material)
                            std::get_if<RegionFieldOperation>(&layer.operation)) {
                 source = addProcessing(
                     RegionFieldProcessing{accumulated, *field},
+                    layerIndex);
+            } else if (const auto* surface =
+                           std::get_if<RegionSurfaceOperation>(&layer.operation)) {
+                source = addProcessing(
+                    RegionSurfaceProcessing{accumulated, *surface},
                     layerIndex);
             } else {
                 const auto operation = generatorOperation(layer.operation);

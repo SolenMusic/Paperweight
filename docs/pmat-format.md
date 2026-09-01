@@ -1,4 +1,4 @@
-# `.pmat` format version 10
+# `.pmat` format version 11
 
 Paperweight material files are UTF-8 text. They are intended to be readable,
 diffable, and small enough to embed alongside game assets.
@@ -7,7 +7,7 @@ diffable, and small enough to embed alongside game assets.
 
 ```text
 # Paperweight procedural material
-pmat.version = 10
+pmat.version = 11
 material.type = fbm
 material.seed = 18431
 material.width = 1m
@@ -68,7 +68,7 @@ no material; it never returns a partially accepted definition.
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
-| `pmat.version` | File-format version | `10` |
+| `pmat.version` | File-format version | `11` |
 | `material.type` | Generator model | `fbm` |
 | `material.seed` | Deterministic seed | Unsigned 64-bit integer |
 | `material.width` | Width of one seamless material repeat | Metre value from `0.000001m` to `1000000m` |
@@ -192,6 +192,21 @@ The operation selects exactly one parameter group:
 | `region_field` | `layer.N.region.output_high` | Decimal from 0 to 1 |
 | `region_field` | `layer.N.region.inverted` | Whether to complement the selected field before remapping |
 | `region_field` | `layer.N.region.target` | `colour`, `scalar`, or `all` |
+| `region_surface` | `layer.N.sculpt.field` | `height`, `cavity`, `outer_edge`, `exposed_face`, `facet`, or `wear` |
+| `region_surface` | `layer.N.sculpt.profile` | `rounded`, `chamfered`, or `hand_cut` |
+| `region_surface` | `layer.N.sculpt.bevel_width` | Normalised boundary distance from 0.001 to 1 |
+| `region_surface` | `layer.N.sculpt.bevel_height` | Constructed bevel height from 0 to 1 |
+| `region_surface` | `layer.N.sculpt.facet_count` | Seeded planar facet count from 3 to 16 |
+| `region_surface` | `layer.N.sculpt.facet_strength` | Planar contribution from 0 to 1 |
+| `region_surface` | `layer.N.sculpt.centre_peak` | Per-region centre peak from 0 to 1 |
+| `region_surface` | `layer.N.sculpt.slope` | Per-region directional slope from 0 to 1 |
+| `region_surface` | `layer.N.sculpt.chips` | Edge chipping amount from 0 to 1 |
+| `region_surface` | `layer.N.sculpt.chip_scale` | Periodic chip and wear scale from 1 to 64 |
+| `region_surface` | `layer.N.sculpt.wear` | Edge wear amount from 0 to 1 |
+| `region_surface` | `layer.N.sculpt.erosion` | Edge erosion amount from 0 to 1 |
+| `region_surface` | `layer.N.sculpt.seed_offset` | Unsigned 64-bit integer |
+| `region_surface` | `layer.N.sculpt.faceted_normals` | Whether normal evaluation strengthens planar facets |
+| `region_surface` | `layer.N.sculpt.target` | `colour`, `scalar`, or `all` |
 
 Brick and tile values are one inside each unit and zero in mortar or grout.
 With relative brick `mortar_space = cell`, mortar is a fraction of each repeated cell,
@@ -219,6 +234,15 @@ row receives the same deterministic value. Physical sizing derives whole block
 and course counts from material repeat dimensions while gap and overlap remain
 true metre distances. The stored base counts remain explicit for predictable
 round trips and for switching back to relative sizing.
+
+Region Surface consumes the currently active region rather than creating new
+geometry. Boundary distance becomes the selected rounded, chamfered, or
+hand-cut bevel; region-keyed planes, centre displacement, and direction add
+facets, peaks, and slopes. Chipping, wear, and erosion are confined to the edge
+neighbourhood and use periodic noise. Selecting a mask field exposes the same
+construction data for later colour, roughness, moss, or dirt composition. With
+`faceted_normals = true`, only the normal branch receives stronger planar
+derivative planes; colour, height, and roughness do not change.
 
 Advanced surface patterns are deterministic generators in the same scalar and
 colour pipeline as noise and structural shapes. `scale` controls repetitions or
@@ -336,13 +360,13 @@ formula is applied to scalar, red, green, blue, and alpha channels.
 
 ## Graph compilation
 
-Paperweight v0.0.13 retains the layer syntax, now at version 10, as the compact,
+Paperweight v0.0.14 retains the layer syntax, now at version 11, as the compact,
 human-editable authoring projection. Before generation, the portable core
 compiles it into a directed acyclic material graph:
 
 - source operations become generator nodes;
 - levels, threshold, surface filters, posterise, colour ramps, palettes, ink
-  contours, and region fields become unary processing nodes;
+  contours, region fields, and region surfaces become unary processing nodes;
 - enabled procedural masks become mask nodes;
 - layer blend, add, or multiply behaviour becomes composite processing nodes;
 - colour, height, normal, and roughness receive explicit output nodes.
@@ -360,6 +384,8 @@ Format version 8 adds stylised processors without serialising preview lighting.
 Format version 9 adds region fields without serialising the internal 64-bit key.
 Format version 10 adds course layouts and parent-course random fields without
 serialising either exact region key.
+Format version 11 adds constructed region surfaces and normal-only facet
+treatment without serialising derived masks or planes.
 
 ## Material outputs
 
@@ -381,7 +407,7 @@ generation wrap mathematically across both tile axes.
 ## Compatibility policy
 
 The `.pmat` format version and Paperweight application version are separate.
-Paperweight v0.0.13 reads versions 1 through 10 and writes version 10. A reader
+Paperweight v0.0.14 reads versions 1 through 11 and writes version 11. A reader
 rejects unsupported versions and unknown fields so that it cannot quietly
 reinterpret a future material.
 
@@ -400,8 +426,9 @@ posterise, colour ramp, palette, ink contour, edge-aware soften, and explicit
 filter targets. Versions 1 through 7 retain byte-identical default evaluations.
 Version 9 adds region fields; versions 1 through 8 retain byte-identical default
 evaluations. Version 10 adds course layouts and `course_random`; versions 1
-through 9 retain byte-identical default evaluations. Saving any older format
-performs the explicit migration to version 10.
+through 9 retain byte-identical default evaluations. Version 11 adds region
+surface sculpting; versions 1 through 10 retain byte-identical default
+evaluations. Saving any older format performs the explicit migration to version 11.
 
 The portable entry points are `paperweight::parsePmat` and
 `paperweight::serialisePmat` in `include/paperweight/pmat.hpp`.

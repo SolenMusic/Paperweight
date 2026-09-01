@@ -291,6 +291,7 @@
 @property(nonatomic, strong) NSSlider* inkStrengthSlider;
 @property(nonatomic, strong) NSTextField* inkStrengthValue;
 @property(nonatomic, strong) NSButton* inkInvertedCheckbox;
+@property(nonatomic, strong) NSButton* facetedNormalsCheckbox;
 @property(nonatomic, strong) NSButton* equalMortarWidthCheckbox;
 @property(nonatomic, strong) NSButton* physicalBrickCheckbox;
 @property(nonatomic, strong) NSStackView* physicalBrickWidthRow;
@@ -634,6 +635,8 @@ NSString* operationDisplayName(const paperweight::LayerOperation& operation)
         return @"Region Field";
     case 18:
         return @"Course Layout";
+    case 19:
+        return @"Region Surface";
     default:
         return @"Unknown";
     }
@@ -821,6 +824,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @[ @"Castle Stone", @"castle-stone" ],
         @[ @"Cel Castle Stone", @"cel-castle-stone" ],
         @[ @"Castle Roof", @"castle-roof" ],
+        @[ @"Cel Forest Rock", @"cel-forest-rock" ],
+        @[ @"Sculpted Flagstone", @"sculpted-flagstone" ],
+        @[ @"Worn Masonry", @"worn-masonry" ],
+        @[ @"Sculpted Roof Slate", @"sculpted-roof-slate" ],
     ];
     for (NSArray<NSString*>* showcase in showcases) {
         auto* item = [showcaseMenu addItemWithTitle:showcase[0]
@@ -1449,6 +1456,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @"Ink Contours",
         @"Region Field",
         @"Course Layout",
+        @"Region Surface",
     ]];
     auto* addLayerButton = [NSButton buttonWithTitle:@"Add"
                                               target:self
@@ -1741,6 +1749,12 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.inkInvertedCheckbox = [NSButton checkboxWithTitle:@"Ink flat regions"
                                                       target:self
                                                       action:@selector(styliseParameterChanged:)];
+    self.facetedNormalsCheckbox = [NSButton
+        checkboxWithTitle:@"Use deliberate planar normals"
+                   target:self
+                   action:@selector(structuralParameterChanged:)];
+    self.facetedNormalsCheckbox.toolTip =
+        @"Preserve the seeded planar faces in the normal map without changing colour, height, or roughness.";
 
     self.equalMortarWidthCheckbox = [NSButton
         checkboxWithTitle:@"Equal horizontal/vertical mortar"
@@ -1879,6 +1893,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.inkSoftnessRow,
         self.inkStrengthRow,
         self.inkInvertedCheckbox,
+        self.facetedNormalsCheckbox,
     ]];
     self.layerSettingsGroup.orientation = NSUserInterfaceLayoutOrientationVertical;
     self.layerSettingsGroup.alignment = NSLayoutAttributeLeading;
@@ -2259,6 +2274,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.inkSoftnessRow.hidden = YES;
         self.inkStrengthRow.hidden = YES;
         self.inkInvertedCheckbox.hidden = YES;
+        self.facetedNormalsCheckbox.hidden = YES;
         [self updateLayerInspectorTabVisibility];
         return;
     }
@@ -2301,6 +2317,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     const auto* ink = std::get_if<paperweight::InkContourOperation>(&layer->operation);
     const auto* region = std::get_if<paperweight::RegionFieldOperation>(&layer->operation);
     const auto* course = std::get_if<paperweight::CourseLayoutOperation>(&layer->operation);
+    const auto* sculpt = std::get_if<paperweight::RegionSurfaceOperation>(&layer->operation);
     self.noiseSeedRow.hidden = noise == nullptr;
     self.solidColourRow.hidden = solid == nullptr;
     self.levelsLowRow.hidden = levels == nullptr;
@@ -2338,6 +2355,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.inkSoftnessRow.hidden = YES;
     self.inkStrengthRow.hidden = YES;
     self.inkInvertedCheckbox.hidden = YES;
+    self.facetedNormalsCheckbox.hidden = YES;
     self.inkInvertedCheckbox.title = @"Ink flat regions";
 
     if (noise != nullptr) {
@@ -2466,7 +2484,20 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         ]];
         [self.surfaceKindPopup selectItemAtIndex:static_cast<NSInteger>(course->profile)];
         self.courseFieldRow.hidden = NO;
+        [self.courseFieldPopup removeAllItems];
+        [self.courseFieldPopup addItemsWithTitles:@[
+            @"Block faces", @"Mortar / gaps", @"Course interiors", @"Overlap",
+        ]];
         [self.courseFieldPopup selectItemAtIndex:static_cast<NSInteger>(course->field)];
+        static_cast<NSTextField*>(self.courseGapRow.views[0]).stringValue = @"Gap width";
+        self.courseGapSlider.minValue = 0.0;
+        self.courseGapSlider.maxValue = 0.95;
+        static_cast<NSTextField*>(self.courseSoftnessRow.views[0]).stringValue = @"Softness";
+        self.courseSoftnessSlider.minValue = 0.0;
+        self.courseSoftnessSlider.maxValue = 0.25;
+        static_cast<NSTextField*>(self.courseOverlapRow.views[0]).stringValue = @"Overlap";
+        self.courseOverlapSlider.minValue = 0.0;
+        self.courseOverlapSlider.maxValue = 0.95;
         self.physicalBrickCheckbox.title = @"Size layout in metres";
         self.physicalBrickCheckbox.state = course->physicalDimensions
             ? NSControlStateValueOn
@@ -2546,6 +2577,75 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.patternSeedRow.hidden = NO;
         self.patternSeedOffsetField.stringValue = [NSString
             stringWithFormat:@"%llu", course->seedOffset];
+    } else if (sculpt != nullptr) {
+        self.surfaceKindRow.hidden = NO;
+        [self.surfaceKindPopup removeAllItems];
+        [self.surfaceKindPopup addItemsWithTitles:@[
+            @"Rounded bevel", @"Chamfered bevel", @"Hand-cut bevel",
+        ]];
+        [self.surfaceKindPopup selectItemAtIndex:static_cast<NSInteger>(sculpt->profile)];
+        self.courseFieldRow.hidden = NO;
+        [self.courseFieldPopup removeAllItems];
+        [self.courseFieldPopup addItemsWithTitles:@[
+            @"Constructed height",
+            @"Cavity mask",
+            @"Outer-edge mask",
+            @"Exposed-face mask",
+            @"Facet mask",
+            @"Wear mask",
+        ]];
+        [self.courseFieldPopup selectItemAtIndex:static_cast<NSInteger>(sculpt->field)];
+        showCount(self.patternCountXRow, self.patternCountXLabel,
+                  self.patternCountXSlider, self.patternCountXValue,
+                  @"Facets", sculpt->facetCount);
+        self.patternCountXSlider.minValue = paperweight::LayerLimits::minimumFacetCount;
+        self.patternCountXSlider.maxValue = paperweight::LayerLimits::maximumFacetCount;
+        showCount(self.patternCountYRow, self.patternCountYLabel,
+                  self.patternCountYSlider, self.patternCountYValue,
+                  @"Chip scale", sculpt->chipScale);
+        showValue(self.patternValueOneRow, self.patternValueOneLabel,
+                  self.patternValueOneSlider, self.patternValueOneValue,
+                  @"Bevel width", 0.001, 1.0, sculpt->bevelWidth);
+        showValue(self.patternValueTwoRow, self.patternValueTwoLabel,
+                  self.patternValueTwoSlider, self.patternValueTwoValue,
+                  @"Bevel height", 0.0, 1.0, sculpt->bevelHeight);
+        showValue(self.patternValueThreeRow, self.patternValueThreeLabel,
+                  self.patternValueThreeSlider, self.patternValueThreeValue,
+                  @"Facet strength", 0.0, 1.0, sculpt->facetStrength);
+        showValue(self.patternValueFourRow, self.patternValueFourLabel,
+                  self.patternValueFourSlider, self.patternValueFourValue,
+                  @"Centre peak", 0.0, 1.0, sculpt->centrePeak);
+        self.courseGapRow.hidden = NO;
+        static_cast<NSTextField*>(self.courseGapRow.views[0]).stringValue = @"Slope";
+        self.courseGapSlider.minValue = 0.0;
+        self.courseGapSlider.maxValue = 1.0;
+        self.courseGapSlider.doubleValue = sculpt->slopeStrength;
+        self.courseGapValue.stringValue = [NSString stringWithFormat:@"%.2f", sculpt->slopeStrength];
+        self.courseSoftnessRow.hidden = NO;
+        static_cast<NSTextField*>(self.courseSoftnessRow.views[0]).stringValue = @"Edge chips";
+        self.courseSoftnessSlider.minValue = 0.0;
+        self.courseSoftnessSlider.maxValue = 1.0;
+        self.courseSoftnessSlider.doubleValue = sculpt->chipAmount;
+        self.courseSoftnessValue.stringValue = [NSString stringWithFormat:@"%.2f", sculpt->chipAmount];
+        self.courseOverlapRow.hidden = NO;
+        static_cast<NSTextField*>(self.courseOverlapRow.views[0]).stringValue = @"Edge wear";
+        self.courseOverlapSlider.minValue = 0.0;
+        self.courseOverlapSlider.maxValue = 1.0;
+        self.courseOverlapSlider.doubleValue = sculpt->wearAmount;
+        self.courseOverlapValue.stringValue = [NSString stringWithFormat:@"%.2f", sculpt->wearAmount];
+        self.filterSensitivityRow.hidden = NO;
+        static_cast<NSTextField*>(self.filterSensitivityRow.views[0]).stringValue = @"Erosion";
+        self.filterSensitivitySlider.doubleValue = sculpt->erosionAmount;
+        self.filterSensitivityValue.stringValue = [NSString stringWithFormat:@"%.2f", sculpt->erosionAmount];
+        self.patternSeedRow.hidden = NO;
+        self.patternSeedOffsetField.stringValue = [NSString
+            stringWithFormat:@"%llu", sculpt->seedOffset];
+        self.processingTargetRow.hidden = NO;
+        [self.processingTargetPopup selectItemAtIndex:processingTargetIndex(sculpt->target)];
+        self.facetedNormalsCheckbox.hidden = NO;
+        self.facetedNormalsCheckbox.state = sculpt->facetedNormals
+            ? NSControlStateValueOn
+            : NSControlStateValueOff;
     } else if (tile != nullptr) {
         showCount(self.patternCountXRow, self.patternCountXLabel,
                   self.patternCountXSlider, self.patternCountXValue, @"Columns", tile->columns);
@@ -2669,6 +2769,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         [self.processingTargetPopup selectItemAtIndex:processingTargetIndex(filter->target)];
         if (filter->kind == paperweight::SurfaceFilterKind::edgeAwareSoften) {
             self.filterSensitivityRow.hidden = NO;
+            static_cast<NSTextField*>(self.filterSensitivityRow.views[0]).stringValue = @"Sensitivity";
             self.filterSensitivitySlider.doubleValue = filter->sensitivity;
             self.filterSensitivityValue.stringValue = [NSString
                 stringWithFormat:@"%.2f", filter->sensitivity];
@@ -2946,6 +3047,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     case 22:
         material_.layers.push_back(paperweight::makeCourseLayoutLayer());
         break;
+    case 23:
+        material_.layers.push_back(paperweight::makeRegionSurfaceLayer());
+        break;
     default:
         return;
     }
@@ -3097,6 +3201,13 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         region->target = processingTargetAtIndex(
             self.processingTargetPopup.indexOfSelectedItem);
         region->inverted = self.inkInvertedCheckbox.state == NSControlStateValueOn;
+    } else if (auto* sculpt =
+                   std::get_if<paperweight::RegionSurfaceOperation>(&layer->operation)) {
+        sculpt->erosionAmount = self.filterSensitivitySlider.doubleValue;
+        sculpt->target = processingTargetAtIndex(
+            self.processingTargetPopup.indexOfSelectedItem);
+        self.filterSensitivityValue.stringValue = [NSString
+            stringWithFormat:@"%.2f", sculpt->erosionAmount];
     } else {
         return;
     }
@@ -3541,6 +3652,36 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         course->softness = self.courseSoftnessSlider.doubleValue;
         if (parsedSeed) {
             course->seedOffset = *parsedSeed;
+        }
+    } else if (auto* sculpt =
+                   std::get_if<paperweight::RegionSurfaceOperation>(&layer->operation)) {
+        if (sender == self.surfaceKindPopup) {
+            sculpt->profile = static_cast<paperweight::BevelProfile>(
+                self.surfaceKindPopup.indexOfSelectedItem);
+        }
+        if (sender == self.courseFieldPopup) {
+            sculpt->field = static_cast<paperweight::RegionSurfaceField>(
+                self.courseFieldPopup.indexOfSelectedItem);
+        }
+        sculpt->facetCount = static_cast<std::uint32_t>(std::clamp(
+            countX,
+            paperweight::LayerLimits::minimumFacetCount,
+            paperweight::LayerLimits::maximumFacetCount));
+        sculpt->chipScale = static_cast<std::uint32_t>(std::clamp(
+            countY,
+            paperweight::LayerLimits::minimumChipScale,
+            paperweight::LayerLimits::maximumChipScale));
+        sculpt->bevelWidth = self.patternValueOneSlider.doubleValue;
+        sculpt->bevelHeight = self.patternValueTwoSlider.doubleValue;
+        sculpt->facetStrength = self.patternValueThreeSlider.doubleValue;
+        sculpt->centrePeak = self.patternValueFourSlider.doubleValue;
+        sculpt->slopeStrength = self.courseGapSlider.doubleValue;
+        sculpt->chipAmount = self.courseSoftnessSlider.doubleValue;
+        sculpt->wearAmount = self.courseOverlapSlider.doubleValue;
+        sculpt->facetedNormals =
+            self.facetedNormalsCheckbox.state == NSControlStateValueOn;
+        if (parsedSeed) {
+            sculpt->seedOffset = *parsedSeed;
         }
     } else if (auto* tile = std::get_if<paperweight::TileGridOperation>(&layer->operation)) {
         tile->columns = countX;

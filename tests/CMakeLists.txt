@@ -37,6 +37,10 @@ foreach(showcase IN ITEMS
     castle-stone
     cel-castle-stone
     castle-roof
+    cel-forest-rock
+    sculpted-flagstone
+    worn-masonry
+    sculpted-roof-slate
 )
     configure_file(
         "${PROJECT_SOURCE_DIR}/examples/materials/${showcase}.pmat"

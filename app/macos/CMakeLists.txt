@@ -30,6 +30,10 @@ set(PAPERWEIGHT_SHOWCASE_MATERIALS
     "${PROJECT_SOURCE_DIR}/examples/materials/castle-stone.pmat"
     "${PROJECT_SOURCE_DIR}/examples/materials/cel-castle-stone.pmat"
     "${PROJECT_SOURCE_DIR}/examples/materials/castle-roof.pmat"
+    "${PROJECT_SOURCE_DIR}/examples/materials/cel-forest-rock.pmat"
+    "${PROJECT_SOURCE_DIR}/examples/materials/sculpted-flagstone.pmat"
+    "${PROJECT_SOURCE_DIR}/examples/materials/worn-masonry.pmat"
+    "${PROJECT_SOURCE_DIR}/examples/materials/sculpted-roof-slate.pmat"
 )
 set_source_files_properties(${PAPERWEIGHT_SHOWCASE_MATERIALS} PROPERTIES
     MACOSX_PACKAGE_LOCATION "Resources/Showcases"

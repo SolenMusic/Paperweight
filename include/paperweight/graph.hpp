@@ -124,6 +124,15 @@ struct RegionFieldProcessing {
         const RegionFieldProcessing&) = default;
 };
 
+struct RegionSurfaceProcessing {
+    GraphNodeId input{invalidGraphNodeId};
+    RegionSurfaceOperation parameters;
+
+    friend constexpr bool operator==(
+        const RegionSurfaceProcessing&,
+        const RegionSurfaceProcessing&) = default;
+};
+
 using ProcessingOperation = std::variant<
     LevelsProcessing,
     ThresholdProcessing,
@@ -133,7 +142,8 @@ using ProcessingOperation = std::variant<
     CompositeProcessing,
     SurfaceFilterProcessing,
     InkContourProcessing,
-    RegionFieldProcessing>;
+    RegionFieldProcessing,
+    RegionSurfaceProcessing>;
 
 struct ProcessingNode {
     GraphNodeId id{invalidGraphNodeId};

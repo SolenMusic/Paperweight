@@ -8,6 +8,7 @@
 #include <paperweight/noise.hpp>
 #include <paperweight/pmat.hpp>
 #include <paperweight/region.hpp>
+#include <paperweight/sculpt.hpp>
 #include <paperweight/structural.hpp>
 #include <paperweight/surface.hpp>
 #include <paperweight/version.hpp>
@@ -113,9 +114,9 @@ paperweight::Material materialWithNoiseParameters(
 
 void testVersion()
 {
-    constexpr paperweight::Version expected{0, 0, 13};
+    constexpr paperweight::Version expected{0, 0, 14};
     static_assert(paperweight::currentVersion == expected);
-    expect(paperweight::versionString() == "0.0.13", "version string is 0.0.13");
+    expect(paperweight::versionString() == "0.0.14", "version string is 0.0.14");
 }
 
 void testImage()
@@ -913,17 +914,17 @@ void testRegionAttributes()
 
     const auto serialised = paperweight::serialisePmat(layered);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 10") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 11") != std::string::npos &&
                text->find("operation = region_field") != std::string::npos,
-           "region fields introduced in version 9 serialise canonically as .pmat version 10");
+           "region fields introduced in version 9 serialise canonically as current .pmat");
     if (text != nullptr) {
         const auto reparsed = paperweight::parsePmat(*text);
         expect(std::holds_alternative<paperweight::Material>(reparsed) &&
                    std::get<paperweight::Material>(reparsed) == layered,
-               "region-field materials round-trip exactly through canonical .pmat version 10");
+               "region-field materials round-trip exactly through canonical .pmat");
         auto premature = *text;
-        const auto marker = premature.find("pmat.version = 10");
-        premature.replace(marker, std::string("pmat.version = 10").size(),
+        const auto marker = premature.find("pmat.version = 11");
+        premature.replace(marker, std::string("pmat.version = 11").size(),
                           "pmat.version = 8");
         const auto result = paperweight::parsePmat(premature);
         expect(std::holds_alternative<paperweight::ParseDiagnostic>(result) &&
@@ -1098,7 +1099,7 @@ void testCourseLayouts()
 
     const auto serialised = paperweight::serialisePmat(physicalMaterial);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 10") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 11") != std::string::npos &&
                text->find("operation = course_layout") != std::string::npos &&
                text->find("course.sizing = physical") != std::string::npos,
            "physical course layouts serialise explicitly in .pmat version 10");
@@ -1108,8 +1109,8 @@ void testCourseLayouts()
                    std::get<paperweight::Material>(reparsed) == physicalMaterial,
                "course layouts round-trip exactly through .pmat version 10");
         auto premature = *text;
-        const auto marker = premature.find("pmat.version = 10");
-        premature.replace(marker, std::string("pmat.version = 10").size(),
+        const auto marker = premature.find("pmat.version = 11");
+        premature.replace(marker, std::string("pmat.version = 11").size(),
                           "pmat.version = 9");
         const auto rejected = paperweight::parsePmat(premature);
         expect(std::holds_alternative<paperweight::ParseDiagnostic>(rejected) &&
@@ -1117,6 +1118,239 @@ void testCourseLayouts()
                        "require .pmat version 10") != std::string::npos,
                ".pmat version 9 rejects Course Layout explicitly");
     }
+}
+
+void testRegionSurfaceSculpting()
+{
+    paperweight::Material material;
+    material.seed = 140014;
+    material.normalStrength = 3.0;
+
+    auto cells = paperweight::makeWorleyCellsLayer();
+    auto& worley = std::get<paperweight::WorleyCellsOperation>(cells.operation);
+    worley.columns = 6;
+    worley.rows = 5;
+    worley.jitter = 0.82;
+    worley.edgeWidth = 0.42;
+    worley.seedOffset = 71;
+
+    auto sculptLayer = paperweight::makeRegionSurfaceLayer();
+    auto& sculpt = std::get<paperweight::RegionSurfaceOperation>(sculptLayer.operation);
+    sculpt.profile = paperweight::BevelProfile::handCut;
+    sculpt.bevelWidth = 0.42;
+    sculpt.bevelHeight = 0.72;
+    sculpt.facetCount = 7;
+    sculpt.facetStrength = 0.34;
+    sculpt.centrePeak = 0.22;
+    sculpt.slopeStrength = 0.12;
+    sculpt.chipAmount = 0.17;
+    sculpt.chipScale = 11;
+    sculpt.wearAmount = 0.24;
+    sculpt.erosionAmount = 0.13;
+    sculpt.seedOffset = 901;
+    sculpt.facetedNormals = true;
+    sculpt.target = paperweight::ProcessingTarget::scalar;
+    material.layers = {cells, sculptLayer};
+
+    const auto structural = paperweight::evaluateWorleyCellsSample(
+        worley, 0.37, 0.61, material.seed);
+    const auto fields = paperweight::evaluateRegionSurfaceFields(
+        sculpt,
+        material,
+        structural.region,
+        structural.value,
+        0.37,
+        0.61);
+    for (const auto value : {
+             fields.height,
+             fields.cavity,
+             fields.outerEdge,
+             fields.exposedFace,
+             fields.facet,
+             fields.wear,
+         }) {
+        expect(value >= 0.0 && value <= 1.0,
+               "every region surface field remains in the unit range");
+    }
+    expectNear(fields.height + fields.cavity, 1.0, 1.0e-12,
+               "cavity is the exact complement of constructed height");
+
+    constexpr std::array sculptFields{
+        paperweight::RegionSurfaceField::height,
+        paperweight::RegionSurfaceField::cavity,
+        paperweight::RegionSurfaceField::outerEdge,
+        paperweight::RegionSurfaceField::exposedFace,
+        paperweight::RegionSurfaceField::facet,
+        paperweight::RegionSurfaceField::wear,
+    };
+    constexpr std::array<std::uint64_t, 6> sculptFieldGoldens{
+        15890420516092499979ULL,
+        1815337865590187539ULL,
+        7676403396097439073ULL,
+        14718955348197570489ULL,
+        15488971196823987208ULL,
+        14869315570379556285ULL,
+    };
+    for (std::size_t fieldIndex = 0; fieldIndex < sculptFields.size(); ++fieldIndex) {
+        auto fieldMaterial = material;
+        std::get<paperweight::RegionSurfaceOperation>(
+            fieldMaterial.layers.back().operation).field = sculptFields[fieldIndex];
+        paperweight::GenerationRequest request{
+            fieldMaterial,
+            32,
+            32,
+            paperweight::MaterialOutput::height,
+            std::nullopt,
+            std::nullopt,
+            1};
+        const auto generated = paperweight::generate(request);
+        expectChecksum(
+            std::get_if<paperweight::Image>(&generated),
+            sculptFieldGoldens[fieldIndex],
+            "constructed height and sculpt masks match byte-exact golden checksums");
+    }
+
+    paperweight::RegionSample manual{
+        paperweight::makeRegionKey(17, 2, 3), 0.5, 0.5, 0.0, 0.12, true};
+    auto profile = sculpt;
+    profile.chipAmount = 0.0;
+    profile.wearAmount = 0.0;
+    profile.erosionAmount = 0.0;
+    profile.facetStrength = 0.0;
+    profile.centrePeak = 0.0;
+    profile.slopeStrength = 0.0;
+    profile.bevelWidth = 0.5;
+    profile.bevelHeight = 1.0;
+    profile.profile = paperweight::BevelProfile::chamfered;
+    const double chamfer = paperweight::evaluateRegionSurface(
+        profile, material, manual, 1.0, 0.3, 0.4);
+    profile.profile = paperweight::BevelProfile::rounded;
+    const double rounded = paperweight::evaluateRegionSurface(
+        profile, material, manual, 1.0, 0.3, 0.4);
+    profile.profile = paperweight::BevelProfile::handCut;
+    const double handCut = paperweight::evaluateRegionSurface(
+        profile, material, manual, 1.0, 0.3, 0.4);
+    expect(rounded > chamfer && handCut != chamfer,
+           "rounded, chamfered, and hand-cut bevels produce distinct profiles");
+
+    const auto compiled = paperweight::compileMaterialGraph(material);
+    const auto* graph = std::get_if<paperweight::MaterialGraph>(&compiled);
+    bool foundSculptProcessor = false;
+    if (graph != nullptr) {
+        for (const auto& node : graph->nodes) {
+            if (const auto* processing = std::get_if<paperweight::ProcessingNode>(&node)) {
+                foundSculptProcessor = foundSculptProcessor ||
+                    std::holds_alternative<paperweight::RegionSurfaceProcessing>(
+                        processing->operation);
+            }
+        }
+    }
+    expect(graph != nullptr && foundSculptProcessor,
+           "region sculpting compiles as a reusable graph processor");
+    if (graph != nullptr) {
+        const auto sample = paperweight::evaluateMaterialGraphSample(
+            material, *graph, paperweight::MaterialOutput::height, -0.19, 0.43);
+        const auto repeated = paperweight::evaluateMaterialGraphSample(
+            material, *graph, paperweight::MaterialOutput::height, 0.81, 1.43);
+        expectNear(sample.scalar, repeated.scalar, 1.0e-12,
+                   "constructed region height remains mathematically seamless");
+    }
+
+    paperweight::GenerationRequest lowRequest{
+        material, 32, 24, paperweight::MaterialOutput::height,
+        std::nullopt, std::nullopt, 0};
+    lowRequest.workerCount = 1;
+    auto highRequest = lowRequest;
+    highRequest.width = 96;
+    highRequest.height = 72;
+    highRequest.workerCount = 4;
+    const auto lowResult = paperweight::generate(lowRequest);
+    const auto highResult = paperweight::generate(highRequest);
+    const auto* low = std::get_if<paperweight::Image>(&lowResult);
+    const auto* high = std::get_if<paperweight::Image>(&highResult);
+    bool matchingSamples = low != nullptr && high != nullptr;
+    if (matchingSamples) {
+        for (std::uint32_t y = 0; y < low->height() && matchingSamples; ++y) {
+            for (std::uint32_t x = 0; x < low->width(); ++x) {
+                if (low->row(y)[x] != high->row(y * 3U + 1U)[x * 3U + 1U]) {
+                    matchingSamples = false;
+                    break;
+                }
+            }
+        }
+    }
+    expect(matchingSamples,
+           "region sculpture preserves matching samples across output resolutions");
+
+    auto serialRequest = highRequest;
+    serialRequest.workerCount = 1;
+    const auto serialResult = paperweight::generate(serialRequest);
+    const auto* serialImage = std::get_if<paperweight::Image>(&serialResult);
+    expect(serialImage != nullptr && high != nullptr &&
+               std::equal(
+                   serialImage->pixels().begin(),
+                   serialImage->pixels().end(),
+                   high->pixels().begin()),
+           "region sculpture is byte-identical with one or four workers");
+
+    auto smooth = material;
+    std::get<paperweight::RegionSurfaceOperation>(smooth.layers.back().operation)
+        .facetedNormals = false;
+    paperweight::GenerationRequest smoothHeight{
+        smooth, 72, 56, paperweight::MaterialOutput::height,
+        std::nullopt, std::nullopt, 0};
+    paperweight::GenerationRequest facetedHeight{
+        material, 72, 56, paperweight::MaterialOutput::height,
+        std::nullopt, std::nullopt, 0};
+    const auto smoothHeightResult = paperweight::generate(smoothHeight);
+    const auto facetedHeightResult = paperweight::generate(facetedHeight);
+    const auto* smoothHeightImage = std::get_if<paperweight::Image>(&smoothHeightResult);
+    const auto* facetedHeightImage = std::get_if<paperweight::Image>(&facetedHeightResult);
+    expect(smoothHeightImage != nullptr && facetedHeightImage != nullptr &&
+               std::equal(
+                   smoothHeightImage->pixels().begin(),
+                   smoothHeightImage->pixels().end(),
+                   facetedHeightImage->pixels().begin()),
+           "faceted-normal treatment leaves height bytes unchanged");
+    auto smoothNormal = smoothHeight;
+    smoothNormal.output = paperweight::MaterialOutput::normal;
+    auto facetedNormal = facetedHeight;
+    facetedNormal.output = paperweight::MaterialOutput::normal;
+    const auto smoothNormalResult = paperweight::generate(smoothNormal);
+    const auto facetedNormalResult = paperweight::generate(facetedNormal);
+    const auto* smoothNormalImage = std::get_if<paperweight::Image>(&smoothNormalResult);
+    const auto* facetedNormalImage = std::get_if<paperweight::Image>(&facetedNormalResult);
+    expect(smoothNormalImage != nullptr && facetedNormalImage != nullptr &&
+               checksum(smoothNormalImage->pixels()) != checksum(facetedNormalImage->pixels()),
+           "faceted-normal treatment changes only the normal construction path");
+
+    const auto serialised = paperweight::serialisePmat(material);
+    const auto* text = std::get_if<std::string>(&serialised);
+    expect(text != nullptr && text->find("pmat.version = 11") != std::string::npos &&
+               text->find("operation = region_surface") != std::string::npos &&
+               text->find("sculpt.faceted_normals = true") != std::string::npos,
+           "region sculpture serialises explicitly in .pmat version 11");
+    if (text != nullptr) {
+        const auto reparsed = paperweight::parsePmat(*text);
+        expect(std::holds_alternative<paperweight::Material>(reparsed) &&
+                   std::get<paperweight::Material>(reparsed) == material,
+               "region sculpture round-trips exactly through .pmat version 11");
+        auto premature = *text;
+        const auto marker = premature.find("pmat.version = 11");
+        premature.replace(marker, std::string("pmat.version = 11").size(),
+                          "pmat.version = 10");
+        const auto rejected = paperweight::parsePmat(premature);
+        expect(std::holds_alternative<paperweight::ParseDiagnostic>(rejected) &&
+                   std::get<paperweight::ParseDiagnostic>(rejected).message.find(
+                       "requires .pmat version 11") != std::string::npos,
+               ".pmat version 10 rejects region sculpture explicitly");
+    }
+
+    auto invalid = material;
+    std::get<paperweight::RegionSurfaceOperation>(invalid.layers.back().operation)
+        .facetCount = 2;
+    expect(paperweight::validateMaterial(invalid).has_value(),
+           "invalid sculpt facet counts are diagnosed");
 }
 
 void testAdvancedSurfaceOperations()
@@ -1292,9 +1526,9 @@ void testAdvancedSurfaceOperations()
                    std::get<paperweight::Material>(reparsed) == material,
                "advanced surface recipes round-trip through .pmat version 8 exactly");
         auto premature = *text;
-        const auto marker = premature.find("pmat.version = 10");
+        const auto marker = premature.find("pmat.version = 11");
         if (marker != std::string::npos) {
-            premature.replace(marker, std::string("pmat.version = 10").size(),
+            premature.replace(marker, std::string("pmat.version = 11").size(),
                               "pmat.version = 7");
         }
         const auto prematureResult = paperweight::parsePmat(premature);
@@ -1463,7 +1697,7 @@ void testStylisedOperations()
 
     const auto serialised = paperweight::serialisePmat(stylised);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 10") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 11") != std::string::npos &&
                text->find("operation = colour_ramp") != std::string::npos &&
                text->find("operation = ink_contour") != std::string::npos,
            "stylisation serialises in the human-readable .pmat v9 format");
@@ -2184,7 +2418,7 @@ void testPmat()
 {
     constexpr std::string_view canonical =
         "# Paperweight procedural material\n"
-        "pmat.version = 10\n"
+        "pmat.version = 11\n"
         "material.type = fbm\n"
         "material.seed = 18431\n"
         "material.width = 1m\n"
@@ -2338,6 +2572,22 @@ void testPmat()
             "castle-roof.pmat",
             {4556783255243544328ULL, 17805210683419656455ULL,
              15736615163697282365ULL, 5145349734117541484ULL}},
+        ShowcaseGolden{
+            "cel-forest-rock.pmat",
+            {15965981477031356603ULL, 11130753813595996712ULL,
+             15975426126164431822ULL, 16434048416440545282ULL}},
+        ShowcaseGolden{
+            "sculpted-flagstone.pmat",
+            {12855247387776217959ULL, 17520108617150934638ULL,
+             14618687197654806408ULL, 18375968328722774428ULL}},
+        ShowcaseGolden{
+            "worn-masonry.pmat",
+            {16536140133656320293ULL, 16075432134741654220ULL,
+             14869146305499227944ULL, 8448790587330411558ULL}},
+        ShowcaseGolden{
+            "sculpted-roof-slate.pmat",
+            {2738677515315863655ULL, 1140855840288707606ULL,
+             4803683323561927404ULL, 12400867502020881374ULL}},
     };
     constexpr std::array outputs{
         paperweight::MaterialOutput::colour,
@@ -2398,13 +2648,13 @@ void testPmat()
         legacyBrickMaterial.layers = {paperweight::makeBrickGridLayer()};
         auto versionFourBrick = std::get<std::string>(
             paperweight::serialisePmat(legacyBrickMaterial));
-        const auto versionMarkerPosition = versionFourBrick.find("pmat.version = 10");
+        const auto versionMarkerPosition = versionFourBrick.find("pmat.version = 11");
         expect(versionMarkerPosition != std::string::npos,
-               "current brick fixture declares format version 10");
+               "current brick fixture declares format version 11");
         if (versionMarkerPosition != std::string::npos) {
             versionFourBrick.replace(
                 versionMarkerPosition,
-                std::string("pmat.version = 10").size(),
+                std::string("pmat.version = 11").size(),
                 "pmat.version = 4");
         }
         for (const auto& field : {
@@ -2727,7 +2977,7 @@ void testPmat()
         }
     };
 
-    expectDiagnostic("pmat.version = 11\n", 1, "unsupported");
+    expectDiagnostic("pmat.version = 12\n", 1, "unsupported");
     expectDiagnostic("unknown.key = 1\n", 1, "unknown key");
     expectDiagnostic("pmat.version = 1\npmat.version = 1\n", 2, "duplicate");
     expectDiagnostic("pmat.version = nope\n", 1, "integer");
@@ -2846,6 +3096,7 @@ int main()
     testStructuralGenerators();
     testRegionAttributes();
     testCourseLayouts();
+    testRegionSurfaceSculpting();
     testAdvancedSurfaceOperations();
     testStylisedOperations();
     testMaterialGraph();

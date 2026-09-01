@@ -84,6 +84,11 @@ struct RegionFieldPlan {
     RegionFieldOperation parameters;
 };
 
+struct RegionSurfacePlan {
+    std::size_t input;
+    RegionSurfaceOperation parameters;
+};
+
 struct MaskPlan {
     CoordinateTransform transform;
     LayerMask mask;
@@ -104,6 +109,7 @@ using EvaluationPlan = std::variant<
     SurfaceFilterPlan,
     InkContourPlan,
     RegionFieldPlan,
+    RegionSurfacePlan,
     MaskPlan,
     OutputPlan>;
 
@@ -221,6 +227,13 @@ public:
                                         field.parameters,
                                     };
                                 },
+                                [&indexOf](
+                                    const RegionSurfaceProcessing& surface) -> EvaluationPlan {
+                                    return RegionSurfacePlan{
+                                        indexOf(surface.input),
+                                        surface.parameters,
+                                    };
+                                },
                             },
                             processing.operation);
                     },
@@ -251,7 +264,7 @@ public:
         } else {
             ++currentStamp_;
         }
-        const EvaluationContext context{material_, u, v};
+        const EvaluationContext context{material_, u, v, output};
         return evaluateNode(outputSources_[materialOutputIndex(output)], context, true);
     }
 
@@ -277,6 +290,7 @@ private:
                         context.material,
                         coordinates.u,
                         coordinates.v,
+                        context.output,
                     };
                     return evaluateOperation(generator.operation, transformed, {});
                 },
@@ -360,6 +374,7 @@ private:
                                 context.material,
                                 context.u + offsetU,
                                 context.v + offsetV,
+                                context.output,
                             };
                             samples[sampleIndex + 1] = evaluateNode(
                                 filter.input,
@@ -425,6 +440,7 @@ private:
                                 context.material,
                                 context.u + offsetU,
                                 context.v + offsetV,
+                                context.output,
                             };
                             scalarSamples[sampleIndex + 1] = evaluateNode(
                                 contour.input,
@@ -465,12 +481,20 @@ private:
                         context,
                         input);
                 },
+                [this, &context, cacheResult](const RegionSurfacePlan& surface) {
+                    const auto input = evaluateNode(surface.input, context, cacheResult);
+                    return evaluateOperation(
+                        LayerOperation{surface.parameters},
+                        context,
+                        input);
+                },
                 [&context](const MaskPlan& mask) {
                     const auto coordinates = transformCoordinates(mask.transform, context);
                     const EvaluationContext transformed{
                         context.material,
                         coordinates.u,
                         coordinates.v,
+                        context.output,
                     };
                     const double value = evaluateLayerMask(mask.mask, transformed);
                     return EvaluatedSample{value, value, value, value, 1.0, {}};

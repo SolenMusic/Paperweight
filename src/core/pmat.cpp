@@ -74,6 +74,7 @@ enum class OperationKind {
     inkContour,
     regionField,
     courseLayout,
+    regionSurface,
 };
 
 enum class BrickSizing {
@@ -198,6 +199,21 @@ struct LayerBuilder {
     ParsedValue<double> courseHeightMetres;
     ParsedValue<double> courseGapMetres;
     ParsedValue<double> courseOverlapMetres;
+    ParsedValue<RegionSurfaceField> sculptField;
+    ParsedValue<BevelProfile> sculptProfile;
+    ParsedValue<double> sculptBevelWidth;
+    ParsedValue<double> sculptBevelHeight;
+    ParsedValue<std::uint32_t> sculptFacetCount;
+    ParsedValue<double> sculptFacetStrength;
+    ParsedValue<double> sculptCentrePeak;
+    ParsedValue<double> sculptSlope;
+    ParsedValue<double> sculptChips;
+    ParsedValue<std::uint32_t> sculptChipScale;
+    ParsedValue<double> sculptWear;
+    ParsedValue<double> sculptErosion;
+    ParsedValue<std::uint64_t> sculptSeedOffset;
+    ParsedValue<bool> sculptFacetedNormals;
+    ParsedValue<ProcessingTarget> sculptTarget;
 };
 
 std::string_view trim(std::string_view value)
@@ -440,6 +456,9 @@ std::optional<OperationKind> parseOperationKind(std::string_view value)
     if (value == "course_layout") {
         return OperationKind::courseLayout;
     }
+    if (value == "region_surface") {
+        return OperationKind::regionSurface;
+    }
     return std::nullopt;
 }
 
@@ -542,6 +561,43 @@ std::optional<CourseLayoutProfile> parseCourseLayoutProfile(std::string_view val
     }
     if (value == "slates") {
         return CourseLayoutProfile::slates;
+    }
+    return std::nullopt;
+}
+
+std::optional<RegionSurfaceField> parseRegionSurfaceField(std::string_view value)
+{
+    if (value == "height") {
+        return RegionSurfaceField::height;
+    }
+    if (value == "cavity") {
+        return RegionSurfaceField::cavity;
+    }
+    if (value == "outer_edge") {
+        return RegionSurfaceField::outerEdge;
+    }
+    if (value == "exposed_face") {
+        return RegionSurfaceField::exposedFace;
+    }
+    if (value == "facet") {
+        return RegionSurfaceField::facet;
+    }
+    if (value == "wear") {
+        return RegionSurfaceField::wear;
+    }
+    return std::nullopt;
+}
+
+std::optional<BevelProfile> parseBevelProfile(std::string_view value)
+{
+    if (value == "rounded") {
+        return BevelProfile::rounded;
+    }
+    if (value == "chamfered") {
+        return BevelProfile::chamfered;
+    }
+    if (value == "hand_cut") {
+        return BevelProfile::handCut;
     }
     return std::nullopt;
 }
@@ -726,12 +782,24 @@ bool hasVersionTenFields(const LayerBuilder& builder)
         builder.courseOverlapMetres.value;
 }
 
+bool hasVersionElevenFields(const LayerBuilder& builder)
+{
+    return builder.sculptField.value || builder.sculptProfile.value ||
+        builder.sculptBevelWidth.value || builder.sculptBevelHeight.value ||
+        builder.sculptFacetCount.value || builder.sculptFacetStrength.value ||
+        builder.sculptCentrePeak.value || builder.sculptSlope.value ||
+        builder.sculptChips.value || builder.sculptChipScale.value ||
+        builder.sculptWear.value || builder.sculptErosion.value ||
+        builder.sculptSeedOffset.value || builder.sculptFacetedNormals.value ||
+        builder.sculptTarget.value;
+}
+
 bool hasStructuralFields(const LayerBuilder& builder)
 {
     return hasVersionFourFields(builder) || hasVersionFiveFields(builder) ||
         hasVersionSixFields(builder) || hasVersionSevenFields(builder) ||
         hasVersionEightFields(builder) || hasVersionNineFields(builder) ||
-        hasVersionTenFields(builder);
+        hasVersionTenFields(builder) || hasVersionElevenFields(builder);
 }
 
 template<typename Value>
@@ -1580,6 +1648,132 @@ ParseResult parsePmat(std::string_view text)
                     if (!storeValue(builder.inkInverted, parsed, lineNumber, valueColumn)) {
                         return duplicate();
                     }
+                } else if (property == "sculpt.field") {
+                    const auto parsed = parseRegionSurfaceField(value);
+                    if (!parsed) {
+                        return diagnostic(
+                            lineNumber,
+                            valueColumn,
+                            "sculpt field must be 'height', 'cavity', 'outer_edge', 'exposed_face', 'facet', or 'wear'");
+                    }
+                    if (!storeValue(builder.sculptField, *parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "sculpt.profile") {
+                    const auto parsed = parseBevelProfile(value);
+                    if (!parsed) {
+                        return diagnostic(
+                            lineNumber,
+                            valueColumn,
+                            "sculpt profile must be 'rounded', 'chamfered', or 'hand_cut'");
+                    }
+                    if (!storeValue(builder.sculptProfile, *parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "sculpt.bevel_width") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "sculpt bevel width must be a decimal number");
+                    }
+                    if (!storeValue(builder.sculptBevelWidth, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "sculpt.bevel_height") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "sculpt bevel height must be a decimal number");
+                    }
+                    if (!storeValue(builder.sculptBevelHeight, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "sculpt.facet_count") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "sculpt facet count must be an integer");
+                    }
+                    if (!storeValue(builder.sculptFacetCount, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "sculpt.facet_strength") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "sculpt facet strength must be a decimal number");
+                    }
+                    if (!storeValue(builder.sculptFacetStrength, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "sculpt.centre_peak") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "sculpt centre peak must be a decimal number");
+                    }
+                    if (!storeValue(builder.sculptCentrePeak, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "sculpt.slope") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "sculpt slope must be a decimal number");
+                    }
+                    if (!storeValue(builder.sculptSlope, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "sculpt.chips") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "sculpt chips must be a decimal number");
+                    }
+                    if (!storeValue(builder.sculptChips, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "sculpt.chip_scale") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "sculpt chip scale must be an integer");
+                    }
+                    if (!storeValue(builder.sculptChipScale, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "sculpt.wear") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "sculpt wear must be a decimal number");
+                    }
+                    if (!storeValue(builder.sculptWear, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "sculpt.erosion") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "sculpt erosion must be a decimal number");
+                    }
+                    if (!storeValue(builder.sculptErosion, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "sculpt.seed_offset") {
+                    std::uint64_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "sculpt seed offset must be an unsigned integer");
+                    }
+                    if (!storeValue(builder.sculptSeedOffset, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "sculpt.faceted_normals") {
+                    bool parsed = false;
+                    if (!parseBoolean(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "sculpt faceted normals must be true or false");
+                    }
+                    if (!storeValue(builder.sculptFacetedNormals, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "sculpt.target") {
+                    const auto parsed = parseProcessingTarget(value);
+                    if (!parsed) {
+                        return diagnostic(lineNumber, valueColumn, "sculpt target must be 'colour', 'scalar', or 'all'");
+                    }
+                    if (!storeValue(builder.sculptTarget, *parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
                 } else if (property == "course.profile") {
                     const auto parsed = parseCourseLayoutProfile(value);
                     if (!parsed) {
@@ -2030,6 +2224,15 @@ ParseResult parsePmat(std::string_view text)
                     "course layouts and course-random fields require .pmat version 10");
             }
 
+            if (formatVersion < 11 &&
+                (hasVersionElevenFields(builder) ||
+                 *builder.operation.value == OperationKind::regionSurface)) {
+                return diagnostic(
+                    lineNumber + 1,
+                    1,
+                    "region surface sculpting requires .pmat version 11");
+            }
+
             if (formatVersion < 4 &&
                 (hasVersionFourFields(builder) ||
                  isStructuralOperation(*builder.operation.value))) {
@@ -2215,6 +2418,7 @@ ParseResult parsePmat(std::string_view text)
                 builder.inkStrength.value || builder.inkInverted.value;
             const bool hasRegionFields = hasVersionNineFields(builder);
             const bool hasCourseFields = hasVersionTenFields(builder);
+            const bool hasSculptFields = hasVersionElevenFields(builder);
             const int operationGroupCount = static_cast<int>(hasBrickFields) +
                 static_cast<int>(hasTileFields) + static_cast<int>(hasWorleyFields) +
                 static_cast<int>(hasRandomFields) + static_cast<int>(hasLineFields) +
@@ -2222,7 +2426,8 @@ ParseResult parsePmat(std::string_view text)
                 static_cast<int>(hasSurfaceFields) + static_cast<int>(hasFilterFields) +
                 static_cast<int>(hasPosteriseFields) + static_cast<int>(hasRampFields) +
                 static_cast<int>(hasPaletteFields) + static_cast<int>(hasInkFields) +
-                static_cast<int>(hasRegionFields) + static_cast<int>(hasCourseFields);
+                static_cast<int>(hasRegionFields) + static_cast<int>(hasCourseFields) +
+                static_cast<int>(hasSculptFields);
 
             const bool hasClassicFields = builder.seedOffset.value || builder.solidColour.value ||
                 builder.levelsLow.value || builder.levelsHigh.value ||
@@ -2610,6 +2815,100 @@ ParseResult parsePmat(std::string_view text)
                 layer.operation = course;
                 break;
             }
+            case OperationKind::regionSurface:
+                if (!builder.sculptField.value) {
+                    return missingLayerField(lineNumber + 1, index, "sculpt.field");
+                }
+                if (!builder.sculptProfile.value) {
+                    return missingLayerField(lineNumber + 1, index, "sculpt.profile");
+                }
+                if (!builder.sculptBevelWidth.value) {
+                    return missingLayerField(lineNumber + 1, index, "sculpt.bevel_width");
+                }
+                if (!builder.sculptBevelHeight.value) {
+                    return missingLayerField(lineNumber + 1, index, "sculpt.bevel_height");
+                }
+                if (!builder.sculptFacetCount.value) {
+                    return missingLayerField(lineNumber + 1, index, "sculpt.facet_count");
+                }
+                if (!builder.sculptFacetStrength.value) {
+                    return missingLayerField(lineNumber + 1, index, "sculpt.facet_strength");
+                }
+                if (!builder.sculptCentrePeak.value) {
+                    return missingLayerField(lineNumber + 1, index, "sculpt.centre_peak");
+                }
+                if (!builder.sculptSlope.value) {
+                    return missingLayerField(lineNumber + 1, index, "sculpt.slope");
+                }
+                if (!builder.sculptChips.value) {
+                    return missingLayerField(lineNumber + 1, index, "sculpt.chips");
+                }
+                if (!builder.sculptChipScale.value) {
+                    return missingLayerField(lineNumber + 1, index, "sculpt.chip_scale");
+                }
+                if (!builder.sculptWear.value) {
+                    return missingLayerField(lineNumber + 1, index, "sculpt.wear");
+                }
+                if (!builder.sculptErosion.value) {
+                    return missingLayerField(lineNumber + 1, index, "sculpt.erosion");
+                }
+                if (!builder.sculptSeedOffset.value) {
+                    return missingLayerField(lineNumber + 1, index, "sculpt.seed_offset");
+                }
+                if (!builder.sculptFacetedNormals.value) {
+                    return missingLayerField(lineNumber + 1, index, "sculpt.faceted_normals");
+                }
+                if (!builder.sculptTarget.value) {
+                    return missingLayerField(lineNumber + 1, index, "sculpt.target");
+                }
+                if (hasClassicFields || operationGroupCount != 1) {
+                    return crossOperationError();
+                }
+                if (outside(*builder.sculptBevelWidth.value, 0.001, 1.0) ||
+                    outside(*builder.sculptBevelHeight.value, 0.0, 1.0) ||
+                    outside(*builder.sculptFacetStrength.value, 0.0, 1.0) ||
+                    outside(*builder.sculptCentrePeak.value, 0.0, 1.0) ||
+                    outside(*builder.sculptSlope.value, 0.0, 1.0) ||
+                    outside(*builder.sculptChips.value, 0.0, 1.0) ||
+                    outside(*builder.sculptWear.value, 0.0, 1.0) ||
+                    outside(*builder.sculptErosion.value, 0.0, 1.0)) {
+                    return diagnostic(
+                        builder.sculptBevelWidth.line,
+                        builder.sculptBevelWidth.column,
+                        "sculpt decimal controls must be finite and within their supported ranges");
+                }
+                if (*builder.sculptFacetCount.value < LayerLimits::minimumFacetCount ||
+                    *builder.sculptFacetCount.value > LayerLimits::maximumFacetCount) {
+                    return diagnostic(
+                        builder.sculptFacetCount.line,
+                        builder.sculptFacetCount.column,
+                        "sculpt facet count must be between 3 and 16");
+                }
+                if (*builder.sculptChipScale.value < LayerLimits::minimumChipScale ||
+                    *builder.sculptChipScale.value > LayerLimits::maximumChipScale) {
+                    return diagnostic(
+                        builder.sculptChipScale.line,
+                        builder.sculptChipScale.column,
+                        "sculpt chip scale must be between 1 and 64");
+                }
+                layer.operation = RegionSurfaceOperation{
+                    *builder.sculptField.value,
+                    *builder.sculptProfile.value,
+                    *builder.sculptBevelWidth.value,
+                    *builder.sculptBevelHeight.value,
+                    *builder.sculptFacetCount.value,
+                    *builder.sculptFacetStrength.value,
+                    *builder.sculptCentrePeak.value,
+                    *builder.sculptSlope.value,
+                    *builder.sculptChips.value,
+                    *builder.sculptChipScale.value,
+                    *builder.sculptWear.value,
+                    *builder.sculptErosion.value,
+                    *builder.sculptSeedOffset.value,
+                    *builder.sculptFacetedNormals.value,
+                    *builder.sculptTarget.value,
+                };
+                break;
             case OperationKind::worleyCells:
                 if (!builder.worleyColumns.value) {
                     return missingLayerField(lineNumber + 1, index, "worley.columns");
@@ -3330,6 +3629,44 @@ SerialisationResult serialisePmat(const Material& material)
                 output += prefix + "course.gap_width = " + physicalGap + "\n";
                 output += prefix + "course.overlap_depth = " + physicalOverlap + "\n";
             }
+        } else if (const auto* sculpt =
+                       std::get_if<RegionSurfaceOperation>(&layer.operation)) {
+            const auto bevelWidth = formatDouble(sculpt->bevelWidth);
+            const auto bevelHeight = formatDouble(sculpt->bevelHeight);
+            const auto facetStrength = formatDouble(sculpt->facetStrength);
+            const auto centrePeak = formatDouble(sculpt->centrePeak);
+            const auto slope = formatDouble(sculpt->slopeStrength);
+            const auto chips = formatDouble(sculpt->chipAmount);
+            const auto wear = formatDouble(sculpt->wearAmount);
+            const auto erosion = formatDouble(sculpt->erosionAmount);
+            if (bevelWidth.empty() || bevelHeight.empty() || facetStrength.empty() ||
+                centrePeak.empty() || slope.empty() || chips.empty() || wear.empty() ||
+                erosion.empty()) {
+                return SerialisationError{
+                    "could not format region surface sculpt parameters"};
+            }
+            output += prefix + "sculpt.field = " +
+                std::string(regionSurfaceFieldName(sculpt->field)) + "\n";
+            output += prefix + "sculpt.profile = " +
+                std::string(bevelProfileName(sculpt->profile)) + "\n";
+            output += prefix + "sculpt.bevel_width = " + bevelWidth + "\n";
+            output += prefix + "sculpt.bevel_height = " + bevelHeight + "\n";
+            output += prefix + "sculpt.facet_count = " +
+                std::to_string(sculpt->facetCount) + "\n";
+            output += prefix + "sculpt.facet_strength = " + facetStrength + "\n";
+            output += prefix + "sculpt.centre_peak = " + centrePeak + "\n";
+            output += prefix + "sculpt.slope = " + slope + "\n";
+            output += prefix + "sculpt.chips = " + chips + "\n";
+            output += prefix + "sculpt.chip_scale = " +
+                std::to_string(sculpt->chipScale) + "\n";
+            output += prefix + "sculpt.wear = " + wear + "\n";
+            output += prefix + "sculpt.erosion = " + erosion + "\n";
+            output += prefix + "sculpt.seed_offset = " +
+                std::to_string(sculpt->seedOffset) + "\n";
+            output += prefix + "sculpt.faceted_normals = " +
+                (sculpt->facetedNormals ? "true\n" : "false\n");
+            output += prefix + "sculpt.target = " +
+                std::string(processingTargetName(sculpt->target)) + "\n";
         } else if (const auto* worley = std::get_if<WorleyCellsOperation>(&layer.operation)) {
             const auto jitter = formatDouble(worley->jitter);
             const auto edgeWidth = formatDouble(worley->edgeWidth);
