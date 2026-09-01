@@ -89,6 +89,11 @@ struct RegionSurfacePlan {
     RegionSurfaceOperation parameters;
 };
 
+struct ShapeBooleanPlan {
+    std::size_t input{};
+    ShapeBooleanOperation parameters;
+};
+
 struct MaskPlan {
     CoordinateTransform transform;
     LayerMask mask;
@@ -110,6 +115,7 @@ using EvaluationPlan = std::variant<
     InkContourPlan,
     RegionFieldPlan,
     RegionSurfacePlan,
+    ShapeBooleanPlan,
     MaskPlan,
     OutputPlan>;
 
@@ -232,6 +238,13 @@ public:
                                     return RegionSurfacePlan{
                                         indexOf(surface.input),
                                         surface.parameters,
+                                    };
+                                },
+                                [&indexOf](
+                                    const ShapeBooleanProcessing& shape) -> EvaluationPlan {
+                                    return ShapeBooleanPlan{
+                                        indexOf(shape.input),
+                                        shape.parameters,
                                     };
                                 },
                             },
@@ -485,6 +498,13 @@ private:
                     const auto input = evaluateNode(surface.input, context, cacheResult);
                     return evaluateOperation(
                         LayerOperation{surface.parameters},
+                        context,
+                        input);
+                },
+                [this, &context, cacheResult](const ShapeBooleanPlan& shape) {
+                    const auto input = evaluateNode(shape.input, context, cacheResult);
+                    return evaluateOperation(
+                        LayerOperation{shape.parameters},
                         context,
                         input);
                 },

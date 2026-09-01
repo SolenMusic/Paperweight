@@ -75,6 +75,9 @@ enum class OperationKind {
     regionField,
     courseLayout,
     regionSurface,
+    shape,
+    shapeBoolean,
+    lattice,
 };
 
 enum class BrickSizing {
@@ -214,6 +217,32 @@ struct LayerBuilder {
     ParsedValue<std::uint64_t> sculptSeedOffset;
     ParsedValue<bool> sculptFacetedNormals;
     ParsedValue<ProcessingTarget> sculptTarget;
+    ParsedValue<ShapePrimitiveKind> shapeKind;
+    ParsedValue<ShapeFieldKind> shapeField;
+    ParsedValue<std::uint32_t> shapeColumns;
+    ParsedValue<std::uint32_t> shapeRows;
+    ParsedValue<double> shapeWidth;
+    ParsedValue<double> shapeHeight;
+    ParsedValue<double> shapeCornerRadius;
+    ParsedValue<double> shapeInset;
+    ParsedValue<double> shapeBorderWidth;
+    ParsedValue<double> shapeSoftness;
+    ParsedValue<double> shapeOffsetX;
+    ParsedValue<double> shapeOffsetY;
+    ParsedValue<double> shapeStagger;
+    ParsedValue<double> shapeRotation;
+    ParsedValue<std::uint64_t> shapeSeedOffset;
+    ParsedValue<std::uint32_t> shapeVertexCount;
+    std::array<ParsedValue<double>, LayerLimits::maximumPolygonVertices> shapeVertexX;
+    std::array<ParsedValue<double>, LayerLimits::maximumPolygonVertices> shapeVertexY;
+    ParsedValue<ShapeBooleanMode> shapeBooleanMode;
+    ParsedValue<ProcessingTarget> shapeBooleanTarget;
+    ParsedValue<LatticeKind> latticeKind;
+    ParsedValue<std::int32_t> latticeWindingX;
+    ParsedValue<std::int32_t> latticeWindingY;
+    ParsedValue<double> latticeWidth;
+    ParsedValue<double> latticeSoftness;
+    ParsedValue<double> latticePhase;
 };
 
 std::string_view trim(std::string_view value)
@@ -459,6 +488,77 @@ std::optional<OperationKind> parseOperationKind(std::string_view value)
     if (value == "region_surface") {
         return OperationKind::regionSurface;
     }
+    if (value == "shape") {
+        return OperationKind::shape;
+    }
+    if (value == "shape_boolean") {
+        return OperationKind::shapeBoolean;
+    }
+    if (value == "lattice") {
+        return OperationKind::lattice;
+    }
+    return std::nullopt;
+}
+
+std::optional<ShapePrimitiveKind> parseShapePrimitiveKind(std::string_view value)
+{
+    if (value == "rounded_rectangle") {
+        return ShapePrimitiveKind::roundedRectangle;
+    }
+    if (value == "ellipse") {
+        return ShapePrimitiveKind::ellipse;
+    }
+    if (value == "capsule") {
+        return ShapePrimitiveKind::capsule;
+    }
+    if (value == "diamond") {
+        return ShapePrimitiveKind::diamond;
+    }
+    if (value == "convex_polygon") {
+        return ShapePrimitiveKind::convexPolygon;
+    }
+    return std::nullopt;
+}
+
+std::optional<ShapeFieldKind> parseShapeFieldKind(std::string_view value)
+{
+    if (value == "fill") {
+        return ShapeFieldKind::fill;
+    }
+    if (value == "inset") {
+        return ShapeFieldKind::inset;
+    }
+    if (value == "outline") {
+        return ShapeFieldKind::outline;
+    }
+    if (value == "border") {
+        return ShapeFieldKind::border;
+    }
+    return std::nullopt;
+}
+
+std::optional<ShapeBooleanMode> parseShapeBooleanMode(std::string_view value)
+{
+    if (value == "union") {
+        return ShapeBooleanMode::unionMask;
+    }
+    if (value == "intersection") {
+        return ShapeBooleanMode::intersection;
+    }
+    if (value == "subtraction") {
+        return ShapeBooleanMode::subtraction;
+    }
+    return std::nullopt;
+}
+
+std::optional<LatticeKind> parseLatticeKind(std::string_view value)
+{
+    if (value == "lines") {
+        return LatticeKind::lines;
+    }
+    if (value == "diamonds") {
+        return LatticeKind::diamonds;
+    }
     return std::nullopt;
 }
 
@@ -702,7 +802,9 @@ bool isStructuralOperation(OperationKind operation)
         operation == OperationKind::lines ||
         operation == OperationKind::rectangles ||
         operation == OperationKind::circles ||
-        operation == OperationKind::courseLayout;
+        operation == OperationKind::courseLayout ||
+        operation == OperationKind::shape ||
+        operation == OperationKind::lattice;
 }
 
 bool hasVersionFourFields(const LayerBuilder& builder)
@@ -794,12 +896,45 @@ bool hasVersionElevenFields(const LayerBuilder& builder)
         builder.sculptTarget.value;
 }
 
+bool hasVersionTwelveShapeFields(const LayerBuilder& builder)
+{
+    const auto any = [](const auto& fields) {
+        return std::any_of(fields.begin(), fields.end(), [](const auto& field) {
+            return field.value.has_value();
+        });
+    };
+    return builder.shapeKind.value || builder.shapeField.value ||
+        builder.shapeColumns.value || builder.shapeRows.value ||
+        builder.shapeWidth.value || builder.shapeHeight.value ||
+        builder.shapeCornerRadius.value || builder.shapeInset.value ||
+        builder.shapeBorderWidth.value || builder.shapeSoftness.value ||
+        builder.shapeOffsetX.value || builder.shapeOffsetY.value ||
+        builder.shapeStagger.value || builder.shapeRotation.value ||
+        builder.shapeSeedOffset.value || builder.shapeVertexCount.value ||
+        any(builder.shapeVertexX) || any(builder.shapeVertexY) ||
+        builder.shapeBooleanMode.value || builder.shapeBooleanTarget.value;
+}
+
+bool hasVersionTwelveLatticeFields(const LayerBuilder& builder)
+{
+    return builder.latticeKind.value || builder.latticeWindingX.value ||
+        builder.latticeWindingY.value || builder.latticeWidth.value ||
+        builder.latticeSoftness.value || builder.latticePhase.value;
+}
+
+bool hasVersionTwelveFields(const LayerBuilder& builder)
+{
+    return hasVersionTwelveShapeFields(builder) ||
+        hasVersionTwelveLatticeFields(builder);
+}
+
 bool hasStructuralFields(const LayerBuilder& builder)
 {
     return hasVersionFourFields(builder) || hasVersionFiveFields(builder) ||
         hasVersionSixFields(builder) || hasVersionSevenFields(builder) ||
         hasVersionEightFields(builder) || hasVersionNineFields(builder) ||
-        hasVersionTenFields(builder) || hasVersionElevenFields(builder);
+        hasVersionTenFields(builder) || hasVersionElevenFields(builder) ||
+        hasVersionTwelveFields(builder);
 }
 
 template<typename Value>
@@ -1978,6 +2113,224 @@ ParseResult parsePmat(std::string_view text)
                     if (!storeValue(builder.regionTarget, *parsed, lineNumber, valueColumn)) {
                         return duplicate();
                     }
+                } else if (property == "shape.kind") {
+                    const auto parsed = parseShapePrimitiveKind(value);
+                    if (!parsed) {
+                        return diagnostic(
+                            lineNumber,
+                            valueColumn,
+                            "shape kind must be 'rounded_rectangle', 'ellipse', 'capsule', 'diamond', or 'convex_polygon'");
+                    }
+                    if (!storeValue(builder.shapeKind, *parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "shape.field") {
+                    const auto parsed = parseShapeFieldKind(value);
+                    if (!parsed) {
+                        return diagnostic(
+                            lineNumber,
+                            valueColumn,
+                            "shape field must be 'fill', 'inset', 'outline', or 'border'");
+                    }
+                    if (!storeValue(builder.shapeField, *parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "shape.columns") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "shape columns must be an integer");
+                    }
+                    if (!storeValue(builder.shapeColumns, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "shape.rows") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "shape rows must be an integer");
+                    }
+                    if (!storeValue(builder.shapeRows, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "shape.width") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "shape width must be a decimal number");
+                    }
+                    if (!storeValue(builder.shapeWidth, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "shape.height") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "shape height must be a decimal number");
+                    }
+                    if (!storeValue(builder.shapeHeight, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "shape.corner_radius") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "shape corner radius must be a decimal number");
+                    }
+                    if (!storeValue(builder.shapeCornerRadius, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "shape.inset") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "shape inset must be a decimal number");
+                    }
+                    if (!storeValue(builder.shapeInset, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "shape.border_width") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "shape border width must be a decimal number");
+                    }
+                    if (!storeValue(builder.shapeBorderWidth, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "shape.softness") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "shape softness must be a decimal number");
+                    }
+                    if (!storeValue(builder.shapeSoftness, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "shape.offset_x") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "shape offset X must be a decimal number");
+                    }
+                    if (!storeValue(builder.shapeOffsetX, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "shape.offset_y") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "shape offset Y must be a decimal number");
+                    }
+                    if (!storeValue(builder.shapeOffsetY, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "shape.stagger") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "shape stagger must be a decimal number");
+                    }
+                    if (!storeValue(builder.shapeStagger, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "shape.rotation") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "local shape rotation must be a decimal degree value");
+                    }
+                    if (!storeValue(builder.shapeRotation, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "shape.seed_offset") {
+                    std::uint64_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "shape seed offset must be an unsigned integer");
+                    }
+                    if (!storeValue(builder.shapeSeedOffset, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "shape.vertices") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "shape vertex count must be an integer");
+                    }
+                    if (!storeValue(builder.shapeVertexCount, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (const auto vertex =
+                               parseIndexedProperty(property, "shape.vertex.")) {
+                    const auto [vertexIndex, member] = *vertex;
+                    if (vertexIndex >= LayerLimits::maximumPolygonVertices ||
+                        (member != "x" && member != "y")) {
+                        return diagnostic(lineNumber, valueColumn, "invalid shape vertex property");
+                    }
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "shape vertex coordinates must be decimal numbers");
+                    }
+                    auto& destination = member == "x"
+                        ? builder.shapeVertexX[vertexIndex]
+                        : builder.shapeVertexY[vertexIndex];
+                    if (!storeValue(destination, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "shape.boolean") {
+                    const auto parsed = parseShapeBooleanMode(value);
+                    if (!parsed) {
+                        return diagnostic(
+                            lineNumber,
+                            valueColumn,
+                            "shape Boolean mode must be 'union', 'intersection', or 'subtraction'");
+                    }
+                    if (!storeValue(builder.shapeBooleanMode, *parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "shape.target") {
+                    const auto parsed = parseProcessingTarget(value);
+                    if (!parsed) {
+                        return diagnostic(lineNumber, valueColumn, "shape target must be 'colour', 'scalar', or 'all'");
+                    }
+                    if (!storeValue(builder.shapeBooleanTarget, *parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "lattice.kind") {
+                    const auto parsed = parseLatticeKind(value);
+                    if (!parsed) {
+                        return diagnostic(lineNumber, valueColumn, "lattice kind must be 'lines' or 'diamonds'");
+                    }
+                    if (!storeValue(builder.latticeKind, *parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "lattice.winding_x") {
+                    std::int32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "lattice winding X must be an integer");
+                    }
+                    if (!storeValue(builder.latticeWindingX, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "lattice.winding_y") {
+                    std::int32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "lattice winding Y must be an integer");
+                    }
+                    if (!storeValue(builder.latticeWindingY, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "lattice.width") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "lattice width must be a decimal number");
+                    }
+                    if (!storeValue(builder.latticeWidth, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "lattice.softness") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "lattice softness must be a decimal number");
+                    }
+                    if (!storeValue(builder.latticeSoftness, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "lattice.phase") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "lattice phase must be a decimal number");
+                    }
+                    if (!storeValue(builder.latticePhase, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
                 } else if (property == "transform.scale_x") {
                     std::uint32_t parsed = 0;
                     if (!parseInteger(value, parsed)) {
@@ -2233,6 +2586,17 @@ ParseResult parsePmat(std::string_view text)
                     "region surface sculpting requires .pmat version 11");
             }
 
+            if (formatVersion < 12 &&
+                (hasVersionTwelveFields(builder) ||
+                 *builder.operation.value == OperationKind::shape ||
+                 *builder.operation.value == OperationKind::shapeBoolean ||
+                 *builder.operation.value == OperationKind::lattice)) {
+                return diagnostic(
+                    lineNumber + 1,
+                    1,
+                    "shape primitives and lattices require .pmat version 12");
+            }
+
             if (formatVersion < 4 &&
                 (hasVersionFourFields(builder) ||
                  isStructuralOperation(*builder.operation.value))) {
@@ -2419,6 +2783,8 @@ ParseResult parsePmat(std::string_view text)
             const bool hasRegionFields = hasVersionNineFields(builder);
             const bool hasCourseFields = hasVersionTenFields(builder);
             const bool hasSculptFields = hasVersionElevenFields(builder);
+            const bool hasShapeFields = hasVersionTwelveShapeFields(builder);
+            const bool hasLatticeFields = hasVersionTwelveLatticeFields(builder);
             const int operationGroupCount = static_cast<int>(hasBrickFields) +
                 static_cast<int>(hasTileFields) + static_cast<int>(hasWorleyFields) +
                 static_cast<int>(hasRandomFields) + static_cast<int>(hasLineFields) +
@@ -2427,7 +2793,8 @@ ParseResult parsePmat(std::string_view text)
                 static_cast<int>(hasPosteriseFields) + static_cast<int>(hasRampFields) +
                 static_cast<int>(hasPaletteFields) + static_cast<int>(hasInkFields) +
                 static_cast<int>(hasRegionFields) + static_cast<int>(hasCourseFields) +
-                static_cast<int>(hasSculptFields);
+                static_cast<int>(hasSculptFields) + static_cast<int>(hasShapeFields) +
+                static_cast<int>(hasLatticeFields);
 
             const bool hasClassicFields = builder.seedOffset.value || builder.solidColour.value ||
                 builder.levelsLow.value || builder.levelsHigh.value ||
@@ -2907,6 +3274,171 @@ ParseResult parsePmat(std::string_view text)
                     *builder.sculptSeedOffset.value,
                     *builder.sculptFacetedNormals.value,
                     *builder.sculptTarget.value,
+                };
+                break;
+            case OperationKind::shape:
+            case OperationKind::shapeBoolean: {
+                if (!builder.shapeKind.value) {
+                    return missingLayerField(lineNumber + 1, index, "shape.kind");
+                }
+                if (!builder.shapeField.value) {
+                    return missingLayerField(lineNumber + 1, index, "shape.field");
+                }
+                if (!builder.shapeColumns.value) {
+                    return missingLayerField(lineNumber + 1, index, "shape.columns");
+                }
+                if (!builder.shapeRows.value) {
+                    return missingLayerField(lineNumber + 1, index, "shape.rows");
+                }
+                if (!builder.shapeWidth.value) {
+                    return missingLayerField(lineNumber + 1, index, "shape.width");
+                }
+                if (!builder.shapeHeight.value) {
+                    return missingLayerField(lineNumber + 1, index, "shape.height");
+                }
+                if (!builder.shapeCornerRadius.value) {
+                    return missingLayerField(lineNumber + 1, index, "shape.corner_radius");
+                }
+                if (!builder.shapeInset.value) {
+                    return missingLayerField(lineNumber + 1, index, "shape.inset");
+                }
+                if (!builder.shapeBorderWidth.value) {
+                    return missingLayerField(lineNumber + 1, index, "shape.border_width");
+                }
+                if (!builder.shapeSoftness.value) {
+                    return missingLayerField(lineNumber + 1, index, "shape.softness");
+                }
+                if (!builder.shapeOffsetX.value) {
+                    return missingLayerField(lineNumber + 1, index, "shape.offset_x");
+                }
+                if (!builder.shapeOffsetY.value) {
+                    return missingLayerField(lineNumber + 1, index, "shape.offset_y");
+                }
+                if (!builder.shapeStagger.value) {
+                    return missingLayerField(lineNumber + 1, index, "shape.stagger");
+                }
+                if (!builder.shapeRotation.value) {
+                    return missingLayerField(lineNumber + 1, index, "shape.rotation");
+                }
+                if (!builder.shapeSeedOffset.value) {
+                    return missingLayerField(lineNumber + 1, index, "shape.seed_offset");
+                }
+                if (!builder.shapeVertexCount.value) {
+                    return missingLayerField(lineNumber + 1, index, "shape.vertices");
+                }
+                if (hasClassicFields || operationGroupCount != 1) {
+                    return crossOperationError();
+                }
+                const auto vertexCount = *builder.shapeVertexCount.value;
+                if (vertexCount < LayerLimits::minimumPolygonVertices ||
+                    vertexCount > LayerLimits::maximumPolygonVertices) {
+                    return diagnostic(
+                        builder.shapeVertexCount.line,
+                        builder.shapeVertexCount.column,
+                        "shape vertex count must be between 3 and 12");
+                }
+                std::vector<ShapePoint> vertices;
+                vertices.reserve(vertexCount);
+                for (std::size_t vertexIndex = 0; vertexIndex < vertexCount; ++vertexIndex) {
+                    if (!builder.shapeVertexX[vertexIndex].value) {
+                        return missingLayerField(
+                            lineNumber + 1,
+                            index,
+                            "shape.vertex." + std::to_string(vertexIndex) + ".x");
+                    }
+                    if (!builder.shapeVertexY[vertexIndex].value) {
+                        return missingLayerField(
+                            lineNumber + 1,
+                            index,
+                            "shape.vertex." + std::to_string(vertexIndex) + ".y");
+                    }
+                    vertices.push_back({
+                        *builder.shapeVertexX[vertexIndex].value,
+                        *builder.shapeVertexY[vertexIndex].value,
+                    });
+                }
+                for (std::size_t vertexIndex = vertexCount;
+                     vertexIndex < LayerLimits::maximumPolygonVertices;
+                     ++vertexIndex) {
+                    if (builder.shapeVertexX[vertexIndex].value ||
+                        builder.shapeVertexY[vertexIndex].value) {
+                        return diagnostic(
+                            lineNumber + 1,
+                            1,
+                            "shape declares a vertex beyond shape.vertices");
+                    }
+                }
+                ShapePrimitiveOperation shape{
+                    *builder.shapeKind.value,
+                    *builder.shapeField.value,
+                    *builder.shapeColumns.value,
+                    *builder.shapeRows.value,
+                    *builder.shapeWidth.value,
+                    *builder.shapeHeight.value,
+                    *builder.shapeCornerRadius.value,
+                    *builder.shapeInset.value,
+                    *builder.shapeBorderWidth.value,
+                    *builder.shapeSoftness.value,
+                    *builder.shapeOffsetX.value,
+                    *builder.shapeOffsetY.value,
+                    *builder.shapeStagger.value,
+                    *builder.shapeRotation.value,
+                    *builder.shapeSeedOffset.value,
+                    std::move(vertices),
+                };
+                if (*builder.operation.value == OperationKind::shape) {
+                    if (builder.shapeBooleanMode.value ||
+                        builder.shapeBooleanTarget.value) {
+                        return diagnostic(
+                            lineNumber + 1,
+                            1,
+                            "shape generators cannot declare shape.boolean or shape.target");
+                    }
+                    layer.operation = std::move(shape);
+                } else {
+                    if (!builder.shapeBooleanMode.value) {
+                        return missingLayerField(lineNumber + 1, index, "shape.boolean");
+                    }
+                    if (!builder.shapeBooleanTarget.value) {
+                        return missingLayerField(lineNumber + 1, index, "shape.target");
+                    }
+                    layer.operation = ShapeBooleanOperation{
+                        *builder.shapeBooleanMode.value,
+                        std::move(shape),
+                        *builder.shapeBooleanTarget.value,
+                    };
+                }
+                break;
+            }
+            case OperationKind::lattice:
+                if (!builder.latticeKind.value) {
+                    return missingLayerField(lineNumber + 1, index, "lattice.kind");
+                }
+                if (!builder.latticeWindingX.value) {
+                    return missingLayerField(lineNumber + 1, index, "lattice.winding_x");
+                }
+                if (!builder.latticeWindingY.value) {
+                    return missingLayerField(lineNumber + 1, index, "lattice.winding_y");
+                }
+                if (!builder.latticeWidth.value) {
+                    return missingLayerField(lineNumber + 1, index, "lattice.width");
+                }
+                if (!builder.latticeSoftness.value) {
+                    return missingLayerField(lineNumber + 1, index, "lattice.softness");
+                }
+                if (!builder.latticePhase.value) {
+                    return missingLayerField(lineNumber + 1, index, "lattice.phase");
+                }
+                if (hasClassicFields || operationGroupCount != 1) {
+                    return crossOperationError();
+                }
+                layer.operation = LatticeOperation{
+                    *builder.latticeKind.value,
+                    *builder.latticeWindingX.value,
+                    *builder.latticeWindingY.value,
+                    *builder.latticeWidth.value,
+                    *builder.latticeSoftness.value,
+                    *builder.latticePhase.value,
                 };
                 break;
             case OperationKind::worleyCells:
@@ -3517,6 +4049,58 @@ SerialisationResult serialisePmat(const Material& material)
         output += prefix + "operation = " + std::string(operationName(layer.operation)) + "\n";
         output += prefix + "composite = " + std::string(compositeModeName(layer.compositeMode)) + "\n";
         output += prefix + "opacity = " + opacity + "\n";
+        const auto appendShape = [&](const ShapePrimitiveOperation& shape)
+            -> std::optional<SerialisationError> {
+            const auto width = formatDouble(shape.width);
+            const auto height = formatDouble(shape.height);
+            const auto cornerRadius = formatDouble(shape.cornerRadius);
+            const auto inset = formatDouble(shape.inset);
+            const auto borderWidth = formatDouble(shape.borderWidth);
+            const auto softness = formatDouble(shape.softness);
+            const auto offsetX = formatDouble(shape.offsetX);
+            const auto offsetY = formatDouble(shape.offsetY);
+            const auto stagger = formatDouble(shape.stagger);
+            const auto rotation = formatDouble(shape.rotationDegrees);
+            if (width.empty() || height.empty() || cornerRadius.empty() || inset.empty() ||
+                borderWidth.empty() || softness.empty() || offsetX.empty() ||
+                offsetY.empty() || stagger.empty() || rotation.empty()) {
+                return SerialisationError{"could not format shape parameters"};
+            }
+            output += prefix + "shape.kind = " +
+                std::string(shapePrimitiveKindName(shape.kind)) + "\n";
+            output += prefix + "shape.field = " +
+                std::string(shapeFieldKindName(shape.field)) + "\n";
+            output += prefix + "shape.columns = " + std::to_string(shape.columns) + "\n";
+            output += prefix + "shape.rows = " + std::to_string(shape.rows) + "\n";
+            output += prefix + "shape.width = " + width + "\n";
+            output += prefix + "shape.height = " + height + "\n";
+            output += prefix + "shape.corner_radius = " + cornerRadius + "\n";
+            output += prefix + "shape.inset = " + inset + "\n";
+            output += prefix + "shape.border_width = " + borderWidth + "\n";
+            output += prefix + "shape.softness = " + softness + "\n";
+            output += prefix + "shape.offset_x = " + offsetX + "\n";
+            output += prefix + "shape.offset_y = " + offsetY + "\n";
+            output += prefix + "shape.stagger = " + stagger + "\n";
+            output += prefix + "shape.rotation = " + rotation + "\n";
+            output += prefix + "shape.seed_offset = " +
+                std::to_string(shape.seedOffset) + "\n";
+            output += prefix + "shape.vertices = " +
+                std::to_string(shape.vertices.size()) + "\n";
+            for (std::size_t vertexIndex = 0;
+                 vertexIndex < shape.vertices.size();
+                 ++vertexIndex) {
+                const auto x = formatDouble(shape.vertices[vertexIndex].x);
+                const auto y = formatDouble(shape.vertices[vertexIndex].y);
+                if (x.empty() || y.empty()) {
+                    return SerialisationError{"could not format convex polygon vertices"};
+                }
+                const auto vertexPrefix = prefix + "shape.vertex." +
+                    std::to_string(vertexIndex) + ".";
+                output += vertexPrefix + "x = " + x + "\n";
+                output += vertexPrefix + "y = " + y + "\n";
+            }
+            return std::nullopt;
+        };
         if (const auto* noise = std::get_if<NoiseOperation>(&layer.operation)) {
             output += prefix + "noise.seed_offset = " + std::to_string(noise->seedOffset) + "\n";
         } else if (const auto* solid = std::get_if<SolidColourOperation>(&layer.operation)) {
@@ -3723,6 +4307,37 @@ SerialisationResult serialisePmat(const Material& material)
             output += prefix + "circles.rows = " + std::to_string(circles->rows) + "\n";
             output += prefix + "circles.radius = " + radius + "\n";
             output += prefix + "circles.softness = " + softness + "\n";
+        } else if (const auto* shape =
+                       std::get_if<ShapePrimitiveOperation>(&layer.operation)) {
+            if (const auto error = appendShape(*shape)) {
+                return *error;
+            }
+        } else if (const auto* boolean =
+                       std::get_if<ShapeBooleanOperation>(&layer.operation)) {
+            if (const auto error = appendShape(boolean->shape)) {
+                return *error;
+            }
+            output += prefix + "shape.boolean = " +
+                std::string(shapeBooleanModeName(boolean->mode)) + "\n";
+            output += prefix + "shape.target = " +
+                std::string(processingTargetName(boolean->target)) + "\n";
+        } else if (const auto* lattice =
+                       std::get_if<LatticeOperation>(&layer.operation)) {
+            const auto width = formatDouble(lattice->width);
+            const auto softness = formatDouble(lattice->softness);
+            const auto phase = formatDouble(lattice->phase);
+            if (width.empty() || softness.empty() || phase.empty()) {
+                return SerialisationError{"could not format lattice parameters"};
+            }
+            output += prefix + "lattice.kind = " +
+                std::string(latticeKindName(lattice->kind)) + "\n";
+            output += prefix + "lattice.winding_x = " +
+                std::to_string(lattice->windingX) + "\n";
+            output += prefix + "lattice.winding_y = " +
+                std::to_string(lattice->windingY) + "\n";
+            output += prefix + "lattice.width = " + width + "\n";
+            output += prefix + "lattice.softness = " + softness + "\n";
+            output += prefix + "lattice.phase = " + phase + "\n";
         } else if (const auto* surface =
                        std::get_if<SurfacePatternOperation>(&layer.operation)) {
             const auto width = formatDouble(surface->width);

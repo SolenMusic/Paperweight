@@ -13,14 +13,15 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-v0.0.14 is the current Bevels, Facets and Wear release. A reusable region-aware
-surface processor turns structural cells, masonry blocks, slabs, and slates into
-rounded, chamfered, or hand-cut height forms. Stable facets, centre peaks,
-directional slopes, chips, wear, and erosion remain deterministic and seamless.
-The same processor exposes cavity, outer-edge, exposed-face, facet, and wear
-masks. Optional planar normal treatment changes only normal construction. Four
-editable sculpted showcases demonstrate the shared system, while older material
-definitions retain their historical output.
+v0.0.15 is the current Shape Primitives and Lattices release. Portable analytic
+rounded rectangles, ellipses, capsules, diamonds, and convex polygons can be
+repeated, inset, outlined, bordered, and combined through mask Boolean
+operations. Each bounded instance may rotate freely. Global line and diamond
+lattices instead use explicit integer windings, which guarantees that they
+remain mathematically seamless. Four editable showcases construct a castle
+window, a detailed crate, reusable fasteners, and masonry corner ornament from
+the shared vocabulary, while older material definitions retain their historical
+output.
 
 The staged work is tracked in [GitHub Issues](https://github.com/SolenMusic/Paperweight/issues).
 
@@ -29,7 +30,8 @@ The staged work is tracked in [GitHub Issues](https://github.com/SolenMusic/Pape
 ```text
 Portable C++20 core
   image buffers, deterministic primitives, periodic noise,
-  structural, course-layout, sculpting, and surface generators, exact region identity and fields,
+  structural, course-layout, sculpting, shape, lattice, and surface generators,
+  exact region identity and fields,
   neighbourhood filters,
   layer-to-graph compiler, graph validation/evaluation,
   transforms, masks, generator API, .pmat parsing/serialisation
@@ -61,13 +63,15 @@ never need to guess which dimensions divide an existing repeat. File > New from
 Showcase loads editable realistic and stylised recipes, including toon dungeon
 stone, painted metal, graphic marble, castle flagstone, two castle masonry
 styles, castle roof slates, cel forest rock, sculpted flagstone, worn masonry,
-and chamfered roof slate. These are the practical forerunners of the
+chamfered roof slate, a diamond castle window, a detailed crate, decorative
+fasteners, and masonry corner variation. These are the practical forerunners of the
 planned seedless template library. Region Stones demonstrates repeatable
 per-cell variation, while Course Random gives every row one stable value.
 
-Format-version-1 through version-10 `.pmat` files still open with their
-historical output intact; saving migrates them to canonical format version 11.
-Version 11 adds region surface sculpting and optional faceted normals. Exact block
+Format-version-1 through version-11 `.pmat` files still open with their
+historical output intact; saving migrates them to canonical format version 12.
+Version 12 adds shape primitives, shape Boolean processors, and seamless
+lattices. Exact block
 and parent-course keys are evaluator metadata, not pixel channels, so they are
 never stored in lossy floating-point form.
 The editor does not invent a redundant graph syntax for the existing layer recipe:
@@ -138,6 +142,12 @@ Add Region Surface immediately above any structural region to construct height
 from its boundary. Select a bevel profile, then tune facets, centre peak, slope,
 chips, wear, and erosion; the output selector can expose the resulting masks.
 Planar normals are opt-in and do not alter the saved colour, height, or roughness.
+Add Shape Primitive for repeated rounded rectangles, ellipses, capsules,
+diamonds, or an editable regular convex polygon. Fill, inset, outline, and border
+fields expose the same analytic boundary. Shape Boolean combines one of those
+local shapes with the accumulated mask, while Seam-safe Lattice creates line or
+diamond grids from whole-tile winding counts. Local shape rotation is free;
+lattice direction remains restricted to repeat-compatible windings.
 See [the `.pmat` format reference](docs/pmat-format.md) for the text format.
 
 Choose 3D under Preview mode to inspect all four material maps together. Select

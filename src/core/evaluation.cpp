@@ -3,6 +3,7 @@
 #include <paperweight/hash.hpp>
 #include <paperweight/noise.hpp>
 #include <paperweight/sculpt.hpp>
+#include <paperweight/shape.hpp>
 #include <paperweight/structural.hpp>
 #include <paperweight/surface.hpp>
 
@@ -474,6 +475,41 @@ EvaluatedSample evaluateOperation(
                 return sampleFromStructural(
                     context.material,
                     evaluateCirclesSample(circles, context.u, context.v));
+            },
+            [&context](const ShapePrimitiveOperation& shape) {
+                const auto sample = evaluateShapePrimitive(shape, context.u, context.v);
+                return sampleFromStructural(
+                    context.material,
+                    StructuralSample{sample.value, sample.region});
+            },
+            [&context](const LatticeOperation& lattice) {
+                const auto sample = evaluateLattice(lattice, context.u, context.v);
+                return sampleFromStructural(
+                    context.material,
+                    StructuralSample{sample.value, sample.region});
+            },
+            [&input, &context](const ShapeBooleanOperation& boolean) {
+                const auto shape = evaluateShapePrimitive(
+                    boolean.shape,
+                    context.u,
+                    context.v);
+                auto result = input;
+                if (affectsScalar(boolean.target)) {
+                    result.scalar = combineShapeMasks(
+                        input.scalar,
+                        shape.value,
+                        boolean.mode);
+                }
+                if (affectsColour(boolean.target)) {
+                    result.red = combineShapeMasks(input.red, shape.value, boolean.mode);
+                    result.green = combineShapeMasks(input.green, shape.value, boolean.mode);
+                    result.blue = combineShapeMasks(input.blue, shape.value, boolean.mode);
+                }
+                if (boolean.mode == ShapeBooleanMode::unionMask &&
+                    shape.value > input.scalar) {
+                    result.region = shape.region;
+                }
+                return result;
             },
             [&context](const SurfacePatternOperation& surface) {
                 return sampleFromScalar(

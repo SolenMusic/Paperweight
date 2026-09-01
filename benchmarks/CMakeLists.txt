@@ -28,6 +28,10 @@ foreach(material IN ITEMS
     sculpted-flagstone
     worn-masonry
     sculpted-roof-slate
+    castle-window
+    detailed-crate
+    decorative-fasteners
+    masonry-corner-variation
 )
     configure_file(
         "${PROJECT_SOURCE_DIR}/examples/materials/${material}.pmat"

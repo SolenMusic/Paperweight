@@ -140,12 +140,15 @@ flagstone, masonry, and slate showcases. See
 
 ## v0.0.15 - Shapes and Lattices
 
-Add analytic rounded rectangles, ellipses, capsules, diamonds, and convex
-polygons, together with inset, outline, border, union, intersection, and
-subtraction operations. Bounded instances may rotate freely; global line and
-diamond lattices use tile-compatible winding directions rather than pretending
-that every arbitrary rotation remains seamless. This targets the diamond castle
-window and detailed crate construction. See
+Implemented: add analytic rounded rectangles, ellipses, capsules, diamonds, and
+convex polygons, together with fill, inset, outline, border, union,
+intersection, and subtraction operations. Bounded repeated instances rotate
+freely; global line and diamond lattices use signed integer winding directions
+rather than pretending that every arbitrary rotation remains seamless. Stable
+regions, graph nodes, canonical `.pmat` version 12 persistence, native controls,
+and byte-exact single/multi-worker tests cover the complete vocabulary. Four
+editable showcases target the diamond castle window, detailed crate, reusable
+fasteners, and masonry corner variation. See
 [roadmap issue #131](https://github.com/SolenMusic/Paperweight/issues/131).
 
 ## v0.0.16 - Deterministic Instance Scattering
