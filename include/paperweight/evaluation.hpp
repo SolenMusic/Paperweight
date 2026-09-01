@@ -4,6 +4,7 @@
 #include <paperweight/layer.hpp>
 #include <paperweight/material.hpp>
 #include <paperweight/output.hpp>
+#include <paperweight/region.hpp>
 
 namespace paperweight {
 
@@ -13,6 +14,7 @@ struct EvaluatedSample {
     double green{};
     double blue{};
     double alpha{};
+    RegionSample region;
 
     friend constexpr bool operator==(const EvaluatedSample&, const EvaluatedSample&) = default;
 };

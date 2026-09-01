@@ -53,7 +53,8 @@ std::optional<GeneratorOperation> generatorOperation(const LayerOperation& opera
                           std::is_same_v<Operation, PosteriseOperation> ||
                           std::is_same_v<Operation, ColourRampOperation> ||
                           std::is_same_v<Operation, PaletteOperation> ||
-                          std::is_same_v<Operation, InkContourOperation>) {
+                          std::is_same_v<Operation, InkContourOperation> ||
+                          std::is_same_v<Operation, RegionFieldOperation>) {
                 return std::nullopt;
             } else {
                 return GeneratorOperation{value};
@@ -107,6 +108,9 @@ std::optional<std::string> validateProcessingNode(const ProcessingNode& node)
             },
             [&layer](const InkContourProcessing& contour) {
                 layer.operation = contour.parameters;
+            },
+            [&layer](const RegionFieldProcessing& field) {
+                layer.operation = field.parameters;
             },
         },
         node.operation);
@@ -169,6 +173,9 @@ std::vector<GraphNodeId> dependencies(const GraphNode& node)
                         },
                         [](const InkContourProcessing& contour) {
                             return std::vector<GraphNodeId>{contour.input};
+                        },
+                        [](const RegionFieldProcessing& field) {
+                            return std::vector<GraphNodeId>{field.input};
                         },
                     },
                     processing.operation);
@@ -293,7 +300,10 @@ std::optional<GraphError> validateMaterialGraph(const MaterialGraph& graph)
             const bool valueCompatible = expected == GraphNodeCategory::generator &&
                 (actual == GraphNodeCategory::generator ||
                  actual == GraphNodeCategory::processing);
-            if (!valueCompatible && actual != expected) {
+            const bool valueMaskCompatible = expected == GraphNodeCategory::mask &&
+                (actual == GraphNodeCategory::generator ||
+                 actual == GraphNodeCategory::processing);
+            if (!valueCompatible && !valueMaskCompatible && actual != expected) {
                 return nodeError(
                     GraphErrorCode::incompatibleInput,
                     ownerId,
@@ -354,6 +364,11 @@ std::optional<GraphError> validateMaterialGraph(const MaterialGraph& graph)
                             [&checkInput](const InkContourProcessing& contour) {
                                 return checkInput(
                                     contour.input,
+                                    GraphNodeCategory::generator);
+                            },
+                            [&checkInput](const RegionFieldProcessing& field) {
+                                return checkInput(
+                                    field.input,
                                     GraphNodeCategory::generator);
                             },
                         },
@@ -503,6 +518,11 @@ GraphCompilationResult compileMaterialGraph(const Material& material)
                            std::get_if<InkContourOperation>(&layer.operation)) {
                 source = addProcessing(
                     InkContourProcessing{accumulated, *contour},
+                    layerIndex);
+            } else if (const auto* field =
+                           std::get_if<RegionFieldOperation>(&layer.operation)) {
+                source = addProcessing(
+                    RegionFieldProcessing{accumulated, *field},
                     layerIndex);
             } else {
                 const auto operation = generatorOperation(layer.operation);

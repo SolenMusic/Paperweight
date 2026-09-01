@@ -79,6 +79,11 @@ struct InkContourPlan {
     InkContourOperation parameters;
 };
 
+struct RegionFieldPlan {
+    std::size_t input;
+    RegionFieldOperation parameters;
+};
+
 struct MaskPlan {
     CoordinateTransform transform;
     LayerMask mask;
@@ -98,6 +103,7 @@ using EvaluationPlan = std::variant<
     CompositePlan,
     SurfaceFilterPlan,
     InkContourPlan,
+    RegionFieldPlan,
     MaskPlan,
     OutputPlan>;
 
@@ -206,6 +212,13 @@ public:
                                     return InkContourPlan{
                                         indexOf(contour.input),
                                         contour.parameters,
+                                    };
+                                },
+                                [&indexOf](
+                                    const RegionFieldProcessing& field) -> EvaluationPlan {
+                                    return RegionFieldPlan{
+                                        indexOf(field.input),
+                                        field.parameters,
                                     };
                                 },
                             },
@@ -383,6 +396,7 @@ private:
                             ? channel(&EvaluatedSample::blue)
                             : centre.blue,
                         centre.alpha,
+                        centre.region,
                     };
                 },
                 [this, &context, cacheResult](const InkContourPlan& contour) {
@@ -441,7 +455,15 @@ private:
                         blend(centre.green, contour.parameters.colour.green),
                         blend(centre.blue, contour.parameters.colour.blue),
                         centre.alpha,
+                        centre.region,
                     };
+                },
+                [this, &context, cacheResult](const RegionFieldPlan& field) {
+                    const auto input = evaluateNode(field.input, context, cacheResult);
+                    return evaluateOperation(
+                        LayerOperation{field.parameters},
+                        context,
+                        input);
                 },
                 [&context](const MaskPlan& mask) {
                     const auto coordinates = transformCoordinates(mask.transform, context);
@@ -451,7 +473,7 @@ private:
                         coordinates.v,
                     };
                     const double value = evaluateLayerMask(mask.mask, transformed);
-                    return EvaluatedSample{value, value, value, value, 1.0};
+                    return EvaluatedSample{value, value, value, value, 1.0, {}};
                 },
                 [this, &context, cacheResult](const OutputPlan& output) {
                     return evaluateNode(output.input, context, cacheResult);

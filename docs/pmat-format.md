@@ -1,4 +1,4 @@
-# `.pmat` format version 8
+# `.pmat` format version 9
 
 Paperweight material files are UTF-8 text. They are intended to be readable,
 diffable, and small enough to embed alongside game assets.
@@ -7,7 +7,7 @@ diffable, and small enough to embed alongside game assets.
 
 ```text
 # Paperweight procedural material
-pmat.version = 8
+pmat.version = 9
 material.type = fbm
 material.seed = 18431
 material.width = 1m
@@ -68,7 +68,7 @@ no material; it never returns a partially accepted definition.
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
-| `pmat.version` | File-format version | `8` |
+| `pmat.version` | File-format version | `9` |
 | `material.type` | Generator model | `fbm` |
 | `material.seed` | Deterministic seed | Unsigned 64-bit integer |
 | `material.width` | Width of one seamless material repeat | Metre value from `0.000001m` to `1000000m` |
@@ -170,6 +170,13 @@ The operation selects exactly one parameter group:
 | `ink_contour` | `layer.N.ink.softness` | Transition softness from 0 to 0.5 |
 | `ink_contour` | `layer.N.ink.strength` | Decimal from 0 to 1 |
 | `ink_contour` | `layer.N.ink.inverted` | `true` inks flat regions; `false` inks detected edges |
+| `region_field` | `layer.N.region.field` | `random`, `local_u`, `local_v`, `centre_distance`, or `boundary_distance` |
+| `region_field` | `layer.N.region.seed_offset` | Unsigned 64-bit integer |
+| `region_field` | `layer.N.region.channel` | Independent random channel from 0 to 255 |
+| `region_field` | `layer.N.region.output_low` | Decimal from 0 to 1 |
+| `region_field` | `layer.N.region.output_high` | Decimal from 0 to 1 |
+| `region_field` | `layer.N.region.inverted` | Whether to complement the selected field before remapping |
+| `region_field` | `layer.N.region.target` | `colour`, `scalar`, or `all` |
 
 Brick and tile values are one inside each unit and zero in mortar or grout.
 With relative brick `mortar_space = cell`, mortar is a fraction of each repeated cell,
@@ -212,6 +219,25 @@ contrast and blend an authored ink colour into RGB only. Consequently, colour
 ramps, palettes, and ink can stylise a material while preserving height, normal,
 and roughness output exactly.
 
+Brick, tile, Worley, random-cell, line, rectangle, and circle generators attach
+a stable structural region to their result. Its key remains a 64-bit integer in
+the evaluator; it is never stored in RGB, scalar, or floating-point metadata.
+The region also carries local U/V coordinates and normalised centre and boundary
+distances. Unary processing retains this metadata. A non-zero composite adopts
+a valid structural source region and otherwise keeps the background region, allowing a
+Region Field layer above colour or filter layers to address the same cells.
+
+`region_field` converts one active region field into an ordinary graph value.
+`random` hashes the material seed, exact region key, seed offset, and numbered
+channel, so channel changes produce independent deterministic values without
+moving boundaries. Other field kinds ignore the random parameters but retain
+them in canonical text for an unambiguous operation shape. The selected value is
+optionally inverted, mapped between `output_low` and `output_high`, and written
+to colour, scalar, or both. A missing active region supplies field value zero.
+Scalar targeting can drive height, normal, and roughness in a layer recipe;
+portable direct graphs may route separate Region Field nodes to individual
+outputs or use one as a composite mask.
+
 Physical brick sizing replaces `columns`, `rows`, `mortar`, and
 `mortar_space` with explicit dimensions. For example:
 
@@ -230,7 +256,7 @@ The native editor presents those derived column and row counts explicitly. When
 an author changes the brick size or count, it recalculates `material.width` and
 `material.height` automatically so the saved definition remains seamless.
 
-Every layer in versions 3 through 8 also has this coordinate-transform group:
+Every layer in versions 3 through 9 also has this coordinate-transform group:
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
@@ -249,7 +275,7 @@ Offsets are continuous and wrap naturally. When enabled, warp uses two
 independent periodic FBM channels to displace the transformed coordinates.
 Disabling warp, or setting its strength to zero, is exactly the identity path.
 
-Every layer in versions 3 through 8 also declares its optional mask:
+Every layer in versions 3 through 9 also declares its optional mask:
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
@@ -263,7 +289,7 @@ The mask samples an independent periodic FBM field in the layer's transformed
 coordinates. Its remapped value multiplies the layer opacity, allowing smooth,
 threshold-like, or inverted spatial control without changing the operation.
 Disabled masks evaluate to exactly one. Transform, warp, and mask fields remain
-required in versions 3 through 8 even when their optional features are disabled; this
+required in versions 3 through 9 even when their optional features are disabled; this
 keeps canonical files explicit and round trips unambiguous.
 
 Noise seed offset zero reproduces the original material seed exactly. Other
@@ -279,13 +305,13 @@ formula is applied to scalar, red, green, blue, and alpha channels.
 
 ## Graph compilation
 
-Paperweight v0.0.11 retains the layer syntax, now at version 8, as the compact,
+Paperweight v0.0.12 retains the layer syntax, now at version 9, as the compact,
 human-editable authoring projection. Before generation, the portable core
 compiles it into a directed acyclic material graph:
 
 - source operations become generator nodes;
-- levels, threshold, surface filters, posterise, colour ramps, palettes, and
-  ink contours become unary processing nodes;
+- levels, threshold, surface filters, posterise, colour ramps, palettes, ink
+  contours, and region fields become unary processing nodes;
 - enabled procedural masks become mask nodes;
 - layer blend, add, or multiply behaviour becomes composite processing nodes;
 - colour, height, normal, and roughness receive explicit output nodes.
@@ -300,6 +326,7 @@ Graph-specific text syntax is intentionally deferred until Paperweight has a
 graph authoring workflow that can round-trip it honestly. Format version 7 adds
 advanced surface recipes; it does not serialise the internal graph representation.
 Format version 8 adds stylised processors without serialising preview lighting.
+Format version 9 adds region fields without serialising the internal 64-bit key.
 
 ## Material outputs
 
@@ -321,7 +348,7 @@ generation wrap mathematically across both tile axes.
 ## Compatibility policy
 
 The `.pmat` format version and Paperweight application version are separate.
-Paperweight v0.0.11 reads versions 1 through 8 and writes version 8. A reader
+Paperweight v0.0.12 reads versions 1 through 9 and writes version 9. A reader
 rejects unsupported versions and unknown fields so that it cannot quietly
 reinterpret a future material.
 
@@ -338,7 +365,8 @@ repeat and retain their exact default-coverage pixels. Version 7 adds advanced
 surface patterns and filters without changing older evaluations. Version 8 adds
 posterise, colour ramp, palette, ink contour, edge-aware soften, and explicit
 filter targets. Versions 1 through 7 retain byte-identical default evaluations.
-Saving any older format performs the explicit migration to version 8.
+Version 9 adds region fields; versions 1 through 8 retain byte-identical default
+evaluations. Saving any older format performs the explicit migration to version 9.
 
 The portable entry points are `paperweight::parsePmat` and
 `paperweight::serialisePmat` in `include/paperweight/pmat.hpp`.

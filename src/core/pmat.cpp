@@ -72,6 +72,7 @@ enum class OperationKind {
     colourRamp,
     palette,
     inkContour,
+    regionField,
 };
 
 enum class BrickSizing {
@@ -172,6 +173,13 @@ struct LayerBuilder {
     ParsedValue<double> inkSoftness;
     ParsedValue<double> inkStrength;
     ParsedValue<bool> inkInverted;
+    ParsedValue<RegionFieldKind> regionField;
+    ParsedValue<std::uint64_t> regionSeedOffset;
+    ParsedValue<std::uint32_t> regionChannel;
+    ParsedValue<double> regionOutputLow;
+    ParsedValue<double> regionOutputHigh;
+    ParsedValue<bool> regionInverted;
+    ParsedValue<ProcessingTarget> regionTarget;
 };
 
 std::string_view trim(std::string_view value)
@@ -408,6 +416,9 @@ std::optional<OperationKind> parseOperationKind(std::string_view value)
     if (value == "ink_contour") {
         return OperationKind::inkContour;
     }
+    if (value == "region_field") {
+        return OperationKind::regionField;
+    }
     return std::nullopt;
 }
 
@@ -473,6 +484,26 @@ std::optional<ProcessingTarget> parseProcessingTarget(std::string_view value)
     }
     if (value == "all") {
         return ProcessingTarget::colourAndScalar;
+    }
+    return std::nullopt;
+}
+
+std::optional<RegionFieldKind> parseRegionFieldKind(std::string_view value)
+{
+    if (value == "random") {
+        return RegionFieldKind::random;
+    }
+    if (value == "local_u") {
+        return RegionFieldKind::localU;
+    }
+    if (value == "local_v") {
+        return RegionFieldKind::localV;
+    }
+    if (value == "centre_distance") {
+        return RegionFieldKind::centreDistance;
+    }
+    if (value == "boundary_distance") {
+        return RegionFieldKind::boundaryDistance;
     }
     return std::nullopt;
 }
@@ -618,11 +649,19 @@ bool hasVersionEightFields(const LayerBuilder& builder)
         builder.inkStrength.value || builder.inkInverted.value;
 }
 
+bool hasVersionNineFields(const LayerBuilder& builder)
+{
+    return builder.regionField.value || builder.regionSeedOffset.value ||
+        builder.regionChannel.value || builder.regionOutputLow.value ||
+        builder.regionOutputHigh.value || builder.regionInverted.value ||
+        builder.regionTarget.value;
+}
+
 bool hasStructuralFields(const LayerBuilder& builder)
 {
     return hasVersionFourFields(builder) || hasVersionFiveFields(builder) ||
         hasVersionSixFields(builder) || hasVersionSevenFields(builder) ||
-        hasVersionEightFields(builder);
+        hasVersionEightFields(builder) || hasVersionNineFields(builder);
 }
 
 template<typename Value>
@@ -1471,6 +1510,65 @@ ParseResult parsePmat(std::string_view text)
                     if (!storeValue(builder.inkInverted, parsed, lineNumber, valueColumn)) {
                         return duplicate();
                     }
+                } else if (property == "region.field") {
+                    const auto parsed = parseRegionFieldKind(value);
+                    if (!parsed) {
+                        return diagnostic(
+                            lineNumber,
+                            valueColumn,
+                            "region field must be 'random', 'local_u', 'local_v', 'centre_distance', or 'boundary_distance'");
+                    }
+                    if (!storeValue(builder.regionField, *parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "region.seed_offset") {
+                    std::uint64_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "region seed offset must be an unsigned integer");
+                    }
+                    if (!storeValue(builder.regionSeedOffset, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "region.channel") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "region channel must be an integer");
+                    }
+                    if (!storeValue(builder.regionChannel, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "region.output_low") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "region output low must be a decimal number");
+                    }
+                    if (!storeValue(builder.regionOutputLow, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "region.output_high") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "region output high must be a decimal number");
+                    }
+                    if (!storeValue(builder.regionOutputHigh, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "region.inverted") {
+                    bool parsed = false;
+                    if (!parseBoolean(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "region inverted must be true or false");
+                    }
+                    if (!storeValue(builder.regionInverted, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "region.target") {
+                    const auto parsed = parseProcessingTarget(value);
+                    if (!parsed) {
+                        return diagnostic(lineNumber, valueColumn, "region target must be 'colour', 'scalar', or 'all'");
+                    }
+                    if (!storeValue(builder.regionTarget, *parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
                 } else if (property == "transform.scale_x") {
                     std::uint32_t parsed = 0;
                     if (!parseInteger(value, parsed)) {
@@ -1697,6 +1795,15 @@ ParseResult parsePmat(std::string_view text)
                     "stylisation operations require .pmat version 8");
             }
 
+            if (formatVersion < 9 &&
+                (hasVersionNineFields(builder) ||
+                 *builder.operation.value == OperationKind::regionField)) {
+                return diagnostic(
+                    lineNumber + 1,
+                    1,
+                    "region fields require .pmat version 9");
+            }
+
             if (formatVersion < 4 &&
                 (hasVersionFourFields(builder) ||
                  isStructuralOperation(*builder.operation.value))) {
@@ -1880,13 +1987,16 @@ ParseResult parsePmat(std::string_view text)
             const bool hasInkFields = builder.inkColour.value || builder.inkRadius.value ||
                 builder.inkThreshold.value || builder.inkSoftness.value ||
                 builder.inkStrength.value || builder.inkInverted.value;
+            const bool hasRegionFields = hasVersionNineFields(builder);
             const int operationGroupCount = static_cast<int>(hasBrickFields) +
                 static_cast<int>(hasTileFields) + static_cast<int>(hasWorleyFields) +
                 static_cast<int>(hasRandomFields) + static_cast<int>(hasLineFields) +
                 static_cast<int>(hasRectangleFields) + static_cast<int>(hasCircleFields) +
                 static_cast<int>(hasSurfaceFields) + static_cast<int>(hasFilterFields) +
                 static_cast<int>(hasPosteriseFields) + static_cast<int>(hasRampFields) +
-                static_cast<int>(hasPaletteFields) + static_cast<int>(hasInkFields);
+                static_cast<int>(hasPaletteFields) + static_cast<int>(hasInkFields) +
+                static_cast<int>(hasRegionFields);
+
             const bool hasClassicFields = builder.seedOffset.value || builder.solidColour.value ||
                 builder.levelsLow.value || builder.levelsHigh.value ||
                 builder.levelsGamma.value || builder.threshold.value;
@@ -2625,6 +2735,54 @@ ParseResult parsePmat(std::string_view text)
                     *builder.inkInverted.value,
                 };
                 break;
+            case OperationKind::regionField:
+                if (!builder.regionField.value) {
+                    return missingLayerField(lineNumber + 1, index, "region.field");
+                }
+                if (!builder.regionSeedOffset.value) {
+                    return missingLayerField(lineNumber + 1, index, "region.seed_offset");
+                }
+                if (!builder.regionChannel.value) {
+                    return missingLayerField(lineNumber + 1, index, "region.channel");
+                }
+                if (!builder.regionOutputLow.value) {
+                    return missingLayerField(lineNumber + 1, index, "region.output_low");
+                }
+                if (!builder.regionOutputHigh.value) {
+                    return missingLayerField(lineNumber + 1, index, "region.output_high");
+                }
+                if (!builder.regionInverted.value) {
+                    return missingLayerField(lineNumber + 1, index, "region.inverted");
+                }
+                if (!builder.regionTarget.value) {
+                    return missingLayerField(lineNumber + 1, index, "region.target");
+                }
+                if (hasClassicFields || operationGroupCount != 1) {
+                    return crossOperationError();
+                }
+                if (*builder.regionChannel.value > LayerLimits::maximumRegionChannel) {
+                    return diagnostic(
+                        builder.regionChannel.line,
+                        builder.regionChannel.column,
+                        "region channel must be between 0 and 255");
+                }
+                if (outside(*builder.regionOutputLow.value, 0.0, 1.0) ||
+                    outside(*builder.regionOutputHigh.value, 0.0, 1.0)) {
+                    return diagnostic(
+                        builder.regionOutputLow.line,
+                        builder.regionOutputLow.column,
+                        "region output range must be finite and between 0 and 1");
+                }
+                layer.operation = RegionFieldOperation{
+                    *builder.regionField.value,
+                    *builder.regionSeedOffset.value,
+                    *builder.regionChannel.value,
+                    *builder.regionOutputLow.value,
+                    *builder.regionOutputHigh.value,
+                    *builder.regionInverted.value,
+                    *builder.regionTarget.value,
+                };
+                break;
             }
             material.layers.push_back(std::move(layer));
         }
@@ -2914,6 +3072,25 @@ SerialisationResult serialisePmat(const Material& material)
             output += prefix + "ink.strength = " + strength + "\n";
             output += prefix + "ink.inverted = " +
                 (contour->inverted ? "true\n" : "false\n");
+        } else if (const auto* region =
+                       std::get_if<RegionFieldOperation>(&layer.operation)) {
+            const auto outputLow = formatDouble(region->outputLow);
+            const auto outputHigh = formatDouble(region->outputHigh);
+            if (outputLow.empty() || outputHigh.empty()) {
+                return SerialisationError{"could not format region field parameters"};
+            }
+            output += prefix + "region.field = " +
+                std::string(regionFieldKindName(region->field)) + "\n";
+            output += prefix + "region.seed_offset = " +
+                std::to_string(region->seedOffset) + "\n";
+            output += prefix + "region.channel = " +
+                std::to_string(region->channel) + "\n";
+            output += prefix + "region.output_low = " + outputLow + "\n";
+            output += prefix + "region.output_high = " + outputHigh + "\n";
+            output += prefix + "region.inverted = " +
+                (region->inverted ? "true\n" : "false\n");
+            output += prefix + "region.target = " +
+                std::string(processingTargetName(region->target)) + "\n";
         }
 
         const auto offsetX = formatDouble(layer.transform.offsetX);

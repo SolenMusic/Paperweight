@@ -86,6 +86,28 @@ enum class ProcessingTarget : std::uint8_t {
     colourAndScalar = 2,
 };
 
+enum class RegionFieldKind : std::uint8_t {
+    random = 0,
+    localU = 1,
+    localV = 2,
+    centreDistance = 3,
+    boundaryDistance = 4,
+};
+
+struct RegionFieldOperation {
+    RegionFieldKind field{RegionFieldKind::random};
+    std::uint64_t seedOffset{};
+    std::uint32_t channel{};
+    double outputLow{0.0};
+    double outputHigh{1.0};
+    bool inverted{};
+    ProcessingTarget target{ProcessingTarget::colourAndScalar};
+
+    friend constexpr bool operator==(
+        const RegionFieldOperation&,
+        const RegionFieldOperation&) = default;
+};
+
 struct PosteriseOperation {
     std::uint32_t bands{4};
     ProcessingTarget target{ProcessingTarget::colour};
@@ -308,7 +330,8 @@ using LayerOperation = std::variant<
     PosteriseOperation,
     ColourRampOperation,
     PaletteOperation,
-    InkContourOperation>;
+    InkContourOperation,
+    RegionFieldOperation>;
 
 struct MaterialLayer {
     bool enabled{true};
@@ -368,6 +391,7 @@ struct LayerLimits {
     static constexpr double maximumFilterSensitivity = 1.0;
     static constexpr double minimumContourSoftness = 0.0;
     static constexpr double maximumContourSoftness = 0.5;
+    static constexpr std::uint32_t maximumRegionChannel = 255;
 };
 
 [[nodiscard]] constexpr MaterialLayer makeNoiseLayer(std::uint64_t seedOffset = 0)
@@ -564,6 +588,17 @@ struct LayerLimits {
         {}};
 }
 
+[[nodiscard]] constexpr MaterialLayer makeRegionFieldLayer()
+{
+    return MaterialLayer{
+        true,
+        1.0,
+        CompositeMode::blend,
+        RegionFieldOperation{},
+        {},
+        {}};
+}
+
 [[nodiscard]] constexpr std::uint32_t rotationDegrees(QuarterTurn rotation)
 {
     return static_cast<std::uint32_t>(rotation) * 90U;
@@ -619,9 +654,28 @@ struct LayerLimits {
         return "palette";
     case 16:
         return "ink_contour";
+    case 17:
+        return "region_field";
     default:
         return "unknown";
     }
+}
+
+[[nodiscard]] constexpr std::string_view regionFieldKindName(RegionFieldKind field)
+{
+    switch (field) {
+    case RegionFieldKind::random:
+        return "random";
+    case RegionFieldKind::localU:
+        return "local_u";
+    case RegionFieldKind::localV:
+        return "local_v";
+    case RegionFieldKind::centreDistance:
+        return "centre_distance";
+    case RegionFieldKind::boundaryDistance:
+        return "boundary_distance";
+    }
+    return "unknown";
 }
 
 [[nodiscard]] constexpr std::string_view surfacePatternKindName(
