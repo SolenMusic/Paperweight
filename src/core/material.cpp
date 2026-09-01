@@ -62,6 +62,104 @@ std::optional<std::uint32_t> exactRepeatCount(double extent, double unit)
     return static_cast<std::uint32_t>(rounded);
 }
 
+std::optional<std::string> validateShapePrimitive(
+    const ShapePrimitiveOperation& operation,
+    std::string_view prefix)
+{
+    switch (operation.kind) {
+    case ShapePrimitiveKind::roundedRectangle:
+    case ShapePrimitiveKind::ellipse:
+    case ShapePrimitiveKind::capsule:
+    case ShapePrimitiveKind::diamond:
+    case ShapePrimitiveKind::convexPolygon:
+        break;
+    default:
+        return std::string(prefix) + "shape primitive kind is not supported";
+    }
+    switch (operation.field) {
+    case ShapeFieldKind::fill:
+    case ShapeFieldKind::inset:
+    case ShapeFieldKind::outline:
+    case ShapeFieldKind::border:
+        break;
+    default:
+        return std::string(prefix) + "shape field kind is not supported";
+    }
+    if (!validPatternCount(operation.columns) ||
+        !validPatternCount(operation.rows)) {
+        return std::string(prefix) + "shape columns and rows must be between 1 and 64";
+    }
+    if (!validRange(
+            operation.width,
+            LayerLimits::minimumShapeDimension,
+            LayerLimits::maximumShapeDimension) ||
+        !validRange(
+            operation.height,
+            LayerLimits::minimumShapeDimension,
+            LayerLimits::maximumShapeDimension)) {
+        return std::string(prefix) +
+            "shape width and height must be finite and between 0.001 and 1";
+    }
+    if (!validRange(operation.cornerRadius, 0.0, 0.5) ||
+        !validRange(operation.inset, 0.0, 0.5) ||
+        !validRange(operation.borderWidth, 0.0, 0.5)) {
+        return std::string(prefix) +
+            "shape corner radius, inset, and border width must be finite and between 0 and 0.5";
+    }
+    if (!validSoftness(operation.softness)) {
+        return std::string(prefix) + "shape softness must be finite and between 0 and 0.25";
+    }
+    if (!validRange(
+            operation.offsetX,
+            -LayerLimits::maximumShapeOffset,
+            LayerLimits::maximumShapeOffset) ||
+        !validRange(
+            operation.offsetY,
+            -LayerLimits::maximumShapeOffset,
+            LayerLimits::maximumShapeOffset) ||
+        !validRange(operation.stagger, 0.0, 1.0)) {
+        return std::string(prefix) +
+            "shape offsets must be within -0.5 to 0.5 and stagger within 0 to 1";
+    }
+    if (!validRange(
+            operation.rotationDegrees,
+            -LayerLimits::maximumShapeRotation,
+            LayerLimits::maximumShapeRotation)) {
+        return std::string(prefix) + "local shape rotation must be finite and within -360 to 360 degrees";
+    }
+    if (operation.kind != ShapePrimitiveKind::convexPolygon) {
+        return std::nullopt;
+    }
+    if (operation.vertices.size() < LayerLimits::minimumPolygonVertices ||
+        operation.vertices.size() > LayerLimits::maximumPolygonVertices) {
+        return std::string(prefix) + "convex polygons must contain between 3 and 12 vertices";
+    }
+    double orientation = 0.0;
+    for (std::size_t index = 0; index < operation.vertices.size(); ++index) {
+        const auto& a = operation.vertices[index];
+        const auto& b = operation.vertices[(index + 1) % operation.vertices.size()];
+        const auto& c = operation.vertices[(index + 2) % operation.vertices.size()];
+        if (!validRange(a.x, -0.5, 0.5) || !validRange(a.y, -0.5, 0.5)) {
+            return std::string(prefix) +
+                "convex polygon vertices must be finite and within -0.5 to 0.5";
+        }
+        const double cross =
+            (b.x - a.x) * (c.y - b.y) -
+            (b.y - a.y) * (c.x - b.x);
+        if (std::abs(cross) <= 1.0e-12) {
+            return std::string(prefix) +
+                "convex polygon vertices must form non-degenerate corners";
+        }
+        if (orientation == 0.0) {
+            orientation = cross;
+        } else if ((orientation < 0.0) != (cross < 0.0)) {
+            return std::string(prefix) +
+                "convex polygon vertices must be ordered around a convex boundary";
+        }
+    }
+    return std::nullopt;
+}
+
 } // namespace
 
 std::optional<std::string> validateMaterial(const Material& material)
@@ -432,6 +530,56 @@ std::optional<std::string> validateMaterial(const Material& material)
                     }
                     if (!validSoftness(operation.softness)) {
                         return prefix + "circle softness must be finite and between 0 and 0.25";
+                    }
+                } else if constexpr (
+                    std::is_same_v<Operation, ShapePrimitiveOperation>) {
+                    if (const auto error = validateShapePrimitive(operation, prefix)) {
+                        return error;
+                    }
+                } else if constexpr (
+                    std::is_same_v<Operation, ShapeBooleanOperation>) {
+                    switch (operation.mode) {
+                    case ShapeBooleanMode::unionMask:
+                    case ShapeBooleanMode::intersection:
+                    case ShapeBooleanMode::subtraction:
+                        break;
+                    default:
+                        return prefix + "shape Boolean mode is not supported";
+                    }
+                    if (!validProcessingTarget(operation.target)) {
+                        return prefix + "shape Boolean target is not supported";
+                    }
+                    if (const auto error = validateShapePrimitive(operation.shape, prefix)) {
+                        return error;
+                    }
+                } else if constexpr (std::is_same_v<Operation, LatticeOperation>) {
+                    switch (operation.kind) {
+                    case LatticeKind::lines:
+                    case LatticeKind::diamonds:
+                        break;
+                    default:
+                        return prefix + "lattice kind is not supported";
+                    }
+                    if (operation.windingX < -LayerLimits::maximumLatticeWinding ||
+                        operation.windingX > LayerLimits::maximumLatticeWinding ||
+                        operation.windingY < -LayerLimits::maximumLatticeWinding ||
+                        operation.windingY > LayerLimits::maximumLatticeWinding ||
+                        (operation.windingX == 0 && operation.windingY == 0)) {
+                        return prefix +
+                            "lattice integer windings must be between -64 and 64 and not both zero";
+                    }
+                    if (operation.kind == LatticeKind::diamonds &&
+                        (operation.windingX == 0 || operation.windingY == 0)) {
+                        return prefix +
+                            "diamond lattices require non-zero horizontal and vertical windings";
+                    }
+                    if (!validRange(operation.width, 0.001, 1.0) ||
+                        !validSoftness(operation.softness)) {
+                        return prefix +
+                            "lattice width must be within 0.001 to 1 and softness within 0 to 0.25";
+                    }
+                    if (!validRange(operation.phase, 0.0, 1.0)) {
+                        return prefix + "lattice phase must be finite and between 0 and 1";
                     }
                 } else if constexpr (
                     std::is_same_v<Operation, SurfacePatternOperation>) {

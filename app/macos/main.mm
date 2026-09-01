@@ -18,6 +18,7 @@
 #include <limits>
 #include <memory>
 #include <locale>
+#include <numbers>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -637,9 +638,42 @@ NSString* operationDisplayName(const paperweight::LayerOperation& operation)
         return @"Course Layout";
     case 19:
         return @"Region Surface";
+    case 20: {
+        const auto kind = std::get<paperweight::ShapePrimitiveOperation>(operation).kind;
+        switch (kind) {
+        case paperweight::ShapePrimitiveKind::roundedRectangle:
+            return @"Rounded Rectangles";
+        case paperweight::ShapePrimitiveKind::ellipse:
+            return @"Ellipses";
+        case paperweight::ShapePrimitiveKind::capsule:
+            return @"Capsules";
+        case paperweight::ShapePrimitiveKind::diamond:
+            return @"Diamonds";
+        case paperweight::ShapePrimitiveKind::convexPolygon:
+            return @"Convex Polygons";
+        }
+        return @"Shapes";
+    }
+    case 21:
+        return @"Shape Boolean";
+    case 22:
+        return @"Seam-safe Lattice";
     default:
         return @"Unknown";
     }
+}
+
+std::vector<paperweight::ShapePoint> regularPolygonVertices(std::size_t count)
+{
+    std::vector<paperweight::ShapePoint> vertices;
+    vertices.reserve(count);
+    for (std::size_t index = 0; index < count; ++index) {
+        const double angle = -std::numbers::pi * 0.5 +
+            2.0 * std::numbers::pi * static_cast<double>(index) /
+                static_cast<double>(count);
+        vertices.push_back({0.48 * std::cos(angle), 0.48 * std::sin(angle)});
+    }
+    return vertices;
 }
 
 paperweight::ProcessingTarget processingTargetAtIndex(NSInteger index)
@@ -828,6 +862,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @[ @"Sculpted Flagstone", @"sculpted-flagstone" ],
         @[ @"Worn Masonry", @"worn-masonry" ],
         @[ @"Sculpted Roof Slate", @"sculpted-roof-slate" ],
+        @[ @"Castle Window", @"castle-window" ],
+        @[ @"Detailed Crate", @"detailed-crate" ],
+        @[ @"Decorative Fasteners", @"decorative-fasteners" ],
+        @[ @"Masonry Corner Variation", @"masonry-corner-variation" ],
     ];
     for (NSArray<NSString*>* showcase in showcases) {
         auto* item = [showcaseMenu addItemWithTitle:showcase[0]
@@ -1457,6 +1495,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @"Region Field",
         @"Course Layout",
         @"Region Surface",
+        @"Shape Primitive",
+        @"Shape Boolean",
+        @"Seam-safe Lattice",
     ]];
     auto* addLayerButton = [NSButton buttonWithTitle:@"Add"
                                               target:self
@@ -2318,6 +2359,12 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     const auto* region = std::get_if<paperweight::RegionFieldOperation>(&layer->operation);
     const auto* course = std::get_if<paperweight::CourseLayoutOperation>(&layer->operation);
     const auto* sculpt = std::get_if<paperweight::RegionSurfaceOperation>(&layer->operation);
+    const auto* shape = std::get_if<paperweight::ShapePrimitiveOperation>(&layer->operation);
+    const auto* shapeBoolean = std::get_if<paperweight::ShapeBooleanOperation>(&layer->operation);
+    const auto* editableShape = shape != nullptr
+        ? shape
+        : shapeBoolean != nullptr ? &shapeBoolean->shape : nullptr;
+    const auto* lattice = std::get_if<paperweight::LatticeOperation>(&layer->operation);
     self.noiseSeedRow.hidden = noise == nullptr;
     self.solidColourRow.hidden = solid == nullptr;
     self.levelsLowRow.hidden = levels == nullptr;
@@ -2646,6 +2693,128 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.facetedNormalsCheckbox.state = sculpt->facetedNormals
             ? NSControlStateValueOn
             : NSControlStateValueOff;
+    } else if (editableShape != nullptr) {
+        self.surfaceKindRow.hidden = NO;
+        [self.surfaceKindPopup removeAllItems];
+        [self.surfaceKindPopup addItemsWithTitles:@[
+            @"Rounded Rectangle", @"Ellipse", @"Capsule", @"Diamond", @"Convex Polygon",
+        ]];
+        [self.surfaceKindPopup selectItemAtIndex:
+            static_cast<NSInteger>(editableShape->kind)];
+        self.courseFieldRow.hidden = NO;
+        [self.courseFieldPopup removeAllItems];
+        [self.courseFieldPopup addItemsWithTitles:@[
+            @"Filled shape", @"Inset fill", @"Centred outline", @"Inner border",
+        ]];
+        [self.courseFieldPopup selectItemAtIndex:
+            static_cast<NSInteger>(editableShape->field)];
+        showCount(self.patternCountXRow, self.patternCountXLabel,
+                  self.patternCountXSlider, self.patternCountXValue,
+                  @"Columns", editableShape->columns);
+        showCount(self.patternCountYRow, self.patternCountYLabel,
+                  self.patternCountYSlider, self.patternCountYValue,
+                  @"Rows", editableShape->rows);
+        showValue(self.patternValueOneRow, self.patternValueOneLabel,
+                  self.patternValueOneSlider, self.patternValueOneValue,
+                  @"Width", 0.001, 1.0, editableShape->width);
+        showValue(self.patternValueTwoRow, self.patternValueTwoLabel,
+                  self.patternValueTwoSlider, self.patternValueTwoValue,
+                  @"Height", 0.001, 1.0, editableShape->height);
+        showValue(self.patternValueThreeRow, self.patternValueThreeLabel,
+                  self.patternValueThreeSlider, self.patternValueThreeValue,
+                  @"Corner", 0.0, 0.5, editableShape->cornerRadius);
+        showValue(self.patternValueFourRow, self.patternValueFourLabel,
+                  self.patternValueFourSlider, self.patternValueFourValue,
+                  @"Rotation °", -360.0, 360.0, editableShape->rotationDegrees);
+        self.courseGapRow.hidden = NO;
+        static_cast<NSTextField*>(self.courseGapRow.views[0]).stringValue = @"Inset";
+        self.courseGapSlider.minValue = 0.0;
+        self.courseGapSlider.maxValue = 0.5;
+        self.courseGapSlider.doubleValue = editableShape->inset;
+        self.courseGapValue.stringValue = [NSString stringWithFormat:@"%.2f", editableShape->inset];
+        self.courseSoftnessRow.hidden = NO;
+        static_cast<NSTextField*>(self.courseSoftnessRow.views[0]).stringValue = @"Border";
+        self.courseSoftnessSlider.minValue = 0.0;
+        self.courseSoftnessSlider.maxValue = 0.5;
+        self.courseSoftnessSlider.doubleValue = editableShape->borderWidth;
+        self.courseSoftnessValue.stringValue = [NSString stringWithFormat:@"%.2f", editableShape->borderWidth];
+        self.courseOverlapRow.hidden = NO;
+        static_cast<NSTextField*>(self.courseOverlapRow.views[0]).stringValue = @"Stagger";
+        self.courseOverlapSlider.minValue = 0.0;
+        self.courseOverlapSlider.maxValue = 1.0;
+        self.courseOverlapSlider.doubleValue = editableShape->stagger;
+        self.courseOverlapValue.stringValue = [NSString stringWithFormat:@"%.2f", editableShape->stagger];
+        self.filterSensitivityRow.hidden = NO;
+        static_cast<NSTextField*>(self.filterSensitivityRow.views[0]).stringValue = @"Softness";
+        self.filterSensitivitySlider.minValue = 0.0;
+        self.filterSensitivitySlider.maxValue = 0.25;
+        self.filterSensitivitySlider.doubleValue = editableShape->softness;
+        self.filterSensitivityValue.stringValue = [NSString stringWithFormat:@"%.2f", editableShape->softness];
+        self.inkRadiusRow.hidden = NO;
+        static_cast<NSTextField*>(self.inkRadiusRow.views[0]).stringValue = @"Offset X";
+        self.inkRadiusSlider.minValue = -0.5;
+        self.inkRadiusSlider.maxValue = 0.5;
+        self.inkRadiusSlider.doubleValue = editableShape->offsetX;
+        self.inkRadiusValue.stringValue = [NSString stringWithFormat:@"%.2f", editableShape->offsetX];
+        self.inkThresholdRow.hidden = NO;
+        static_cast<NSTextField*>(self.inkThresholdRow.views[0]).stringValue = @"Offset Y";
+        self.inkThresholdSlider.minValue = -0.5;
+        self.inkThresholdSlider.maxValue = 0.5;
+        self.inkThresholdSlider.doubleValue = editableShape->offsetY;
+        self.inkThresholdValue.stringValue = [NSString stringWithFormat:@"%.2f", editableShape->offsetY];
+        self.posteriseBandsRow.hidden = NO;
+        static_cast<NSTextField*>(self.posteriseBandsRow.views[0]).stringValue = @"Vertices";
+        self.posteriseBandsSlider.minValue = paperweight::LayerLimits::minimumPolygonVertices;
+        self.posteriseBandsSlider.maxValue = paperweight::LayerLimits::maximumPolygonVertices;
+        self.posteriseBandsSlider.numberOfTickMarks =
+            paperweight::LayerLimits::maximumPolygonVertices -
+            paperweight::LayerLimits::minimumPolygonVertices + 1;
+        self.posteriseBandsSlider.doubleValue =
+            static_cast<double>(editableShape->vertices.size());
+        self.posteriseBandsValue.stringValue = [NSString
+            stringWithFormat:@"%zu", editableShape->vertices.size()];
+        self.patternSeedRow.hidden = NO;
+        self.patternSeedOffsetField.stringValue = [NSString
+            stringWithFormat:@"%llu", editableShape->seedOffset];
+        if (shapeBoolean != nullptr) {
+            self.rampModeRow.hidden = NO;
+            static_cast<NSTextField*>(self.rampModeRow.views[0]).stringValue = @"Boolean";
+            [self.rampModePopup removeAllItems];
+            [self.rampModePopup addItemsWithTitles:@[
+                @"Union", @"Intersection", @"Subtraction",
+            ]];
+            [self.rampModePopup selectItemAtIndex:
+                static_cast<NSInteger>(shapeBoolean->mode)];
+            self.processingTargetRow.hidden = NO;
+            [self.processingTargetPopup selectItemAtIndex:
+                processingTargetIndex(shapeBoolean->target)];
+        }
+    } else if (lattice != nullptr) {
+        self.surfaceKindRow.hidden = NO;
+        [self.surfaceKindPopup removeAllItems];
+        [self.surfaceKindPopup addItemsWithTitles:@[@"Parallel Lines", @"Diamond Lattice"]];
+        [self.surfaceKindPopup selectItemAtIndex:static_cast<NSInteger>(lattice->kind)];
+        self.patternCountXRow.hidden = NO;
+        self.patternCountXLabel.stringValue = @"Winding X";
+        self.patternCountXSlider.minValue = -paperweight::LayerLimits::maximumLatticeWinding;
+        self.patternCountXSlider.maxValue = paperweight::LayerLimits::maximumLatticeWinding;
+        self.patternCountXSlider.doubleValue = lattice->windingX;
+        self.patternCountXValue.stringValue = [NSString stringWithFormat:@"%d", lattice->windingX];
+        self.patternCountYRow.hidden = NO;
+        self.patternCountYLabel.stringValue = @"Winding Y";
+        self.patternCountYSlider.minValue = -paperweight::LayerLimits::maximumLatticeWinding;
+        self.patternCountYSlider.maxValue = paperweight::LayerLimits::maximumLatticeWinding;
+        self.patternCountYSlider.doubleValue = lattice->windingY;
+        self.patternCountYValue.stringValue = [NSString stringWithFormat:@"%d", lattice->windingY];
+        showValue(self.patternValueOneRow, self.patternValueOneLabel,
+                  self.patternValueOneSlider, self.patternValueOneValue,
+                  @"Line width", 0.001, 1.0, lattice->width);
+        showValue(self.patternValueTwoRow, self.patternValueTwoLabel,
+                  self.patternValueTwoSlider, self.patternValueTwoValue,
+                  @"Phase", 0.0, 1.0, lattice->phase);
+        showValue(self.patternValueThreeRow, self.patternValueThreeLabel,
+                  self.patternValueThreeSlider, self.patternValueThreeValue,
+                  @"Softness", 0.0, 0.25, lattice->softness);
     } else if (tile != nullptr) {
         showCount(self.patternCountXRow, self.patternCountXLabel,
                   self.patternCountXSlider, self.patternCountXValue, @"Columns", tile->columns);
@@ -2770,6 +2939,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         if (filter->kind == paperweight::SurfaceFilterKind::edgeAwareSoften) {
             self.filterSensitivityRow.hidden = NO;
             static_cast<NSTextField*>(self.filterSensitivityRow.views[0]).stringValue = @"Sensitivity";
+            self.filterSensitivitySlider.minValue = 0.0;
+            self.filterSensitivitySlider.maxValue = 1.0;
             self.filterSensitivitySlider.doubleValue = filter->sensitivity;
             self.filterSensitivityValue.stringValue = [NSString
                 stringWithFormat:@"%.2f", filter->sensitivity];
@@ -2812,6 +2983,12 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     } else if (posterise != nullptr) {
         self.posteriseBandsRow.hidden = NO;
         self.processingTargetRow.hidden = NO;
+        static_cast<NSTextField*>(self.posteriseBandsRow.views[0]).stringValue = @"Bands";
+        self.posteriseBandsSlider.minValue = paperweight::LayerLimits::minimumPosteriseBands;
+        self.posteriseBandsSlider.maxValue = paperweight::LayerLimits::maximumPosteriseBands;
+        self.posteriseBandsSlider.numberOfTickMarks =
+            paperweight::LayerLimits::maximumPosteriseBands -
+            paperweight::LayerLimits::minimumPosteriseBands + 1;
         self.posteriseBandsSlider.doubleValue = posterise->bands;
         self.posteriseBandsValue.stringValue = [NSString
             stringWithFormat:@"%u", posterise->bands];
@@ -2821,6 +2998,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.rampModeRow.hidden = !isRamp;
         self.colourEntriesGroup.hidden = NO;
         if (isRamp) {
+            static_cast<NSTextField*>(self.rampModeRow.views[0]).stringValue = @"Ramp";
+            [self.rampModePopup removeAllItems];
+            [self.rampModePopup addItemsWithTitles:@[@"Smooth", @"Stepped"]];
             [self.rampModePopup selectItemAtIndex:
                 ramp->mode == paperweight::ColourRampMode::stepped ? 1 : 0];
         }
@@ -2861,6 +3041,12 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.inkStrengthRow.hidden = NO;
         self.inkInvertedCheckbox.hidden = NO;
         self.inkColourWell.color = colourFromRgba8(ink->colour);
+        static_cast<NSTextField*>(self.inkRadiusRow.views[0]).stringValue = @"Radius";
+        self.inkRadiusSlider.minValue = 0.0;
+        self.inkRadiusSlider.maxValue = 0.25;
+        static_cast<NSTextField*>(self.inkThresholdRow.views[0]).stringValue = @"Threshold";
+        self.inkThresholdSlider.minValue = 0.0;
+        self.inkThresholdSlider.maxValue = 1.0;
         self.inkRadiusSlider.doubleValue = ink->radius;
         self.inkThresholdSlider.doubleValue = ink->threshold;
         self.inkSoftnessSlider.doubleValue = ink->softness;
@@ -3050,6 +3236,15 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     case 23:
         material_.layers.push_back(paperweight::makeRegionSurfaceLayer());
         break;
+    case 24:
+        material_.layers.push_back(paperweight::makeShapePrimitiveLayer());
+        break;
+    case 25:
+        material_.layers.push_back(paperweight::makeShapeBooleanLayer());
+        break;
+    case 26:
+        material_.layers.push_back(paperweight::makeLatticeLayer());
+        break;
     default:
         return;
     }
@@ -3208,6 +3403,46 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
             self.processingTargetPopup.indexOfSelectedItem);
         self.filterSensitivityValue.stringValue = [NSString
             stringWithFormat:@"%.2f", sculpt->erosionAmount];
+    } else if (auto* shape =
+                   std::get_if<paperweight::ShapePrimitiveOperation>(&layer->operation)) {
+        shape->softness = self.filterSensitivitySlider.doubleValue;
+        shape->offsetX = self.inkRadiusSlider.doubleValue;
+        shape->offsetY = self.inkThresholdSlider.doubleValue;
+        if (sender == self.posteriseBandsSlider) {
+            const auto vertices = static_cast<std::size_t>(std::llround(
+                self.posteriseBandsSlider.doubleValue));
+            shape->vertices = regularPolygonVertices(vertices);
+        }
+        self.filterSensitivityValue.stringValue = [NSString
+            stringWithFormat:@"%.2f", shape->softness];
+        self.inkRadiusValue.stringValue = [NSString
+            stringWithFormat:@"%.2f", shape->offsetX];
+        self.inkThresholdValue.stringValue = [NSString
+            stringWithFormat:@"%.2f", shape->offsetY];
+        self.posteriseBandsValue.stringValue = [NSString
+            stringWithFormat:@"%zu", shape->vertices.size()];
+    } else if (auto* boolean =
+                   std::get_if<paperweight::ShapeBooleanOperation>(&layer->operation)) {
+        boolean->shape.softness = self.filterSensitivitySlider.doubleValue;
+        boolean->shape.offsetX = self.inkRadiusSlider.doubleValue;
+        boolean->shape.offsetY = self.inkThresholdSlider.doubleValue;
+        if (sender == self.posteriseBandsSlider) {
+            const auto vertices = static_cast<std::size_t>(std::llround(
+                self.posteriseBandsSlider.doubleValue));
+            boolean->shape.vertices = regularPolygonVertices(vertices);
+        }
+        boolean->mode = static_cast<paperweight::ShapeBooleanMode>(
+            self.rampModePopup.indexOfSelectedItem);
+        boolean->target = processingTargetAtIndex(
+            self.processingTargetPopup.indexOfSelectedItem);
+        self.filterSensitivityValue.stringValue = [NSString
+            stringWithFormat:@"%.2f", boolean->shape.softness];
+        self.inkRadiusValue.stringValue = [NSString
+            stringWithFormat:@"%.2f", boolean->shape.offsetX];
+        self.inkThresholdValue.stringValue = [NSString
+            stringWithFormat:@"%.2f", boolean->shape.offsetY];
+        self.posteriseBandsValue.stringValue = [NSString
+            stringWithFormat:@"%zu", boolean->shape.vertices.size()];
     } else {
         return;
     }
@@ -3411,9 +3646,45 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     }
 
     const auto countX = static_cast<std::uint32_t>(
-        std::llround(self.patternCountXSlider.doubleValue));
+        std::clamp(
+            std::llround(self.patternCountXSlider.doubleValue),
+            static_cast<long long>(paperweight::LayerLimits::minimumPatternCount),
+            static_cast<long long>(paperweight::LayerLimits::maximumPatternCount)));
     const auto countY = static_cast<std::uint32_t>(
-        std::llround(self.patternCountYSlider.doubleValue));
+        std::clamp(
+            std::llround(self.patternCountYSlider.doubleValue),
+            static_cast<long long>(paperweight::LayerLimits::minimumPatternCount),
+            static_cast<long long>(paperweight::LayerLimits::maximumPatternCount)));
+    const auto updateShape = [&](paperweight::ShapePrimitiveOperation& shape) {
+        if (sender == self.surfaceKindPopup) {
+            shape.kind = static_cast<paperweight::ShapePrimitiveKind>(
+                self.surfaceKindPopup.indexOfSelectedItem);
+        }
+        if (sender == self.courseFieldPopup) {
+            shape.field = static_cast<paperweight::ShapeFieldKind>(
+                self.courseFieldPopup.indexOfSelectedItem);
+        }
+        shape.columns = countX;
+        shape.rows = countY;
+        shape.width = self.patternValueOneSlider.doubleValue;
+        shape.height = self.patternValueTwoSlider.doubleValue;
+        shape.cornerRadius = self.patternValueThreeSlider.doubleValue;
+        shape.rotationDegrees = self.patternValueFourSlider.doubleValue;
+        shape.inset = self.courseGapSlider.doubleValue;
+        shape.borderWidth = self.courseSoftnessSlider.doubleValue;
+        shape.stagger = self.courseOverlapSlider.doubleValue;
+        shape.softness = self.filterSensitivitySlider.doubleValue;
+        shape.offsetX = self.inkRadiusSlider.doubleValue;
+        shape.offsetY = self.inkThresholdSlider.doubleValue;
+        if (sender == self.posteriseBandsSlider) {
+            const auto vertices = static_cast<std::size_t>(std::llround(
+                self.posteriseBandsSlider.doubleValue));
+            shape.vertices = regularPolygonVertices(vertices);
+        }
+        if (parsedSeed) {
+            shape.seedOffset = *parsedSeed;
+        }
+    };
     if (auto* brick = std::get_if<paperweight::BrickGridOperation>(&layer->operation)) {
         const bool wantsPhysical =
             self.physicalBrickCheckbox.state == NSControlStateValueOn;
@@ -3683,6 +3954,44 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         if (parsedSeed) {
             sculpt->seedOffset = *parsedSeed;
         }
+    } else if (auto* shape =
+                   std::get_if<paperweight::ShapePrimitiveOperation>(&layer->operation)) {
+        updateShape(*shape);
+    } else if (auto* boolean =
+                   std::get_if<paperweight::ShapeBooleanOperation>(&layer->operation)) {
+        updateShape(boolean->shape);
+    } else if (auto* lattice =
+                   std::get_if<paperweight::LatticeOperation>(&layer->operation)) {
+        if (sender == self.surfaceKindPopup) {
+            lattice->kind = static_cast<paperweight::LatticeKind>(
+                self.surfaceKindPopup.indexOfSelectedItem);
+        }
+        auto windingX = static_cast<std::int32_t>(
+            std::llround(self.patternCountXSlider.doubleValue));
+        auto windingY = static_cast<std::int32_t>(
+            std::llround(self.patternCountYSlider.doubleValue));
+        if (windingX == 0 && windingY == 0) {
+            if (sender == self.patternCountXSlider) {
+                windingX = 1;
+            } else {
+                windingY = 1;
+            }
+        }
+        if (lattice->kind == paperweight::LatticeKind::diamonds) {
+            if (windingX == 0) {
+                windingX = 1;
+            }
+            if (windingY == 0) {
+                windingY = 1;
+            }
+        }
+        lattice->windingX = windingX;
+        lattice->windingY = windingY;
+        lattice->width = self.patternValueOneSlider.doubleValue;
+        lattice->phase = self.patternValueTwoSlider.doubleValue;
+        lattice->softness = self.patternValueThreeSlider.doubleValue;
+        self.patternCountXSlider.doubleValue = windingX;
+        self.patternCountYSlider.doubleValue = windingY;
     } else if (auto* tile = std::get_if<paperweight::TileGridOperation>(&layer->operation)) {
         tile->columns = countX;
         tile->rows = countY;

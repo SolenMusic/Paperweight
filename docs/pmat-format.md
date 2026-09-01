@@ -1,4 +1,4 @@
-# `.pmat` format version 11
+# `.pmat` format version 12
 
 Paperweight material files are UTF-8 text. They are intended to be readable,
 diffable, and small enough to embed alongside game assets.
@@ -7,7 +7,7 @@ diffable, and small enough to embed alongside game assets.
 
 ```text
 # Paperweight procedural material
-pmat.version = 11
+pmat.version = 12
 material.type = fbm
 material.seed = 18431
 material.width = 1m
@@ -68,7 +68,7 @@ no material; it never returns a partially accepted definition.
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
-| `pmat.version` | File-format version | `11` |
+| `pmat.version` | File-format version | `12` |
 | `material.type` | Generator model | `fbm` |
 | `material.seed` | Deterministic seed | Unsigned 64-bit integer |
 | `material.width` | Width of one seamless material repeat | Metre value from `0.000001m` to `1000000m` |
@@ -159,6 +159,25 @@ The operation selects exactly one parameter group:
 | `circles` | `layer.N.circles.columns`, `rows` | Integers from 1 to 64 |
 | `circles` | `layer.N.circles.radius` | Decimal from 0 to 0.5 |
 | `circles` | `layer.N.circles.softness` | Decimal from 0 to 0.25 |
+| `shape` or `shape_boolean` | `layer.N.shape.kind` | `rounded_rectangle`, `ellipse`, `capsule`, `diamond`, or `convex_polygon` |
+| `shape` or `shape_boolean` | `layer.N.shape.field` | `fill`, `inset`, `outline`, or `border` |
+| `shape` or `shape_boolean` | `layer.N.shape.columns`, `rows` | Integers from 1 to 64 |
+| `shape` or `shape_boolean` | `layer.N.shape.width`, `height` | Cell-relative decimals from 0.001 to 1 |
+| `shape` or `shape_boolean` | `layer.N.shape.corner_radius`, `inset`, `border_width` | Cell-relative decimals from 0 to 0.5 |
+| `shape` or `shape_boolean` | `layer.N.shape.softness` | Cell-relative decimal from 0 to 0.25 |
+| `shape` or `shape_boolean` | `layer.N.shape.offset_x`, `offset_y` | Cell-relative decimal from -0.5 to 0.5 |
+| `shape` or `shape_boolean` | `layer.N.shape.stagger` | Alternate-row shift from 0 to 1 cell |
+| `shape` or `shape_boolean` | `layer.N.shape.rotation` | Local rotation in degrees from -360 to 360 |
+| `shape` or `shape_boolean` | `layer.N.shape.seed_offset` | Unsigned 64-bit region-identity salt |
+| `shape` or `shape_boolean` | `layer.N.shape.vertices` | Convex polygon vertex count from 3 to 12 |
+| `shape` or `shape_boolean` | `layer.N.shape.vertex.K.x`, `.y` | Ordered convex vertex coordinates from -0.5 to 0.5 |
+| `shape_boolean` | `layer.N.shape.boolean` | `union`, `intersection`, or `subtraction` |
+| `shape_boolean` | `layer.N.shape.target` | `colour`, `scalar`, or `all` |
+| `lattice` | `layer.N.lattice.kind` | `lines` or `diamonds` |
+| `lattice` | `layer.N.lattice.winding_x`, `winding_y` | Signed integer cycles from -64 to 64, not both zero; diamonds require both non-zero |
+| `lattice` | `layer.N.lattice.width` | Decimal from 0.001 to 1 |
+| `lattice` | `layer.N.lattice.softness` | Decimal from 0 to 0.25 |
+| `lattice` | `layer.N.lattice.phase` | Decimal from 0 to 1 |
 | `surface_pattern` | `layer.N.surface.kind` | `ridged_noise`, `bands`, `rings`, `scatter`, or `streaks` |
 | `surface_pattern` | `layer.N.surface.scale` | Integer from 1 to 64 |
 | `surface_pattern` | `layer.N.surface.width` | Decimal from 0.001 to 1 |
@@ -218,6 +237,21 @@ and approach zero at cell boundaries; `edge_width` controls that transition.
 Random cells assign one deterministic value per cell. Shape sizes are fractions
 of a repeated cell, and softness controls a smooth coverage transition around
 an edge.
+
+The `shape` operation is an analytic repeated generator. Rounded rectangles,
+ellipses, capsules, diamonds, and ordered convex polygons share one signed
+boundary-distance contract, from which fill, inset, centred outline, and inner
+border fields are derived. Rotation is local to each bounded instance, so any
+finite angle remains seamless. Convex vertices must be non-degenerate and
+consistently ordered around the boundary. `shape_boolean` evaluates the same
+shape and combines its coverage with the accumulated input by union,
+intersection, or subtraction.
+
+Lattice directions are represented by whole signed winding counts across the
+tile rather than arbitrary global angles. This is what makes line and crossed
+diamond families repeat exactly on both axes. A freely chosen global rotation
+is not generally compatible with a rectangular periodic tile; repeated bounded
+shapes remain the appropriate tool when arbitrary local rotation is required.
 
 Course layouts partition the complete repeat into courses and then partition
 each course into blocks. `masonry` varies widths within regular course counts,
@@ -311,7 +345,7 @@ The native editor presents those derived column and row counts explicitly. When
 an author changes the brick size or count, it recalculates `material.width` and
 `material.height` automatically so the saved definition remains seamless.
 
-Every layer in versions 3 through 10 also has this coordinate-transform group:
+Every layer in versions 3 through 12 also has this coordinate-transform group:
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
@@ -330,7 +364,7 @@ Offsets are continuous and wrap naturally. When enabled, warp uses two
 independent periodic FBM channels to displace the transformed coordinates.
 Disabling warp, or setting its strength to zero, is exactly the identity path.
 
-Every layer in versions 3 through 10 also declares its optional mask:
+Every layer in versions 3 through 12 also declares its optional mask:
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
@@ -344,7 +378,7 @@ The mask samples an independent periodic FBM field in the layer's transformed
 coordinates. Its remapped value multiplies the layer opacity, allowing smooth,
 threshold-like, or inverted spatial control without changing the operation.
 Disabled masks evaluate to exactly one. Transform, warp, and mask fields remain
-required in versions 3 through 10 even when their optional features are disabled; this
+required in versions 3 through 12 even when their optional features are disabled; this
 keeps canonical files explicit and round trips unambiguous.
 
 Noise seed offset zero reproduces the original material seed exactly. Other
@@ -360,13 +394,14 @@ formula is applied to scalar, red, green, blue, and alpha channels.
 
 ## Graph compilation
 
-Paperweight v0.0.14 retains the layer syntax, now at version 11, as the compact,
+Paperweight v0.0.15 retains the layer syntax, now at version 12, as the compact,
 human-editable authoring projection. Before generation, the portable core
 compiles it into a directed acyclic material graph:
 
 - source operations become generator nodes;
-- levels, threshold, surface filters, posterise, colour ramps, palettes, ink
-  contours, region fields, and region surfaces become unary processing nodes;
+- levels, threshold, shape Boolean, surface filters, posterise, colour ramps,
+  palettes, ink contours, region fields, and region surfaces become unary
+  processing nodes;
 - enabled procedural masks become mask nodes;
 - layer blend, add, or multiply behaviour becomes composite processing nodes;
 - colour, height, normal, and roughness receive explicit output nodes.
@@ -386,6 +421,8 @@ Format version 10 adds course layouts and parent-course random fields without
 serialising either exact region key.
 Format version 11 adds constructed region surfaces and normal-only facet
 treatment without serialising derived masks or planes.
+Format version 12 adds analytic shape generators, shape Boolean processors, and
+integer-winding lattices without introducing graph-specific persistence.
 
 ## Material outputs
 
@@ -407,7 +444,7 @@ generation wrap mathematically across both tile axes.
 ## Compatibility policy
 
 The `.pmat` format version and Paperweight application version are separate.
-Paperweight v0.0.14 reads versions 1 through 11 and writes version 11. A reader
+Paperweight v0.0.15 reads versions 1 through 12 and writes version 12. A reader
 rejects unsupported versions and unknown fields so that it cannot quietly
 reinterpret a future material.
 
@@ -428,7 +465,9 @@ Version 9 adds region fields; versions 1 through 8 retain byte-identical default
 evaluations. Version 10 adds course layouts and `course_random`; versions 1
 through 9 retain byte-identical default evaluations. Version 11 adds region
 surface sculpting; versions 1 through 10 retain byte-identical default
-evaluations. Saving any older format performs the explicit migration to version 11.
+evaluations. Version 12 adds analytic shapes, mask Boolean operations, and
+integer-winding lattices; versions 1 through 11 retain byte-identical default
+evaluations. Saving any older format performs the explicit migration to version 12.
 
 The portable entry points are `paperweight::parsePmat` and
 `paperweight::serialisePmat` in `include/paperweight/pmat.hpp`.

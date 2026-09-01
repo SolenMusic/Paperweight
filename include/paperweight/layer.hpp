@@ -336,6 +336,92 @@ struct CirclesOperation {
         const CirclesOperation&) = default;
 };
 
+enum class ShapePrimitiveKind : std::uint8_t {
+    roundedRectangle = 0,
+    ellipse = 1,
+    capsule = 2,
+    diamond = 3,
+    convexPolygon = 4,
+};
+
+enum class ShapeFieldKind : std::uint8_t {
+    fill = 0,
+    inset = 1,
+    outline = 2,
+    border = 3,
+};
+
+struct ShapePoint {
+    double x{};
+    double y{};
+
+    friend constexpr bool operator==(const ShapePoint&, const ShapePoint&) = default;
+};
+
+struct ShapePrimitiveOperation {
+    ShapePrimitiveKind kind{ShapePrimitiveKind::roundedRectangle};
+    ShapeFieldKind field{ShapeFieldKind::fill};
+    std::uint32_t columns{4};
+    std::uint32_t rows{4};
+    double width{0.7};
+    double height{0.7};
+    double cornerRadius{0.12};
+    double inset{0.08};
+    double borderWidth{0.08};
+    double softness{0.02};
+    double offsetX{};
+    double offsetY{};
+    double stagger{};
+    double rotationDegrees{};
+    std::uint64_t seedOffset{};
+    std::vector<ShapePoint> vertices{
+        {-0.45, -0.25},
+        {0.0, -0.48},
+        {0.45, -0.25},
+        {0.42, 0.28},
+        {0.0, 0.48},
+        {-0.42, 0.28},
+    };
+
+    friend bool operator==(
+        const ShapePrimitiveOperation&,
+        const ShapePrimitiveOperation&) = default;
+};
+
+enum class ShapeBooleanMode : std::uint8_t {
+    unionMask = 0,
+    intersection = 1,
+    subtraction = 2,
+};
+
+struct ShapeBooleanOperation {
+    ShapeBooleanMode mode{ShapeBooleanMode::unionMask};
+    ShapePrimitiveOperation shape;
+    ProcessingTarget target{ProcessingTarget::colourAndScalar};
+
+    friend bool operator==(
+        const ShapeBooleanOperation&,
+        const ShapeBooleanOperation&) = default;
+};
+
+enum class LatticeKind : std::uint8_t {
+    lines = 0,
+    diamonds = 1,
+};
+
+struct LatticeOperation {
+    LatticeKind kind{LatticeKind::diamonds};
+    std::int32_t windingX{4};
+    std::int32_t windingY{4};
+    double width{0.08};
+    double softness{0.02};
+    double phase{};
+
+    friend constexpr bool operator==(
+        const LatticeOperation&,
+        const LatticeOperation&) = default;
+};
+
 enum class SurfacePatternKind : std::uint8_t {
     ridgedNoise = 0,
     bands = 1,
@@ -415,7 +501,10 @@ using LayerOperation = std::variant<
     InkContourOperation,
     RegionFieldOperation,
     CourseLayoutOperation,
-    RegionSurfaceOperation>;
+    RegionSurfaceOperation,
+    ShapePrimitiveOperation,
+    ShapeBooleanOperation,
+    LatticeOperation>;
 
 struct MaterialLayer {
     bool enabled{true};
@@ -486,6 +575,13 @@ struct LayerLimits {
     static constexpr std::uint32_t maximumFacetCount = 16;
     static constexpr std::uint32_t minimumChipScale = 1;
     static constexpr std::uint32_t maximumChipScale = 64;
+    static constexpr std::size_t minimumPolygonVertices = 3;
+    static constexpr std::size_t maximumPolygonVertices = 12;
+    static constexpr double minimumShapeDimension = 0.001;
+    static constexpr double maximumShapeDimension = 1.0;
+    static constexpr double maximumShapeOffset = 0.5;
+    static constexpr double maximumShapeRotation = 360.0;
+    static constexpr std::int32_t maximumLatticeWinding = 64;
 };
 
 [[nodiscard]] constexpr MaterialLayer makeNoiseLayer(std::uint64_t seedOffset = 0)
@@ -715,6 +811,39 @@ struct LayerLimits {
         {}};
 }
 
+[[nodiscard]] inline MaterialLayer makeShapePrimitiveLayer()
+{
+    return MaterialLayer{
+        true,
+        1.0,
+        CompositeMode::blend,
+        ShapePrimitiveOperation{},
+        {},
+        {}};
+}
+
+[[nodiscard]] inline MaterialLayer makeShapeBooleanLayer()
+{
+    return MaterialLayer{
+        true,
+        1.0,
+        CompositeMode::blend,
+        ShapeBooleanOperation{},
+        {},
+        {}};
+}
+
+[[nodiscard]] constexpr MaterialLayer makeLatticeLayer()
+{
+    return MaterialLayer{
+        true,
+        1.0,
+        CompositeMode::blend,
+        LatticeOperation{},
+        {},
+        {}};
+}
+
 [[nodiscard]] constexpr std::uint32_t rotationDegrees(QuarterTurn rotation)
 {
     return static_cast<std::uint32_t>(rotation) * 90U;
@@ -776,9 +905,72 @@ struct LayerLimits {
         return "course_layout";
     case 19:
         return "region_surface";
+    case 20:
+        return "shape";
+    case 21:
+        return "shape_boolean";
+    case 22:
+        return "lattice";
     default:
         return "unknown";
     }
+}
+
+[[nodiscard]] constexpr std::string_view shapePrimitiveKindName(
+    ShapePrimitiveKind kind)
+{
+    switch (kind) {
+    case ShapePrimitiveKind::roundedRectangle:
+        return "rounded_rectangle";
+    case ShapePrimitiveKind::ellipse:
+        return "ellipse";
+    case ShapePrimitiveKind::capsule:
+        return "capsule";
+    case ShapePrimitiveKind::diamond:
+        return "diamond";
+    case ShapePrimitiveKind::convexPolygon:
+        return "convex_polygon";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view shapeFieldKindName(ShapeFieldKind field)
+{
+    switch (field) {
+    case ShapeFieldKind::fill:
+        return "fill";
+    case ShapeFieldKind::inset:
+        return "inset";
+    case ShapeFieldKind::outline:
+        return "outline";
+    case ShapeFieldKind::border:
+        return "border";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view shapeBooleanModeName(ShapeBooleanMode mode)
+{
+    switch (mode) {
+    case ShapeBooleanMode::unionMask:
+        return "union";
+    case ShapeBooleanMode::intersection:
+        return "intersection";
+    case ShapeBooleanMode::subtraction:
+        return "subtraction";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view latticeKindName(LatticeKind kind)
+{
+    switch (kind) {
+    case LatticeKind::lines:
+        return "lines";
+    case LatticeKind::diamonds:
+        return "diamonds";
+    }
+    return "unknown";
 }
 
 [[nodiscard]] constexpr std::string_view regionSurfaceFieldName(

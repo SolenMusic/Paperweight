@@ -9,6 +9,7 @@
 #include <paperweight/pmat.hpp>
 #include <paperweight/region.hpp>
 #include <paperweight/sculpt.hpp>
+#include <paperweight/shape.hpp>
 #include <paperweight/structural.hpp>
 #include <paperweight/surface.hpp>
 #include <paperweight/version.hpp>
@@ -114,9 +115,9 @@ paperweight::Material materialWithNoiseParameters(
 
 void testVersion()
 {
-    constexpr paperweight::Version expected{0, 0, 14};
+    constexpr paperweight::Version expected{0, 0, 15};
     static_assert(paperweight::currentVersion == expected);
-    expect(paperweight::versionString() == "0.0.14", "version string is 0.0.14");
+    expect(paperweight::versionString() == "0.0.15", "version string is 0.0.15");
 }
 
 void testImage()
@@ -914,7 +915,7 @@ void testRegionAttributes()
 
     const auto serialised = paperweight::serialisePmat(layered);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 11") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 12") != std::string::npos &&
                text->find("operation = region_field") != std::string::npos,
            "region fields introduced in version 9 serialise canonically as current .pmat");
     if (text != nullptr) {
@@ -923,8 +924,8 @@ void testRegionAttributes()
                    std::get<paperweight::Material>(reparsed) == layered,
                "region-field materials round-trip exactly through canonical .pmat");
         auto premature = *text;
-        const auto marker = premature.find("pmat.version = 11");
-        premature.replace(marker, std::string("pmat.version = 11").size(),
+        const auto marker = premature.find("pmat.version = 12");
+        premature.replace(marker, std::string("pmat.version = 12").size(),
                           "pmat.version = 8");
         const auto result = paperweight::parsePmat(premature);
         expect(std::holds_alternative<paperweight::ParseDiagnostic>(result) &&
@@ -1099,7 +1100,7 @@ void testCourseLayouts()
 
     const auto serialised = paperweight::serialisePmat(physicalMaterial);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 11") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 12") != std::string::npos &&
                text->find("operation = course_layout") != std::string::npos &&
                text->find("course.sizing = physical") != std::string::npos,
            "physical course layouts serialise explicitly in .pmat version 10");
@@ -1109,8 +1110,8 @@ void testCourseLayouts()
                    std::get<paperweight::Material>(reparsed) == physicalMaterial,
                "course layouts round-trip exactly through .pmat version 10");
         auto premature = *text;
-        const auto marker = premature.find("pmat.version = 11");
-        premature.replace(marker, std::string("pmat.version = 11").size(),
+        const auto marker = premature.find("pmat.version = 12");
+        premature.replace(marker, std::string("pmat.version = 12").size(),
                           "pmat.version = 9");
         const auto rejected = paperweight::parsePmat(premature);
         expect(std::holds_alternative<paperweight::ParseDiagnostic>(rejected) &&
@@ -1326,7 +1327,7 @@ void testRegionSurfaceSculpting()
 
     const auto serialised = paperweight::serialisePmat(material);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 11") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 12") != std::string::npos &&
                text->find("operation = region_surface") != std::string::npos &&
                text->find("sculpt.faceted_normals = true") != std::string::npos,
            "region sculpture serialises explicitly in .pmat version 11");
@@ -1336,8 +1337,8 @@ void testRegionSurfaceSculpting()
                    std::get<paperweight::Material>(reparsed) == material,
                "region sculpture round-trips exactly through .pmat version 11");
         auto premature = *text;
-        const auto marker = premature.find("pmat.version = 11");
-        premature.replace(marker, std::string("pmat.version = 11").size(),
+        const auto marker = premature.find("pmat.version = 12");
+        premature.replace(marker, std::string("pmat.version = 12").size(),
                           "pmat.version = 10");
         const auto rejected = paperweight::parsePmat(premature);
         expect(std::holds_alternative<paperweight::ParseDiagnostic>(rejected) &&
@@ -1351,6 +1352,258 @@ void testRegionSurfaceSculpting()
         .facetCount = 2;
     expect(paperweight::validateMaterial(invalid).has_value(),
            "invalid sculpt facet counts are diagnosed");
+}
+
+void testShapePrimitivesAndLattices()
+{
+    paperweight::ShapePrimitiveOperation shape;
+    shape.columns = 5;
+    shape.rows = 4;
+    shape.width = 0.68;
+    shape.height = 0.52;
+    shape.cornerRadius = 0.11;
+    shape.inset = 0.07;
+    shape.borderWidth = 0.09;
+    shape.softness = 0.018;
+    shape.offsetX = 0.08;
+    shape.offsetY = -0.06;
+    shape.stagger = 0.42;
+    shape.rotationDegrees = 37.0;
+    shape.seedOffset = 1515;
+
+    constexpr std::array primitiveKinds{
+        paperweight::ShapePrimitiveKind::roundedRectangle,
+        paperweight::ShapePrimitiveKind::ellipse,
+        paperweight::ShapePrimitiveKind::capsule,
+        paperweight::ShapePrimitiveKind::diamond,
+        paperweight::ShapePrimitiveKind::convexPolygon,
+    };
+    constexpr std::array<std::uint64_t, primitiveKinds.size()> primitiveGoldens{
+        8642410819614480771ULL,
+        3886759640178523859ULL,
+        16180845089984606627ULL,
+        6898999178736912211ULL,
+        1814323174130660755ULL,
+    };
+    for (std::size_t kindIndex = 0; kindIndex < primitiveKinds.size(); ++kindIndex) {
+        shape.kind = primitiveKinds[kindIndex];
+        shape.field = paperweight::ShapeFieldKind::fill;
+        for (const auto [u, v] : std::array{
+                 std::pair{-0.37, 0.19},
+                 std::pair{0.0, 0.0},
+                 std::pair{0.48, 0.76},
+                 std::pair{1.13, -2.41},
+             }) {
+            const auto sample = paperweight::evaluateShapePrimitive(shape, u, v);
+            const auto repeatX = paperweight::evaluateShapePrimitive(shape, u + 1.0, v);
+            const auto repeatY = paperweight::evaluateShapePrimitive(shape, u, v + 1.0);
+            expectNear(sample.value, repeatX.value, 1.0e-12,
+                       "every analytic shape repeats exactly across U");
+            expectNear(sample.value, repeatY.value, 1.0e-12,
+                       "every analytic shape repeats exactly across V");
+            expect(sample.region.key == repeatX.region.key &&
+                       sample.region.key == repeatY.region.key,
+                   "repeated shapes retain stable wrapped region identities");
+        }
+
+        paperweight::Material material;
+        auto layer = paperweight::makeShapePrimitiveLayer();
+        std::get<paperweight::ShapePrimitiveOperation>(layer.operation) = shape;
+        material.layers = {layer};
+        const auto generated = paperweight::generate({
+            material,
+            48,
+            40,
+            paperweight::MaterialOutput::colour,
+            std::nullopt,
+            std::nullopt,
+            1,
+        });
+        expectChecksum(
+            std::get_if<paperweight::Image>(&generated),
+            primitiveGoldens[kindIndex],
+            "analytic shape primitives match byte-exact golden masks");
+    }
+
+    constexpr std::array shapeFields{
+        paperweight::ShapeFieldKind::fill,
+        paperweight::ShapeFieldKind::inset,
+        paperweight::ShapeFieldKind::outline,
+        paperweight::ShapeFieldKind::border,
+    };
+    constexpr std::array<std::uint64_t, shapeFields.size()> fieldGoldens{
+        8642410819614480771ULL,
+        1280363926637515491ULL,
+        15250998348995193203ULL,
+        1505116505883154123ULL,
+    };
+    shape.kind = paperweight::ShapePrimitiveKind::roundedRectangle;
+    for (std::size_t fieldIndex = 0; fieldIndex < shapeFields.size(); ++fieldIndex) {
+        shape.field = shapeFields[fieldIndex];
+        paperweight::Material material;
+        auto layer = paperweight::makeShapePrimitiveLayer();
+        std::get<paperweight::ShapePrimitiveOperation>(layer.operation) = shape;
+        material.layers = {layer};
+        const auto generated = paperweight::generate({
+            material,
+            48,
+            40,
+            paperweight::MaterialOutput::colour,
+            std::nullopt,
+            std::nullopt,
+            1,
+        });
+        expectChecksum(
+            std::get_if<paperweight::Image>(&generated),
+            fieldGoldens[fieldIndex],
+            "shape fill, inset, outline, and border fields have stable golden masks");
+        const auto seam = paperweight::evaluateShapePrimitive(shape, 0.217, 0.693);
+        expectNear(
+            seam.value,
+            paperweight::evaluateShapePrimitive(shape, 1.217, 0.693).value,
+            1.0e-12,
+            "every distance-derived shape field remains seamless");
+    }
+
+    auto unrotated = shape;
+    unrotated.field = paperweight::ShapeFieldKind::fill;
+    unrotated.rotationDegrees = 0.0;
+    const auto rotatedSample = paperweight::evaluateShapePrimitive(shape, 0.267, 0.148);
+    const auto unrotatedSample = paperweight::evaluateShapePrimitive(unrotated, 0.267, 0.148);
+    expect(rotatedSample.value != unrotatedSample.value,
+           "bounded repeated shapes accept arbitrary local rotation");
+
+    expectNear(
+        paperweight::combineShapeMasks(0.25, 0.75, paperweight::ShapeBooleanMode::unionMask),
+        0.75,
+        0.0,
+        "shape union selects either covered mask");
+    expectNear(
+        paperweight::combineShapeMasks(0.25, 0.75, paperweight::ShapeBooleanMode::intersection),
+        0.25,
+        0.0,
+        "shape intersection retains shared coverage");
+    expectNear(
+        paperweight::combineShapeMasks(0.8, 0.6, paperweight::ShapeBooleanMode::subtraction),
+        0.4,
+        1.0e-12,
+        "shape subtraction removes analytic coverage");
+
+    paperweight::LatticeOperation lattice;
+    lattice.kind = paperweight::LatticeKind::diamonds;
+    lattice.windingX = 5;
+    lattice.windingY = 3;
+    lattice.width = 0.11;
+    lattice.softness = 0.015;
+    lattice.phase = 0.17;
+    for (const auto [u, v] : std::array{
+             std::pair{-0.31, 0.27},
+             std::pair{0.0, 0.0},
+             std::pair{0.79, 0.53},
+         }) {
+        const auto sample = paperweight::evaluateLattice(lattice, u, v);
+        expectNear(sample.value, paperweight::evaluateLattice(lattice, u + 1.0, v).value,
+                   1.0e-12, "integer-winding diamond lattices repeat across U");
+        expectNear(sample.value, paperweight::evaluateLattice(lattice, u, v + 1.0).value,
+                   1.0e-12, "integer-winding diamond lattices repeat across V");
+    }
+    const double diamondSample = paperweight::evaluateLattice(lattice, 0.0, 0.89).value;
+    lattice.kind = paperweight::LatticeKind::lines;
+    expect(diamondSample != paperweight::evaluateLattice(lattice, 0.0, 0.89).value,
+           "parallel and crossed diamond lattices remain distinct fields");
+
+    paperweight::Material graphMaterial;
+    auto shapeLayer = paperweight::makeShapePrimitiveLayer();
+    std::get<paperweight::ShapePrimitiveOperation>(shapeLayer.operation) = shape;
+    auto booleanLayer = paperweight::makeShapeBooleanLayer();
+    auto& boolean = std::get<paperweight::ShapeBooleanOperation>(booleanLayer.operation);
+    boolean.mode = paperweight::ShapeBooleanMode::subtraction;
+    boolean.shape.kind = paperweight::ShapePrimitiveKind::ellipse;
+    boolean.shape.rotationDegrees = -23.5;
+    boolean.target = paperweight::ProcessingTarget::scalar;
+    auto latticeLayer = paperweight::makeLatticeLayer();
+    std::get<paperweight::LatticeOperation>(latticeLayer.operation) = lattice;
+    latticeLayer.opacity = 0.35;
+    graphMaterial.layers = {shapeLayer, booleanLayer, latticeLayer};
+
+    const auto compiled = paperweight::compileMaterialGraph(graphMaterial);
+    const auto* graph = std::get_if<paperweight::MaterialGraph>(&compiled);
+    bool foundShape = false;
+    bool foundBoolean = false;
+    bool foundLattice = false;
+    if (graph != nullptr) {
+        for (const auto& node : graph->nodes) {
+            if (const auto* generator = std::get_if<paperweight::GeneratorNode>(&node)) {
+                foundShape = foundShape ||
+                    std::holds_alternative<paperweight::ShapePrimitiveOperation>(
+                        generator->operation);
+                foundLattice = foundLattice ||
+                    std::holds_alternative<paperweight::LatticeOperation>(
+                        generator->operation);
+            } else if (const auto* processing =
+                           std::get_if<paperweight::ProcessingNode>(&node)) {
+                foundBoolean = foundBoolean ||
+                    std::holds_alternative<paperweight::ShapeBooleanProcessing>(
+                        processing->operation);
+            }
+        }
+    }
+    expect(graph != nullptr && foundShape && foundBoolean && foundLattice,
+           "shapes, Boolean masks, and lattices compile into reusable graph nodes");
+
+    for (const auto output : paperweight::materialOutputs) {
+        paperweight::GenerationRequest request{
+            graphMaterial, 72, 56, output, std::nullopt, std::nullopt, 1};
+        const auto serial = paperweight::generate(request);
+        request.workerCount = 4;
+        const auto parallel = paperweight::generate(request);
+        const auto* serialImage = std::get_if<paperweight::Image>(&serial);
+        const auto* parallelImage = std::get_if<paperweight::Image>(&parallel);
+        expect(serialImage != nullptr && parallelImage != nullptr &&
+                   std::equal(
+                       serialImage->pixels().begin(),
+                       serialImage->pixels().end(),
+                       parallelImage->pixels().begin()),
+               "shape and lattice outputs are byte-identical with one or four workers");
+    }
+
+    const auto serialised = paperweight::serialisePmat(graphMaterial);
+    const auto* text = std::get_if<std::string>(&serialised);
+    expect(text != nullptr && text->find("pmat.version = 12") != std::string::npos &&
+               text->find("operation = shape_boolean") != std::string::npos &&
+               text->find("shape.vertex.5.y") != std::string::npos &&
+               text->find("lattice.winding_x = 5") != std::string::npos,
+           "shape vocabulary serialises explicitly and readably in .pmat version 12");
+    if (text != nullptr) {
+        const auto reparsed = paperweight::parsePmat(*text);
+        expect(std::holds_alternative<paperweight::Material>(reparsed) &&
+                   std::get<paperweight::Material>(reparsed) == graphMaterial,
+               "shape and lattice materials round-trip exactly through .pmat version 12");
+        auto premature = *text;
+        const auto marker = premature.find("pmat.version = 12");
+        premature.replace(marker, std::string("pmat.version = 12").size(),
+                          "pmat.version = 11");
+        const auto rejected = paperweight::parsePmat(premature);
+        expect(std::holds_alternative<paperweight::ParseDiagnostic>(rejected) &&
+                   std::get<paperweight::ParseDiagnostic>(rejected).message.find(
+                       "require .pmat version 12") != std::string::npos,
+               ".pmat version 11 rejects shape and lattice fields explicitly");
+    }
+
+    auto invalidShape = graphMaterial;
+    auto& invalidPolygon = std::get<paperweight::ShapePrimitiveOperation>(
+        invalidShape.layers.front().operation);
+    invalidPolygon.kind = paperweight::ShapePrimitiveKind::convexPolygon;
+    invalidPolygon.vertices = {{-0.4, -0.4}, {0.4, -0.4}, {0.0, 0.0}, {0.4, 0.4}};
+    expect(paperweight::validateMaterial(invalidShape).has_value(),
+           "concave or degenerate polygon definitions are diagnosed");
+    auto invalidLattice = graphMaterial;
+    auto& invalidWinding = std::get<paperweight::LatticeOperation>(
+        invalidLattice.layers.back().operation);
+    invalidWinding.kind = paperweight::LatticeKind::diamonds;
+    invalidWinding.windingX = 0;
+    expect(paperweight::validateMaterial(invalidLattice).has_value(),
+           "non-tile-compatible diamond winding definitions are diagnosed");
 }
 
 void testAdvancedSurfaceOperations()
@@ -1526,9 +1779,9 @@ void testAdvancedSurfaceOperations()
                    std::get<paperweight::Material>(reparsed) == material,
                "advanced surface recipes round-trip through .pmat version 8 exactly");
         auto premature = *text;
-        const auto marker = premature.find("pmat.version = 11");
+        const auto marker = premature.find("pmat.version = 12");
         if (marker != std::string::npos) {
-            premature.replace(marker, std::string("pmat.version = 11").size(),
+            premature.replace(marker, std::string("pmat.version = 12").size(),
                               "pmat.version = 7");
         }
         const auto prematureResult = paperweight::parsePmat(premature);
@@ -1697,7 +1950,7 @@ void testStylisedOperations()
 
     const auto serialised = paperweight::serialisePmat(stylised);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 11") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 12") != std::string::npos &&
                text->find("operation = colour_ramp") != std::string::npos &&
                text->find("operation = ink_contour") != std::string::npos,
            "stylisation serialises in the human-readable .pmat v9 format");
@@ -2418,7 +2671,7 @@ void testPmat()
 {
     constexpr std::string_view canonical =
         "# Paperweight procedural material\n"
-        "pmat.version = 11\n"
+        "pmat.version = 12\n"
         "material.type = fbm\n"
         "material.seed = 18431\n"
         "material.width = 1m\n"
@@ -2588,6 +2841,22 @@ void testPmat()
             "sculpted-roof-slate.pmat",
             {2738677515315863655ULL, 1140855840288707606ULL,
              4803683323561927404ULL, 12400867502020881374ULL}},
+        ShowcaseGolden{
+            "castle-window.pmat",
+            {2940855742695968835ULL, 8803386190442183443ULL,
+             12758935797147064591ULL, 17112417208134822739ULL}},
+        ShowcaseGolden{
+            "detailed-crate.pmat",
+            {404163776177822420ULL, 13578606624915054771ULL,
+             5825613498117947182ULL, 4779172065725943889ULL}},
+        ShowcaseGolden{
+            "decorative-fasteners.pmat",
+            {15664040335747893123ULL, 6139743958895727491ULL,
+             2665746260585875171ULL, 246543446198789635ULL}},
+        ShowcaseGolden{
+            "masonry-corner-variation.pmat",
+            {8726499270484726471ULL, 13431419699875211584ULL,
+             18286112188872500392ULL, 5592922460523597485ULL}},
     };
     constexpr std::array outputs{
         paperweight::MaterialOutput::colour,
@@ -2648,13 +2917,13 @@ void testPmat()
         legacyBrickMaterial.layers = {paperweight::makeBrickGridLayer()};
         auto versionFourBrick = std::get<std::string>(
             paperweight::serialisePmat(legacyBrickMaterial));
-        const auto versionMarkerPosition = versionFourBrick.find("pmat.version = 11");
+        const auto versionMarkerPosition = versionFourBrick.find("pmat.version = 12");
         expect(versionMarkerPosition != std::string::npos,
-               "current brick fixture declares format version 11");
+               "current brick fixture declares format version 12");
         if (versionMarkerPosition != std::string::npos) {
             versionFourBrick.replace(
                 versionMarkerPosition,
-                std::string("pmat.version = 11").size(),
+                std::string("pmat.version = 12").size(),
                 "pmat.version = 4");
         }
         for (const auto& field : {
@@ -2977,7 +3246,7 @@ void testPmat()
         }
     };
 
-    expectDiagnostic("pmat.version = 12\n", 1, "unsupported");
+    expectDiagnostic("pmat.version = 13\n", 1, "unsupported");
     expectDiagnostic("unknown.key = 1\n", 1, "unknown key");
     expectDiagnostic("pmat.version = 1\npmat.version = 1\n", 2, "duplicate");
     expectDiagnostic("pmat.version = nope\n", 1, "integer");
@@ -3097,6 +3366,7 @@ int main()
     testRegionAttributes();
     testCourseLayouts();
     testRegionSurfaceSculpting();
+    testShapePrimitivesAndLattices();
     testAdvancedSurfaceOperations();
     testStylisedOperations();
     testMaterialGraph();

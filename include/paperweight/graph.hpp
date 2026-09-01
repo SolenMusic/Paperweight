@@ -29,7 +29,9 @@ using GeneratorOperation = std::variant<
     RectanglesOperation,
     CirclesOperation,
     SurfacePatternOperation,
-    CourseLayoutOperation>;
+    CourseLayoutOperation,
+    ShapePrimitiveOperation,
+    LatticeOperation>;
 
 struct GeneratorNode {
     GraphNodeId id{invalidGraphNodeId};
@@ -133,6 +135,15 @@ struct RegionSurfaceProcessing {
         const RegionSurfaceProcessing&) = default;
 };
 
+struct ShapeBooleanProcessing {
+    GraphNodeId input{invalidGraphNodeId};
+    ShapeBooleanOperation parameters;
+
+    friend bool operator==(
+        const ShapeBooleanProcessing&,
+        const ShapeBooleanProcessing&) = default;
+};
+
 using ProcessingOperation = std::variant<
     LevelsProcessing,
     ThresholdProcessing,
@@ -143,7 +154,8 @@ using ProcessingOperation = std::variant<
     SurfaceFilterProcessing,
     InkContourProcessing,
     RegionFieldProcessing,
-    RegionSurfaceProcessing>;
+    RegionSurfaceProcessing,
+    ShapeBooleanProcessing>;
 
 struct ProcessingNode {
     GraphNodeId id{invalidGraphNodeId};
