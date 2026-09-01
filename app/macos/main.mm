@@ -8,8 +8,10 @@
 #include <paperweight/generator.hpp>
 #include <paperweight/hash.hpp>
 #include <paperweight/layer.hpp>
+#include <paperweight/material_template.hpp>
 #include <paperweight/organic.hpp>
 #include <paperweight/pmat.hpp>
+#include <paperweight/stylised_lighting.hpp>
 
 #include <algorithm>
 #include <array>
@@ -128,6 +130,10 @@
 @property(nonatomic, strong) NSWindow* window;
 @property(nonatomic, strong) BenchmarkWindowController* benchmarkWindowController;
 @property(nonatomic, strong) NSView* previewContainer;
+@property(nonatomic, strong) NSStackView* comparisonStack;
+@property(nonatomic, strong) NSStackView* referencePanel;
+@property(nonatomic, strong) MaterialPreviewView* referenceImageView;
+@property(nonatomic, strong) NSTextField* referenceTitleLabel;
 @property(nonatomic, strong) MaterialPreviewView* previewView;
 @property(nonatomic, strong) Material3DPreviewView* material3DPreviewView;
 @property(nonatomic, strong) NSVisualEffectView* previewLoadingPanel;
@@ -156,6 +162,18 @@
 @property(nonatomic, strong) NSSlider* roughnessHighSlider;
 @property(nonatomic, strong) NSTextField* roughnessHighValue;
 @property(nonatomic, strong) NSSegmentedControl* outputControl;
+@property(nonatomic, strong) NSButton* bakedPresentationCheckbox;
+@property(nonatomic, strong) NSStackView* bakeControls;
+@property(nonatomic, strong) NSSlider* bakeAzimuthSlider;
+@property(nonatomic, strong) NSTextField* bakeAzimuthValue;
+@property(nonatomic, strong) NSSlider* bakeElevationSlider;
+@property(nonatomic, strong) NSTextField* bakeElevationValue;
+@property(nonatomic, strong) NSSlider* bakeBandsSlider;
+@property(nonatomic, strong) NSTextField* bakeBandsValue;
+@property(nonatomic, strong) NSSlider* bakeHighlightSlider;
+@property(nonatomic, strong) NSTextField* bakeHighlightValue;
+@property(nonatomic, strong) NSSlider* bakeAmbientSlider;
+@property(nonatomic, strong) NSTextField* bakeAmbientValue;
 @property(nonatomic, strong) NSSegmentedControl* tilingControl;
 @property(nonatomic, strong) NSSegmentedControl* previewModeControl;
 @property(nonatomic, strong) NSStackView* twoDPreviewControls;
@@ -203,6 +221,10 @@
 @property(nonatomic, strong) NSStackView* layerSettingsGroup;
 @property(nonatomic, strong) NSStackView* transformSettingsGroup;
 @property(nonatomic, strong) NSStackView* maskSettingsGroup;
+@property(nonatomic, strong) NSStackView* templateControlsGroup;
+@property(nonatomic, strong) NSTextField* activeTemplateLabel;
+@property(nonatomic, strong) NSMutableArray<NSSlider*>* templateControlSliders;
+@property(nonatomic, strong) NSMutableArray<NSTextField*>* templateControlValues;
 @property(nonatomic, strong) NSButton* layerEnabledCheckbox;
 @property(nonatomic, strong) NSSegmentedControl* layerCompositeControl;
 @property(nonatomic, strong) NSSlider* layerOpacitySlider;
@@ -770,6 +792,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 @implementation AppDelegate {
     paperweight::Material material_;
     paperweight::MaterialOutput selectedOutput_;
+    bool bakedPresentationSelected_;
+    const paperweight::ReferenceMaterialTemplate* activeTemplate_;
     std::optional<paperweight::Image> generatedImage_;
     std::shared_ptr<PreviewMapSet> generated3DMaps_;
     dispatch_queue_t previewQueue_;
@@ -786,6 +810,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 {
     static_cast<void>(notification);
     selectedOutput_ = paperweight::MaterialOutput::colour;
+    bakedPresentationSelected_ = false;
+    activeTemplate_ = nullptr;
     material_.layers.push_back(paperweight::makeNoiseLayer());
     previewCoverage_ = material_.physicalSize;
     selectedLayer_ = 0;
@@ -851,6 +877,22 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     [mainMenu addItem:fileMenuItem];
     auto* fileMenu = [[NSMenu alloc] initWithTitle:@"File"];
     [fileMenu addItemWithTitle:@"Open…" action:@selector(openMaterial:) keyEquivalent:@"o"];
+    auto* referenceTemplateItem = [[NSMenuItem alloc]
+        initWithTitle:@"New from Reference Template"
+        action:nil
+        keyEquivalent:@""];
+    auto* referenceTemplateMenu = [[NSMenu alloc] initWithTitle:@"New from Reference Template"];
+    for (const auto& descriptor : paperweight::referenceMaterialTemplates()) {
+        auto* title = [NSString stringWithUTF8String:descriptor.displayName.data()];
+        auto* identifier = [NSString stringWithUTF8String:descriptor.identifier.data()];
+        auto* item = [referenceTemplateMenu addItemWithTitle:title
+                                                     action:@selector(openReferenceTemplate:)
+                                              keyEquivalent:@""];
+        item.target = self;
+        item.representedObject = identifier;
+    }
+    referenceTemplateItem.submenu = referenceTemplateMenu;
+    [fileMenu addItem:referenceTemplateItem];
     auto* showcaseItem = [[NSMenuItem alloc] initWithTitle:@"New from Showcase"
                                                     action:nil
                                              keyEquivalent:@""];
@@ -893,6 +935,14 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     }
     showcaseItem.submenu = showcaseMenu;
     [fileMenu addItem:showcaseItem];
+    [fileMenu addItem:[NSMenuItem separatorItem]];
+    [fileMenu addItemWithTitle:@"Open Reference Image…"
+                        action:@selector(chooseReferenceImage:)
+                 keyEquivalent:@"r"];
+    [fileMenu addItemWithTitle:@"Hide Reference Image"
+                        action:@selector(clearReferenceImage:)
+                 keyEquivalent:@""];
+    [fileMenu addItem:[NSMenuItem separatorItem]];
     [fileMenu addItemWithTitle:@"Save" action:@selector(saveMaterial:) keyEquivalent:@"s"];
     auto* saveAsItem = [fileMenu addItemWithTitle:@"Save As…"
                                           action:@selector(saveMaterialAs:)
@@ -972,6 +1022,37 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.previewContainer.translatesAutoresizingMaskIntoConstraints = NO;
     self.previewView = [[MaterialPreviewView alloc] initWithFrame:NSZeroRect];
     self.previewView.translatesAutoresizingMaskIntoConstraints = NO;
+    auto* generatedTitle = makeLabel(@"Generated");
+    generatedTitle.font = [NSFont systemFontOfSize:12.0 weight:NSFontWeightSemibold];
+    generatedTitle.textColor = NSColor.secondaryLabelColor;
+    auto* generatedPanel = [NSStackView stackViewWithViews:@[generatedTitle, self.previewView]];
+    generatedPanel.translatesAutoresizingMaskIntoConstraints = NO;
+    generatedPanel.orientation = NSUserInterfaceLayoutOrientationVertical;
+    generatedPanel.alignment = NSLayoutAttributeLeading;
+    generatedPanel.spacing = 6.0;
+
+    self.referenceTitleLabel = makeLabel(@"Reference");
+    self.referenceTitleLabel.font = [NSFont systemFontOfSize:12.0 weight:NSFontWeightSemibold];
+    self.referenceTitleLabel.textColor = NSColor.secondaryLabelColor;
+    self.referenceImageView = [[MaterialPreviewView alloc] initWithFrame:NSZeroRect];
+    self.referenceImageView.translatesAutoresizingMaskIntoConstraints = NO;
+    self.referencePanel = [NSStackView stackViewWithViews:@[
+        self.referenceTitleLabel, self.referenceImageView,
+    ]];
+    self.referencePanel.translatesAutoresizingMaskIntoConstraints = NO;
+    self.referencePanel.orientation = NSUserInterfaceLayoutOrientationVertical;
+    self.referencePanel.alignment = NSLayoutAttributeLeading;
+    self.referencePanel.spacing = 6.0;
+    self.referencePanel.hidden = YES;
+
+    self.comparisonStack = [NSStackView stackViewWithViews:@[
+        generatedPanel, self.referencePanel,
+    ]];
+    self.comparisonStack.translatesAutoresizingMaskIntoConstraints = NO;
+    self.comparisonStack.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    self.comparisonStack.alignment = NSLayoutAttributeTop;
+    self.comparisonStack.distribution = NSStackViewDistributionFillEqually;
+    self.comparisonStack.spacing = 14.0;
     self.material3DPreviewView = [[Material3DPreviewView alloc] initWithFrame:NSZeroRect];
     self.material3DPreviewView.translatesAutoresizingMaskIntoConstraints = NO;
     self.material3DPreviewView.hidden = YES;
@@ -1007,7 +1088,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     previewLoadingStack.alignment = NSLayoutAttributeCenterY;
     previewLoadingStack.spacing = 9.0;
     [self.previewLoadingPanel addSubview:previewLoadingStack];
-    [self.previewContainer addSubview:self.previewView];
+    [self.previewContainer addSubview:self.comparisonStack];
     [self.previewContainer addSubview:self.material3DPreviewView];
     [self.previewContainer addSubview:self.previewLoadingPanel];
 
@@ -1027,10 +1108,14 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         [self.previewContainer.trailingAnchor constraintEqualToAnchor:content.trailingAnchor constant:-20.0],
         [self.previewContainer.topAnchor constraintEqualToAnchor:content.topAnchor constant:20.0],
         [self.previewContainer.bottomAnchor constraintEqualToAnchor:content.bottomAnchor constant:-20.0],
-        [self.previewView.leadingAnchor constraintEqualToAnchor:self.previewContainer.leadingAnchor],
-        [self.previewView.trailingAnchor constraintEqualToAnchor:self.previewContainer.trailingAnchor],
-        [self.previewView.topAnchor constraintEqualToAnchor:self.previewContainer.topAnchor],
-        [self.previewView.bottomAnchor constraintEqualToAnchor:self.previewContainer.bottomAnchor],
+        [self.comparisonStack.leadingAnchor constraintEqualToAnchor:self.previewContainer.leadingAnchor],
+        [self.comparisonStack.trailingAnchor constraintEqualToAnchor:self.previewContainer.trailingAnchor],
+        [self.comparisonStack.topAnchor constraintEqualToAnchor:self.previewContainer.topAnchor],
+        [self.comparisonStack.bottomAnchor constraintEqualToAnchor:self.previewContainer.bottomAnchor],
+        [self.previewView.widthAnchor constraintEqualToAnchor:generatedPanel.widthAnchor],
+        [self.previewView.bottomAnchor constraintEqualToAnchor:generatedPanel.bottomAnchor],
+        [self.referenceImageView.widthAnchor constraintEqualToAnchor:self.referencePanel.widthAnchor],
+        [self.referenceImageView.bottomAnchor constraintEqualToAnchor:self.referencePanel.bottomAnchor],
         [self.material3DPreviewView.leadingAnchor constraintEqualToAnchor:self.previewContainer.leadingAnchor],
         [self.material3DPreviewView.trailingAnchor constraintEqualToAnchor:self.previewContainer.trailingAnchor],
         [self.material3DPreviewView.topAnchor constraintEqualToAnchor:self.previewContainer.topAnchor],
@@ -1215,6 +1300,12 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.outputControl.target = self;
     self.outputControl.action = @selector(outputChanged:);
     self.outputControl.accessibilityLabel = @"Material output";
+    self.bakedPresentationCheckbox = [NSButton
+        checkboxWithTitle:@"Optional baked presentation"
+        target:self
+        action:@selector(bakedPresentationToggled:)];
+    self.bakedPresentationCheckbox.toolTip =
+        @"Preview a separate colour image with portable stylised lighting. The unlit material maps are unchanged.";
 
     auto* previewLabel = makeLabel(@"Preview tiling");
     self.tilingControl = [[NSSegmentedControl alloc] initWithFrame:NSZeroRect];
@@ -1225,11 +1316,68 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.tilingControl.target = self;
     self.tilingControl.action = @selector(tilingChanged:);
 
+    auto* bakeAzimuthRow = makePreviewSliderRow(@"Azimuth", 0.0, 360.0, 315.0, self);
+    self.bakeAzimuthSlider = static_cast<NSSlider*>(bakeAzimuthRow.views[1]);
+    self.bakeAzimuthValue = static_cast<NSTextField*>(bakeAzimuthRow.views[2]);
+    auto* bakeElevationRow = makePreviewSliderRow(@"Elevation", -10.0, 90.0, 45.0, self);
+    self.bakeElevationSlider = static_cast<NSSlider*>(bakeElevationRow.views[1]);
+    self.bakeElevationValue = static_cast<NSTextField*>(bakeElevationRow.views[2]);
+    auto* bakeBandsRow = makePreviewSliderRow(@"Diffuse bands", 2.0, 8.0, 3.0, self);
+    self.bakeBandsSlider = static_cast<NSSlider*>(bakeBandsRow.views[1]);
+    self.bakeBandsValue = static_cast<NSTextField*>(bakeBandsRow.views[2]);
+    self.bakeBandsSlider.numberOfTickMarks = 7;
+    self.bakeBandsSlider.allowsTickMarkValuesOnly = YES;
+    auto* bakeHighlightRow = makePreviewSliderRow(@"Highlight at", 0.45, 1.0, 0.82, self);
+    self.bakeHighlightSlider = static_cast<NSSlider*>(bakeHighlightRow.views[1]);
+    self.bakeHighlightValue = static_cast<NSTextField*>(bakeHighlightRow.views[2]);
+    auto* bakeAmbientRow = makePreviewSliderRow(@"Ambient", 0.0, 0.8, 0.22, self);
+    self.bakeAmbientSlider = static_cast<NSSlider*>(bakeAmbientRow.views[1]);
+    self.bakeAmbientValue = static_cast<NSTextField*>(bakeAmbientRow.views[2]);
+    for (NSSlider* slider in @[
+             self.bakeAzimuthSlider,
+             self.bakeElevationSlider,
+             self.bakeBandsSlider,
+             self.bakeHighlightSlider,
+             self.bakeAmbientSlider,
+         ]) {
+        slider.target = self;
+        slider.action = @selector(bakeParameterChanged:);
+    }
+    self.bakeControls = [NSStackView stackViewWithViews:@[
+        makeLabel(@"Baked presentation"),
+        bakeAzimuthRow,
+        bakeElevationRow,
+        bakeBandsRow,
+        bakeHighlightRow,
+        bakeAmbientRow,
+    ]];
+    self.bakeControls.orientation = NSUserInterfaceLayoutOrientationVertical;
+    self.bakeControls.alignment = NSLayoutAttributeLeading;
+    self.bakeControls.spacing = 7.0;
+    self.bakeControls.hidden = YES;
+    [self updateBakeControlLabels];
+
+    auto* chooseReferenceButton = [NSButton buttonWithTitle:@"Open Reference…"
+                                                      target:self
+                                                      action:@selector(chooseReferenceImage:)];
+    auto* hideReferenceButton = [NSButton buttonWithTitle:@"Hide Reference"
+                                                    target:self
+                                                    action:@selector(clearReferenceImage:)];
+    auto* referenceButtons = [NSStackView stackViewWithViews:@[
+        chooseReferenceButton, hideReferenceButton,
+    ]];
+    referenceButtons.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    referenceButtons.distribution = NSStackViewDistributionFillEqually;
+    referenceButtons.spacing = 8.0;
+
     self.twoDPreviewControls = [NSStackView stackViewWithViews:@[
         outputLabel,
         self.outputControl,
+        self.bakedPresentationCheckbox,
+        self.bakeControls,
         previewLabel,
         self.tilingControl,
+        referenceButtons,
     ]];
     self.twoDPreviewControls.orientation = NSUserInterfaceLayoutOrientationVertical;
     self.twoDPreviewControls.alignment = NSLayoutAttributeLeading;
@@ -1384,9 +1532,22 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.statusLabel.usesSingleLineMode = NO;
     self.statusLabel.preferredMaxLayoutWidth = 270.0;
 
+    self.activeTemplateLabel = makeLabel(@"");
+    self.activeTemplateLabel.font = [NSFont systemFontOfSize:13.0 weight:NSFontWeightSemibold];
+    self.activeTemplateLabel.maximumNumberOfLines = 2;
+    self.activeTemplateLabel.lineBreakMode = NSLineBreakByWordWrapping;
+    self.templateControlSliders = [NSMutableArray array];
+    self.templateControlValues = [NSMutableArray array];
+    self.templateControlsGroup = [NSStackView stackViewWithViews:@[self.activeTemplateLabel]];
+    self.templateControlsGroup.orientation = NSUserInterfaceLayoutOrientationVertical;
+    self.templateControlsGroup.alignment = NSLayoutAttributeLeading;
+    self.templateControlsGroup.spacing = 7.0;
+    self.templateControlsGroup.hidden = YES;
+
     auto* controlStack = [NSStackView stackViewWithViews:@[
         title,
         subtitle,
+        self.templateControlsGroup,
         makeSeparator(),
         seedRow,
         materialSizeRow,
@@ -1435,8 +1596,16 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         [self.previewModeControl.widthAnchor constraintEqualToAnchor:controlStack.widthAnchor],
         [self.twoDPreviewControls.widthAnchor constraintEqualToAnchor:controlStack.widthAnchor],
         [self.threeDPreviewControls.widthAnchor constraintEqualToAnchor:controlStack.widthAnchor],
+        [self.templateControlsGroup.widthAnchor constraintEqualToAnchor:controlStack.widthAnchor],
         [self.tilingControl.widthAnchor constraintEqualToAnchor:self.twoDPreviewControls.widthAnchor],
         [self.outputControl.widthAnchor constraintEqualToAnchor:self.twoDPreviewControls.widthAnchor],
+        [self.bakeControls.widthAnchor constraintEqualToAnchor:self.twoDPreviewControls.widthAnchor],
+        [bakeAzimuthRow.widthAnchor constraintEqualToAnchor:self.bakeControls.widthAnchor],
+        [bakeElevationRow.widthAnchor constraintEqualToAnchor:self.bakeControls.widthAnchor],
+        [bakeBandsRow.widthAnchor constraintEqualToAnchor:self.bakeControls.widthAnchor],
+        [bakeHighlightRow.widthAnchor constraintEqualToAnchor:self.bakeControls.widthAnchor],
+        [bakeAmbientRow.widthAnchor constraintEqualToAnchor:self.bakeControls.widthAnchor],
+        [referenceButtons.widthAnchor constraintEqualToAnchor:self.twoDPreviewControls.widthAnchor],
         [shapeRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
         [lightingRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
         [lightAzimuthRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
@@ -5026,6 +5195,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 - (void)resetMaterial:(id)sender
 {
     static_cast<void>(sender);
+    [self setActiveReferenceTemplate:nullptr];
     material_ = paperweight::Material{};
     material_.layers.push_back(paperweight::makeNoiseLayer());
     previewCoverage_ = material_.physicalSize;
@@ -5075,6 +5245,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 - (void)outputChanged:(id)sender
 {
     static_cast<void>(sender);
+    bakedPresentationSelected_ = false;
+    self.bakedPresentationCheckbox.state = NSControlStateValueOff;
     switch (self.outputControl.selectedSegment) {
     case 0:
         selectedOutput_ = paperweight::MaterialOutput::colour;
@@ -5092,7 +5264,61 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         selectedOutput_ = paperweight::MaterialOutput::colour;
         break;
     }
+    self.bakeControls.hidden = !bakedPresentationSelected_;
     [self regeneratePreview];
+}
+
+- (void)bakedPresentationToggled:(id)sender
+{
+    static_cast<void>(sender);
+    bakedPresentationSelected_ =
+        self.bakedPresentationCheckbox.state == NSControlStateValueOn;
+    if (bakedPresentationSelected_) {
+        selectedOutput_ = paperweight::MaterialOutput::colour;
+        self.outputControl.selectedSegment = 0;
+    }
+    self.bakeControls.hidden = !bakedPresentationSelected_;
+    [self regeneratePreview];
+}
+
+- (paperweight::StylisedLightingSettings)stylisedLightingSettings
+{
+    paperweight::StylisedLightingSettings settings;
+    settings.lightAzimuthDegrees = self.bakeAzimuthSlider.doubleValue;
+    settings.lightElevationDegrees = self.bakeElevationSlider.doubleValue;
+    settings.diffuseBands = static_cast<std::uint32_t>(
+        std::llround(self.bakeBandsSlider.doubleValue));
+    settings.highlightThreshold = self.bakeHighlightSlider.doubleValue;
+    settings.ambientContribution = self.bakeAmbientSlider.doubleValue;
+    return settings;
+}
+
+- (void)updateBakeControlLabels
+{
+    self.bakeAzimuthValue.stringValue = [NSString stringWithFormat:
+        @"%.0f°", self.bakeAzimuthSlider.doubleValue];
+    self.bakeElevationValue.stringValue = [NSString stringWithFormat:
+        @"%.0f°", self.bakeElevationSlider.doubleValue];
+    self.bakeBandsValue.stringValue = [NSString stringWithFormat:
+        @"%.0f", self.bakeBandsSlider.doubleValue];
+    self.bakeHighlightValue.stringValue = [NSString stringWithFormat:
+        @"%.2f", self.bakeHighlightSlider.doubleValue];
+    self.bakeAmbientValue.stringValue = [NSString stringWithFormat:
+        @"%.2f", self.bakeAmbientSlider.doubleValue];
+}
+
+- (void)bakeParameterChanged:(id)sender
+{
+    static_cast<void>(sender);
+    [self updateBakeControlLabels];
+    if (bakedPresentationSelected_) {
+        [self regeneratePreview];
+    }
+}
+
+- (NSString*)currentOutputName
+{
+    return bakedPresentationSelected_ ? @"Baked Presentation" : outputName(selectedOutput_);
 }
 
 - (void)previewModeChanged:(id)sender
@@ -5105,7 +5331,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.statusLabel.textColor = NSColor.systemRedColor;
         return;
     }
-    self.previewView.hidden = threeDimensional;
+    self.comparisonStack.hidden = threeDimensional;
     self.material3DPreviewView.hidden = !threeDimensional;
     self.twoDPreviewControls.hidden = threeDimensional;
     self.threeDPreviewControls.hidden = !threeDimensional;
@@ -5271,6 +5497,80 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         [NSString stringWithFormat:@"%.2f", material_.roughnessHigh];
 }
 
+- (void)setActiveReferenceTemplate:(const paperweight::ReferenceMaterialTemplate*)descriptor
+{
+    activeTemplate_ = descriptor;
+    for (NSView* view in [self.templateControlsGroup.arrangedSubviews copy]) {
+        [self.templateControlsGroup removeArrangedSubview:view];
+        [view removeFromSuperview];
+    }
+    [self.templateControlSliders removeAllObjects];
+    [self.templateControlValues removeAllObjects];
+
+    if (descriptor == nullptr) {
+        self.templateControlsGroup.hidden = YES;
+        return;
+    }
+
+    self.activeTemplateLabel = makeLabel([NSString stringWithFormat:
+        @"Reference template: %s", descriptor->displayName.data()]);
+    self.activeTemplateLabel.font = [NSFont systemFontOfSize:13.0 weight:NSFontWeightSemibold];
+    self.activeTemplateLabel.maximumNumberOfLines = 2;
+    [self.templateControlsGroup addArrangedSubview:self.activeTemplateLabel];
+    for (std::size_t index = 0; index < descriptor->controls.size(); ++index) {
+        const auto& control = descriptor->controls[index];
+        auto* row = makePreviewSliderRow(
+            [NSString stringWithUTF8String:control.displayName.data()],
+            control.minimumValue,
+            control.maximumValue,
+            control.defaultValue,
+            self);
+        auto* slider = static_cast<NSSlider*>(row.views[1]);
+        auto* value = static_cast<NSTextField*>(row.views[2]);
+        slider.target = self;
+        slider.action = @selector(templateControlChanged:);
+        slider.tag = static_cast<NSInteger>(index);
+        if (control.step >= 1.0) {
+            value.stringValue = [NSString stringWithFormat:@"%.0f", control.defaultValue];
+        } else {
+            value.stringValue = [NSString stringWithFormat:@"%.3g", control.defaultValue];
+        }
+        [self.templateControlSliders addObject:slider];
+        [self.templateControlValues addObject:value];
+        [self.templateControlsGroup addArrangedSubview:row];
+        [row.widthAnchor constraintEqualToAnchor:self.templateControlsGroup.widthAnchor].active = YES;
+    }
+    self.templateControlsGroup.hidden = NO;
+}
+
+- (void)templateControlChanged:(NSSlider*)sender
+{
+    if (activeTemplate_ == nullptr || sender.tag < 0 ||
+        static_cast<std::size_t>(sender.tag) >= activeTemplate_->controls.size()) {
+        return;
+    }
+    const auto& control = activeTemplate_->controls[static_cast<std::size_t>(sender.tag)];
+    const double stepped = control.step > 0.0
+        ? std::round(sender.doubleValue / control.step) * control.step
+        : sender.doubleValue;
+    sender.doubleValue = std::clamp(stepped, control.minimumValue, control.maximumValue);
+    if (const auto error = paperweight::applyTemplateControl(material_, control, sender.doubleValue)) {
+        self.statusLabel.stringValue = [NSString stringWithUTF8String:error->c_str()];
+        self.statusLabel.textColor = NSColor.systemRedColor;
+        return;
+    }
+    auto* value = self.templateControlValues[static_cast<NSUInteger>(sender.tag)];
+    value.stringValue = control.step >= 1.0
+        ? [NSString stringWithFormat:@"%.0f", sender.doubleValue]
+        : [NSString stringWithFormat:@"%.3g", sender.doubleValue];
+    self.normalStrengthSlider.doubleValue = material_.normalStrength;
+    [self rebuildLayerList];
+    [self refreshLayerInspector];
+    [self updateControlLabels];
+    [self regeneratePreview];
+    [self markDirty];
+}
+
 - (void)applyMaterialToControls
 {
     if (material_.layers.empty()) {
@@ -5328,6 +5628,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         [self start3DPreviewGenerationForRevision:revision];
         return;
     }
+    if (bakedPresentationSelected_) {
+        [self startBakedPreviewGenerationForRevision:revision];
+        return;
+    }
 
     const paperweight::GenerationRequest request{
         material_, 512, 512, selectedOutput_, std::nullopt, previewCoverage_};
@@ -5376,6 +5680,100 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
             strongSelf.exportMenuItem.enabled = NO;
             strongSelf.statusLabel.stringValue =
                 [NSString stringWithUTF8String:error.message.c_str()];
+            strongSelf.statusLabel.textColor = NSColor.systemRedColor;
+        });
+    });
+}
+
+- (void)startBakedPreviewGenerationForRevision:(std::uint64_t)revision
+{
+    const paperweight::GenerationRequest request{
+        material_,
+        512,
+        512,
+        paperweight::MaterialOutput::colour,
+        std::nullopt,
+        previewCoverage_,
+    };
+    const auto settings = [self stylisedLightingSettings];
+    auto cancellation = std::make_shared<std::atomic_bool>(false);
+    previewCancellation_ = cancellation;
+    __weak AppDelegate* weakSelf = self;
+    dispatch_async(previewQueue_, ^{
+        auto graphRequest = request;
+        std::size_t graphNodeCount = 0;
+        std::optional<std::string> failure;
+        auto compilation = paperweight::compileMaterialGraph(request.material);
+        if (auto* graph = std::get_if<paperweight::MaterialGraph>(&compilation)) {
+            graphNodeCount = graph->nodes.size();
+            graphRequest.graph = std::move(*graph);
+        } else {
+            failure = std::get<paperweight::GraphError>(compilation).message;
+        }
+
+        std::array<std::optional<paperweight::Image>, 3> sources;
+        constexpr std::array sourceOutputs{
+            paperweight::MaterialOutput::colour,
+            paperweight::MaterialOutput::height,
+            paperweight::MaterialOutput::normal,
+        };
+        if (!failure) {
+            for (std::size_t index = 0; index < sourceOutputs.size(); ++index) {
+                if (cancellation->load(std::memory_order_relaxed)) {
+                    break;
+                }
+                graphRequest.output = sourceOutputs[index];
+                auto generated = paperweight::generate(
+                    graphRequest,
+                    [cancellation]() {
+                        return cancellation->load(std::memory_order_relaxed);
+                    });
+                if (auto* image = std::get_if<paperweight::Image>(&generated)) {
+                    sources[index] = std::move(*image);
+                } else {
+                    failure = std::get<paperweight::GenerationError>(generated).message;
+                    break;
+                }
+            }
+        }
+
+        std::shared_ptr<paperweight::StylisedLightingResult> baked;
+        if (!failure && std::all_of(sources.begin(), sources.end(), [](const auto& source) {
+                return source.has_value();
+            })) {
+            baked = std::make_shared<paperweight::StylisedLightingResult>(
+                paperweight::bakeStylisedLighting(
+                    *sources[0], &*sources[1], &*sources[2], settings));
+            if (const auto* error = std::get_if<paperweight::StylisedLightingError>(baked.get())) {
+                failure = error->message;
+            }
+        }
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            AppDelegate* strongSelf = weakSelf;
+            if (strongSelf == nil || revision != strongSelf->previewRevision_ ||
+                cancellation->load(std::memory_order_relaxed)) {
+                return;
+            }
+            strongSelf->previewCancellation_.reset();
+            [strongSelf setPreviewLoading:NO];
+            const auto* image = baked
+                ? std::get_if<paperweight::Image>(baked.get())
+                : nullptr;
+            if (image != nullptr) {
+                [strongSelf.previewView setGeneratedImage:*image];
+                strongSelf->generatedImage_ = *image;
+                strongSelf.exportMenuItem.enabled = YES;
+                strongSelf.statusLabel.stringValue = [NSString stringWithFormat:
+                    @"512 × 512 Baked Presentation — separate from unlit colour — %zu-node graph — seamless",
+                    graphNodeCount];
+                strongSelf.statusLabel.textColor = NSColor.secondaryLabelColor;
+                return;
+            }
+            strongSelf->generatedImage_.reset();
+            strongSelf.exportMenuItem.enabled = NO;
+            strongSelf.statusLabel.stringValue = [NSString stringWithUTF8String:
+                failure.value_or("baked presentation did not produce an image").c_str()];
             strongSelf.statusLabel.textColor = NSColor.systemRedColor;
         });
     });
@@ -5494,6 +5892,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         [self.material3DPreviewView clearMaterialImages];
         self.statusLabel.stringValue = @"Rendering four 256 × 256 material maps for 3D…";
         self.previewLoadingLabel.stringValue = @"Rendering 3D material maps…";
+    } else if (bakedPresentationSelected_) {
+        self.statusLabel.stringValue = @"Rendering colour, height and normal maps for a baked presentation…";
+        self.previewLoadingLabel.stringValue = @"Baking stylised lighting…";
     } else {
         self.statusLabel.stringValue = @"Rendering 512 × 512 preview…";
         self.previewLoadingLabel.stringValue = @"Rendering preview…";
@@ -5648,6 +6049,103 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     [self openMaterialAtURL:panel.URL asShowcase:NO];
 }
 
+- (void)openReferenceTemplate:(NSMenuItem*)sender
+{
+    NSString* identifier = [sender.representedObject isKindOfClass:NSString.class]
+        ? static_cast<NSString*>(sender.representedObject)
+        : nil;
+    const auto* descriptor = identifier == nil
+        ? nullptr
+        : paperweight::findReferenceMaterialTemplate(identifier.UTF8String);
+    if (descriptor == nullptr) {
+        [self showErrorWithTitle:@"The template could not be opened"
+                         message:@"Its catalogue entry is missing."];
+        return;
+    }
+    NSURL* url = [NSBundle.mainBundle
+        URLForResource:[NSString stringWithUTF8String:descriptor->recipeResourceName.data()]
+        withExtension:@"pmat"
+        subdirectory:@"Showcases"];
+    if (url == nil) {
+        [self showErrorWithTitle:@"The template could not be opened"
+                         message:@"Its bundled recipe is missing."];
+        return;
+    }
+    NSError* readError = nil;
+    auto* contents = [NSString stringWithContentsOfURL:url
+                                              encoding:NSUTF8StringEncoding
+                                                 error:&readError];
+    if (contents == nil || contents.UTF8String == nullptr) {
+        [self showErrorWithTitle:@"The template could not be opened"
+                         message:readError == nil ? @"Its recipe is not valid UTF-8."
+                                                  : readError.localizedDescription];
+        return;
+    }
+    const auto parsed = paperweight::parsePmat(contents.UTF8String);
+    const auto* authored = std::get_if<paperweight::Material>(&parsed);
+    if (authored == nullptr) {
+        const auto& diagnostic = std::get<paperweight::ParseDiagnostic>(parsed);
+        [self showErrorWithTitle:@"The template could not be opened"
+                         message:[NSString stringWithFormat:@"Line %zu: %s",
+                                                           diagnostic.line,
+                                                           diagnostic.message.c_str()]];
+        return;
+    }
+    if (![self confirmDiscardIfNeeded]) {
+        return;
+    }
+
+    const std::uint64_t chosenSeed = material_.seed;
+    material_ = paperweight::instantiateMaterial(
+        paperweight::makeMaterialRecipe(*authored),
+        chosenSeed);
+    selectedLayer_ = 0;
+    self.currentFileURL = nil;
+    dirty_ = true;
+    [self setActiveReferenceTemplate:descriptor];
+    [self clearReferenceImage:nil];
+    [self applyMaterialToControls];
+    [self updateWindowTitle];
+    self.statusLabel.stringValue = [NSString stringWithFormat:
+        @"Template instantiated with seed %llu. Reference file: %s",
+        chosenSeed,
+        descriptor->referenceFileName.data()];
+    self.statusLabel.textColor = NSColor.secondaryLabelColor;
+}
+
+- (void)chooseReferenceImage:(id)sender
+{
+    static_cast<void>(sender);
+    auto* panel = [NSOpenPanel openPanel];
+    panel.title = @"Choose Reference Material Image";
+    panel.allowedFileTypes = @[@"png", @"bmp"];
+    panel.allowsMultipleSelection = NO;
+    panel.canChooseDirectories = NO;
+    if ([panel runModal] != NSModalResponseOK) {
+        return;
+    }
+    auto* image = [[NSImage alloc] initWithContentsOfURL:panel.URL];
+    if (image == nil) {
+        [self showErrorWithTitle:@"The reference could not be displayed"
+                         message:@"Choose a readable PNG or BMP image."];
+        return;
+    }
+    self.referenceImageView.materialImage = image;
+    [self.referenceImageView setNeedsDisplay:YES];
+    self.referenceTitleLabel.stringValue = [NSString stringWithFormat:
+        @"Reference — %@", panel.URL.lastPathComponent];
+    self.referencePanel.hidden = NO;
+}
+
+- (void)clearReferenceImage:(id)sender
+{
+    static_cast<void>(sender);
+    self.referenceImageView.materialImage = nil;
+    [self.referenceImageView setNeedsDisplay:YES];
+    self.referenceTitleLabel.stringValue = @"Reference";
+    self.referencePanel.hidden = YES;
+}
+
 - (void)openShowcase:(NSMenuItem*)sender
 {
     NSString* name = [sender.representedObject isKindOfClass:NSString.class]
@@ -5699,6 +6197,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 
     material_ = std::get<paperweight::Material>(parsed);
     selectedLayer_ = 0;
+    [self setActiveReferenceTemplate:nullptr];
     self.currentFileURL = asShowcase ? nil : url;
     dirty_ = asShowcase;
     [self applyMaterialToControls];
@@ -5725,7 +6224,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     panel.title = @"Export Generated Texture";
     panel.nameFieldStringValue = [NSString
         stringWithFormat:@"Paperweight-%@-512x512.png",
-                         outputName(selectedOutput_).lowercaseString];
+                         self.currentOutputName.lowercaseString];
     panel.allowedFileTypes = @[ @"png" ];
     panel.allowsOtherFileTypes = NO;
     panel.canCreateDirectories = YES;
@@ -5742,7 +6241,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         return;
     }
     self.statusLabel.stringValue =
-        [NSString stringWithFormat:@"%@ PNG exported", outputName(selectedOutput_)];
+        [NSString stringWithFormat:@"%@ PNG exported", self.currentOutputName];
     self.statusLabel.textColor = NSColor.secondaryLabelColor;
 }
 

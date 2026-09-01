@@ -265,6 +265,18 @@ is bundled with the application and compiled at runtime, avoiding a separate
 shader-toolchain requirement for ordinary CMake builds. A missing compatible
 Metal device disables only the 3D mode.
 
+The v0.0.18 reference catalogue keeps seed ownership outside its recipes.
+`MaterialRecipe` contains every authored field except `seed`; instantiation
+copies it into a normal `Material` only after a caller supplies that value.
+High-level template controls are typed mappings onto ordinary material or layer
+properties, so the catalogue adds no parallel evaluator and no hidden state.
+
+The portable stylised bake consumes completed colour plus normal or height
+images and returns an independent image. It remains outside `MaterialOutput`,
+the graph, and `.pmat` serialisation. Reference images and bake settings are
+editor presentation state. This preserves a sharp boundary between unlit source
+maps suitable for runtime shaders and deliberately illustrated exports.
+
 Live previews use a serial background queue and a snapshot of the current
 material. Continuous UI changes are briefly coalesced and cooperatively cancel
 the active core generation between scanlines. For sufficiently large images,
@@ -288,7 +300,7 @@ hit rate and bounded memory without altering the cancellation contract.
 `.pmat` is a human-readable, versioned text format. Parsing and serialisation live in the portable core. Round trips should be stable and errors should identify useful source locations.
 
 The format version is deliberately independent of the application version.
-Paperweight v0.0.17 reads `.pmat` format versions 1 through 14 and writes version 14.
+Paperweight v0.0.18 reads `.pmat` format versions 1 through 14 and writes version 14.
 Unknown keys and unsupported format versions fail explicitly instead of being
 silently ignored. Version 1 maps to the original implicit FBM source; adding an
 explicit base noise layer produces byte-identical output. Version-2 layers map

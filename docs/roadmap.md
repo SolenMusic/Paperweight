@@ -180,13 +180,14 @@ See [roadmap issue #133](https://github.com/SolenMusic/Paperweight/issues/133).
 
 ## v0.0.18 - Reference Materials and Stylised Baking
 
-Converge all branches into seedless, caller-instantiated templates for the ten
-supplied Blastard reference materials. Add side-by-side comparison and an
+Implemented: converge all branches into seedless, caller-instantiated templates
+for the ten supplied Blastard reference materials, each backed by the ordinary
+layer evaluator and a small set of typed high-level controls. Add side-by-side comparison and an
 optional portable colour-output lighting bake with explicit direction, diffuse
-bands, highlight threshold, ambient contribution, and rim treatment. Unlit maps
+bands, highlight threshold, and ambient contribution. Unlit maps
 remain the default for dynamic game lighting. Every template receives golden
-colour, height, normal, and roughness outputs plus seam, resolution, worker, and
-cross-architecture acceptance. See
+colour, height, normal, roughness, and baked outputs plus true 1x1/3x3 repeat,
+worker, and cross-architecture acceptance. See
 [roadmap issue #134](https://github.com/SolenMusic/Paperweight/issues/134) and
 the [cross-version tracker #135](https://github.com/SolenMusic/Paperweight/issues/135).
 
