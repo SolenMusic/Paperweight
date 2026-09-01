@@ -116,12 +116,15 @@ foundation for all later layouts and instances. See
 
 ## v0.0.13 - Masonry and Courses
 
-Add variable-height courses, variable-width blocks, controlled staggering,
+Implemented: add variable-height courses, variable-width blocks, controlled staggering,
 rectangular slab subdivision, crooked seamless boundaries, and overlapping
 shingle/slate courses. Layouts expose reusable block, mortar, course, and
-overlap fields and retain physical dimensions. This targets castle flagstone,
-realistic and cel masonry, and roof slate at approximately 80-95 percent of the
-supplied references. See [roadmap issue #129](https://github.com/SolenMusic/Paperweight/issues/129).
+overlap fields and retain physical dimensions. Stable child and parent-course
+keys allow block-level or whole-course variation without moving geometry. The
+native editor includes complete relative/metre controls and four editable
+castle showcases. This establishes the targeted 80-95 percent structural
+foundation; v0.0.14 adds the bevels and facets needed for their final surface
+character. See [roadmap issue #129](https://github.com/SolenMusic/Paperweight/issues/129).
 
 ## v0.0.14 - Bevels, Facets and Wear
 

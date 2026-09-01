@@ -26,6 +26,18 @@ struct StructuralSample {
         const StructuralSample&) = default;
 };
 
+struct CourseLayoutSample {
+    double blocks{};
+    double mortar{};
+    double course{};
+    double overlap{};
+    RegionSample region;
+
+    friend constexpr bool operator==(
+        const CourseLayoutSample&,
+        const CourseLayoutSample&) = default;
+};
+
 [[nodiscard]] double wrapUnit(double value);
 
 [[nodiscard]] RepeatedCoordinate repeatedCoordinate(
@@ -62,6 +74,20 @@ struct StructuralSample {
     const TileGridOperation& operation,
     double u,
     double v);
+
+[[nodiscard]] CourseLayoutSample evaluateCourseLayoutFields(
+    const CourseLayoutOperation& operation,
+    const PhysicalSize& materialSize,
+    double u,
+    double v,
+    std::uint64_t materialSeed);
+
+[[nodiscard]] StructuralSample evaluateCourseLayoutSample(
+    const CourseLayoutOperation& operation,
+    const PhysicalSize& materialSize,
+    double u,
+    double v,
+    std::uint64_t materialSeed);
 
 [[nodiscard]] double evaluateWorleyCells(
     const WorleyCellsOperation& operation,

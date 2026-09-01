@@ -263,6 +263,15 @@ EvaluatedSample regionFieldSample(
         case RegionFieldKind::boundaryDistance:
             value = input.region.boundaryDistance;
             break;
+        case RegionFieldKind::courseRandom:
+            if (input.region.parentValid) {
+                value = regionRandom(
+                    context.material.seed,
+                    input.region.parentKey,
+                    operation.seedOffset,
+                    operation.channel);
+            }
+            break;
         }
     }
     value = std::clamp(value, 0.0, 1.0);
@@ -421,6 +430,16 @@ EvaluatedSample evaluateOperation(
                 return sampleFromStructural(
                     context.material,
                     evaluateTileGridSample(tile, context.u, context.v));
+            },
+            [&context](const CourseLayoutOperation& course) {
+                return sampleFromStructural(
+                    context.material,
+                    evaluateCourseLayoutSample(
+                        course,
+                        context.material.physicalSize,
+                        context.u,
+                        context.v,
+                        context.material.seed));
             },
             [&context](const WorleyCellsOperation& worley) {
                 return sampleFromStructural(

@@ -280,6 +280,85 @@ std::optional<std::string> validateMaterial(const Material& material)
                     if (!validSoftness(operation.softness)) {
                         return prefix + "tile softness must be finite and between 0 and 0.25";
                     }
+                } else if constexpr (std::is_same_v<Operation, CourseLayoutOperation>) {
+                    switch (operation.profile) {
+                    case CourseLayoutProfile::masonry:
+                    case CourseLayoutProfile::slabs:
+                    case CourseLayoutProfile::slates:
+                        break;
+                    default:
+                        return prefix + "course layout profile is not supported";
+                    }
+                    switch (operation.field) {
+                    case CourseLayoutField::blocks:
+                    case CourseLayoutField::mortar:
+                    case CourseLayoutField::course:
+                    case CourseLayoutField::overlap:
+                        break;
+                    default:
+                        return prefix + "course layout field is not supported";
+                    }
+                    if (!validPatternCount(operation.blocks) ||
+                        !validPatternCount(operation.courses)) {
+                        return prefix +
+                            "course layout blocks and courses must be between 1 and 64";
+                    }
+                    if (operation.physicalDimensions) {
+                        const auto& physical = *operation.physicalDimensions;
+                        if (!validPhysicalMetres(physical.blockWidthMetres) ||
+                            !validPhysicalMetres(physical.courseHeightMetres) ||
+                            !std::isfinite(physical.gapMetres) ||
+                            physical.gapMetres < 0.0 ||
+                            physical.gapMetres >= std::min(
+                                physical.blockWidthMetres,
+                                physical.courseHeightMetres) ||
+                            !std::isfinite(physical.overlapMetres) ||
+                            physical.overlapMetres < 0.0 ||
+                            physical.overlapMetres >= physical.courseHeightMetres) {
+                            return prefix +
+                                "physical course block width and height must be positive metre values; gap and overlap must fit within them";
+                        }
+                        if (!exactRepeatCount(
+                                material.physicalSize.widthMetres,
+                                physical.blockWidthMetres) ||
+                            !exactRepeatCount(
+                                material.physicalSize.heightMetres,
+                                physical.courseHeightMetres)) {
+                            return prefix +
+                                "physical course block width and height must divide the material repeat into 1 to 64 whole units";
+                        }
+                    }
+                    if (!validRange(
+                            operation.blockVariation,
+                            LayerLimits::minimumLayoutVariation,
+                            LayerLimits::maximumLayoutVariation) ||
+                        !validRange(
+                            operation.courseVariation,
+                            LayerLimits::minimumLayoutVariation,
+                            LayerLimits::maximumLayoutVariation)) {
+                        return prefix +
+                            "course layout variation must be finite and between 0 and 1";
+                    }
+                    if (!validRange(
+                            operation.stagger,
+                            LayerLimits::minimumStagger,
+                            LayerLimits::maximumStagger) ||
+                        !validRange(
+                            operation.crookedness,
+                            LayerLimits::minimumLayoutVariation,
+                            LayerLimits::maximumLayoutVariation) ||
+                        !validRange(
+                            operation.gap,
+                            LayerLimits::minimumGap,
+                            LayerLimits::maximumGap) ||
+                        !validSoftness(operation.softness) ||
+                        !validRange(
+                            operation.overlap,
+                            LayerLimits::minimumLayoutOverlap,
+                            LayerLimits::maximumLayoutOverlap)) {
+                        return prefix +
+                            "course layout stagger, crookedness, gap, softness, or overlap is outside its supported range";
+                    }
                 } else if constexpr (std::is_same_v<Operation, WorleyCellsOperation>) {
                     if (!validPatternCount(operation.columns) ||
                         !validPatternCount(operation.rows)) {
@@ -467,6 +546,7 @@ std::optional<std::string> validateMaterial(const Material& material)
                     case RegionFieldKind::localV:
                     case RegionFieldKind::centreDistance:
                     case RegionFieldKind::boundaryDistance:
+                    case RegionFieldKind::courseRandom:
                         break;
                     default:
                         return prefix + "region field kind is not supported";
@@ -524,6 +604,13 @@ std::optional<std::string> validateMaterialLayer(
         probe.physicalSize = {
             brick->physicalDimensions->widthMetres,
             brick->physicalDimensions->heightMetres,
+        };
+    } else if (const auto* course =
+                   std::get_if<CourseLayoutOperation>(&layer.operation);
+               course != nullptr && course->physicalDimensions) {
+        probe.physicalSize = {
+            course->physicalDimensions->blockWidthMetres,
+            course->physicalDimensions->courseHeightMetres,
         };
     }
     probe.layers.push_back(layer);

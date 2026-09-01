@@ -92,6 +92,7 @@ enum class RegionFieldKind : std::uint8_t {
     localV = 2,
     centreDistance = 3,
     boundaryDistance = 4,
+    courseRandom = 5,
 };
 
 struct RegionFieldOperation {
@@ -191,6 +192,50 @@ struct TileGridOperation {
     friend constexpr bool operator==(
         const TileGridOperation&,
         const TileGridOperation&) = default;
+};
+
+enum class CourseLayoutProfile : std::uint8_t {
+    masonry = 0,
+    slabs = 1,
+    slates = 2,
+};
+
+enum class CourseLayoutField : std::uint8_t {
+    blocks = 0,
+    mortar = 1,
+    course = 2,
+    overlap = 3,
+};
+
+struct CourseLayoutOperation {
+    CourseLayoutProfile profile{CourseLayoutProfile::masonry};
+    CourseLayoutField field{CourseLayoutField::blocks};
+    std::uint32_t blocks{6};
+    std::uint32_t courses{8};
+    double blockVariation{0.35};
+    double courseVariation{0.2};
+    double stagger{0.5};
+    double crookedness{0.08};
+    double gap{0.08};
+    double softness{0.02};
+    double overlap{0.25};
+    std::uint64_t seedOffset{};
+
+    struct PhysicalDimensions {
+        double blockWidthMetres{0.32};
+        double courseHeightMetres{0.14};
+        double gapMetres{0.012};
+        double overlapMetres{0.04};
+
+        friend constexpr bool operator==(
+            const PhysicalDimensions&,
+            const PhysicalDimensions&) = default;
+    };
+    std::optional<PhysicalDimensions> physicalDimensions;
+
+    friend constexpr bool operator==(
+        const CourseLayoutOperation&,
+        const CourseLayoutOperation&) = default;
 };
 
 struct WorleyCellsOperation {
@@ -331,7 +376,8 @@ using LayerOperation = std::variant<
     ColourRampOperation,
     PaletteOperation,
     InkContourOperation,
-    RegionFieldOperation>;
+    RegionFieldOperation,
+    CourseLayoutOperation>;
 
 struct MaterialLayer {
     bool enabled{true};
@@ -392,6 +438,10 @@ struct LayerLimits {
     static constexpr double minimumContourSoftness = 0.0;
     static constexpr double maximumContourSoftness = 0.5;
     static constexpr std::uint32_t maximumRegionChannel = 255;
+    static constexpr double minimumLayoutVariation = 0.0;
+    static constexpr double maximumLayoutVariation = 1.0;
+    static constexpr double minimumLayoutOverlap = 0.0;
+    static constexpr double maximumLayoutOverlap = 0.95;
 };
 
 [[nodiscard]] constexpr MaterialLayer makeNoiseLayer(std::uint64_t seedOffset = 0)
@@ -599,6 +649,17 @@ struct LayerLimits {
         {}};
 }
 
+[[nodiscard]] constexpr MaterialLayer makeCourseLayoutLayer()
+{
+    return MaterialLayer{
+        true,
+        1.0,
+        CompositeMode::blend,
+        CourseLayoutOperation{},
+        {},
+        {}};
+}
+
 [[nodiscard]] constexpr std::uint32_t rotationDegrees(QuarterTurn rotation)
 {
     return static_cast<std::uint32_t>(rotation) * 90U;
@@ -656,6 +717,8 @@ struct LayerLimits {
         return "ink_contour";
     case 17:
         return "region_field";
+    case 18:
+        return "course_layout";
     default:
         return "unknown";
     }
@@ -674,6 +737,38 @@ struct LayerLimits {
         return "centre_distance";
     case RegionFieldKind::boundaryDistance:
         return "boundary_distance";
+    case RegionFieldKind::courseRandom:
+        return "course_random";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view courseLayoutProfileName(
+    CourseLayoutProfile profile)
+{
+    switch (profile) {
+    case CourseLayoutProfile::masonry:
+        return "masonry";
+    case CourseLayoutProfile::slabs:
+        return "slabs";
+    case CourseLayoutProfile::slates:
+        return "slates";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view courseLayoutFieldName(
+    CourseLayoutField field)
+{
+    switch (field) {
+    case CourseLayoutField::blocks:
+        return "blocks";
+    case CourseLayoutField::mortar:
+        return "mortar";
+    case CourseLayoutField::course:
+        return "course";
+    case CourseLayoutField::overlap:
+        return "overlap";
     }
     return "unknown";
 }

@@ -7,7 +7,7 @@ generator algorithm, output, dimensions, physical coverage, and pixel format.
 ## Running the benchmark in the app
 
 Choose **Tools > Performance Benchmark** (Command-Option-B) in the native app.
-The separate window runs all fourteen bundled material recipes at 64 x 64, 128 x 128,
+The separate window runs all eighteen bundled material recipes at 64 x 64, 128 x 128,
 256 x 256, 512 x 512, and 1024 x 1024. A run measures one selected output map,
 defaulting to colour, so a useful sweep does not become four times longer.
 
@@ -42,7 +42,7 @@ cmake --build build-profile
   --resolution 128 --iterations 3 --output colour --workers 1
 ```
 
-The executable writes CSV to standard output. It covers the same fourteen bundled
+The executable writes CSV to standard output. It covers the same eighteen bundled
 materials and can select one material or
 output with `--material` and `--output`; `--workers 1` selects the reference
 serial path while `--workers auto` measures normal automatic scheduling. Every measured generation is hashed;
@@ -122,9 +122,10 @@ the output and needs a measured invalidation design rather than a token map.
 ## Exact-output gate
 
 The core tests contain golden FNV-1a checksums for colour, height, normal, and
-roughness outputs from every detailed v0.0.8 showcase. They use compact 32 x 32
-fixtures so the complete corpus remains practical in CI. Existing historical
-format fixtures retain their earlier golden checksums as well.
+roughness outputs from the detailed surface, stylised, region, and course-layout
+showcases through v0.0.13. They use compact 32 x 32 fixtures so the complete
+corpus remains practical in CI. Existing historical format fixtures retain
+their earlier golden checksums as well.
 
 Golden changes are not routine test maintenance. A deliberate output change
 requires an explicit generator-algorithm compatibility decision and documented

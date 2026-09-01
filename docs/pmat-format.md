@@ -1,4 +1,4 @@
-# `.pmat` format version 9
+# `.pmat` format version 10
 
 Paperweight material files are UTF-8 text. They are intended to be readable,
 diffable, and small enough to embed alongside game assets.
@@ -7,7 +7,7 @@ diffable, and small enough to embed alongside game assets.
 
 ```text
 # Paperweight procedural material
-pmat.version = 9
+pmat.version = 10
 material.type = fbm
 material.seed = 18431
 material.width = 1m
@@ -68,7 +68,7 @@ no material; it never returns a partially accepted definition.
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
-| `pmat.version` | File-format version | `9` |
+| `pmat.version` | File-format version | `10` |
 | `material.type` | Generator model | `fbm` |
 | `material.seed` | Deterministic seed | Unsigned 64-bit integer |
 | `material.width` | Width of one seamless material repeat | Metre value from `0.000001m` to `1000000m` |
@@ -128,6 +128,21 @@ The operation selects exactly one parameter group:
 | `tile_grid` | `layer.N.tile.columns`, `rows` | Integers from 1 to 64 |
 | `tile_grid` | `layer.N.tile.grout` | Decimal from 0 to 0.95 |
 | `tile_grid` | `layer.N.tile.softness` | Decimal from 0 to 0.25 |
+| `course_layout` | `layer.N.course.profile` | `masonry`, `slabs`, or `slates` |
+| `course_layout` | `layer.N.course.field` | `blocks`, `mortar`, `course`, or `overlap` |
+| `course_layout` | `layer.N.course.sizing` | `relative` or `physical` |
+| `course_layout` | `layer.N.course.blocks`, `courses` | Base counts from 1 to 64 |
+| `course_layout` | `layer.N.course.block_variation` | Width variation from 0 to 1 |
+| `course_layout` | `layer.N.course.height_variation` | Course-height variation from 0 to 1 |
+| `course_layout` | `layer.N.course.stagger` | Alternate-course offset from 0 to 1 block |
+| `course_layout` | `layer.N.course.crookedness` | Seamless boundary displacement from 0 to 1 |
+| `course_layout` | `layer.N.course.gap` | Relative gap amount from 0 to 0.95 |
+| `course_layout` | `layer.N.course.softness` | Edge transition from 0 to 0.25 |
+| `course_layout` | `layer.N.course.overlap` | Relative slate overlap from 0 to 0.95 |
+| `course_layout` | `layer.N.course.seed_offset` | Unsigned 64-bit integer |
+| `course_layout` (physical) | `layer.N.course.block_width`, `course_height` | Positive metre dimensions resolving to 1 to 64 blocks/courses |
+| `course_layout` (physical) | `layer.N.course.gap_width` | Non-negative metre width smaller than a block and course |
+| `course_layout` (physical) | `layer.N.course.overlap_depth` | Non-negative metre depth smaller than one course |
 | `worley_cells` | `layer.N.worley.columns`, `rows` | Integers from 1 to 64 |
 | `worley_cells` | `layer.N.worley.jitter` | Decimal from 0 to 1 |
 | `worley_cells` | `layer.N.worley.edge_width` | Decimal from 0.01 to 2 |
@@ -170,7 +185,7 @@ The operation selects exactly one parameter group:
 | `ink_contour` | `layer.N.ink.softness` | Transition softness from 0 to 0.5 |
 | `ink_contour` | `layer.N.ink.strength` | Decimal from 0 to 1 |
 | `ink_contour` | `layer.N.ink.inverted` | `true` inks flat regions; `false` inks detected edges |
-| `region_field` | `layer.N.region.field` | `random`, `local_u`, `local_v`, `centre_distance`, or `boundary_distance` |
+| `region_field` | `layer.N.region.field` | `random`, `local_u`, `local_v`, `centre_distance`, `boundary_distance`, or `course_random` |
 | `region_field` | `layer.N.region.seed_offset` | Unsigned 64-bit integer |
 | `region_field` | `layer.N.region.channel` | Independent random channel from 0 to 255 |
 | `region_field` | `layer.N.region.output_low` | Decimal from 0 to 1 |
@@ -188,6 +203,22 @@ and approach zero at cell boundaries; `edge_width` controls that transition.
 Random cells assign one deterministic value per cell. Shape sizes are fractions
 of a repeated cell, and softness controls a smooth coverage transition around
 an edge.
+
+Course layouts partition the complete repeat into courses and then partition
+each course into blocks. `masonry` varies widths within regular course counts,
+`slabs` may also vary the number of blocks per course, and `slates` exposes an
+additional overlap field. All four fields come from the same layout and seed:
+`blocks` is the stable face mask, `mortar` is its complement, `course` keeps the
+horizontal course interior without vertical joints, and `overlap` marks the
+lower overlapping strip of slate faces. Boundary displacement is periodic and
+bounded so crookedness cannot tear or reorder neighbouring courses.
+
+Each block is an ordinary stable region. Its parent course has a separate exact
+identity; `region.field = course_random` hashes that parent so every block in a
+row receives the same deterministic value. Physical sizing derives whole block
+and course counts from material repeat dimensions while gap and overlap remain
+true metre distances. The stored base counts remain explicit for predictable
+round trips and for switching back to relative sizing.
 
 Advanced surface patterns are deterministic generators in the same scalar and
 colour pipeline as noise and structural shapes. `scale` controls repetitions or
@@ -256,7 +287,7 @@ The native editor presents those derived column and row counts explicitly. When
 an author changes the brick size or count, it recalculates `material.width` and
 `material.height` automatically so the saved definition remains seamless.
 
-Every layer in versions 3 through 9 also has this coordinate-transform group:
+Every layer in versions 3 through 10 also has this coordinate-transform group:
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
@@ -275,7 +306,7 @@ Offsets are continuous and wrap naturally. When enabled, warp uses two
 independent periodic FBM channels to displace the transformed coordinates.
 Disabling warp, or setting its strength to zero, is exactly the identity path.
 
-Every layer in versions 3 through 9 also declares its optional mask:
+Every layer in versions 3 through 10 also declares its optional mask:
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
@@ -289,7 +320,7 @@ The mask samples an independent periodic FBM field in the layer's transformed
 coordinates. Its remapped value multiplies the layer opacity, allowing smooth,
 threshold-like, or inverted spatial control without changing the operation.
 Disabled masks evaluate to exactly one. Transform, warp, and mask fields remain
-required in versions 3 through 9 even when their optional features are disabled; this
+required in versions 3 through 10 even when their optional features are disabled; this
 keeps canonical files explicit and round trips unambiguous.
 
 Noise seed offset zero reproduces the original material seed exactly. Other
@@ -305,7 +336,7 @@ formula is applied to scalar, red, green, blue, and alpha channels.
 
 ## Graph compilation
 
-Paperweight v0.0.12 retains the layer syntax, now at version 9, as the compact,
+Paperweight v0.0.13 retains the layer syntax, now at version 10, as the compact,
 human-editable authoring projection. Before generation, the portable core
 compiles it into a directed acyclic material graph:
 
@@ -327,6 +358,8 @@ graph authoring workflow that can round-trip it honestly. Format version 7 adds
 advanced surface recipes; it does not serialise the internal graph representation.
 Format version 8 adds stylised processors without serialising preview lighting.
 Format version 9 adds region fields without serialising the internal 64-bit key.
+Format version 10 adds course layouts and parent-course random fields without
+serialising either exact region key.
 
 ## Material outputs
 
@@ -348,7 +381,7 @@ generation wrap mathematically across both tile axes.
 ## Compatibility policy
 
 The `.pmat` format version and Paperweight application version are separate.
-Paperweight v0.0.12 reads versions 1 through 9 and writes version 9. A reader
+Paperweight v0.0.13 reads versions 1 through 10 and writes version 10. A reader
 rejects unsupported versions and unknown fields so that it cannot quietly
 reinterpret a future material.
 
@@ -366,7 +399,9 @@ surface patterns and filters without changing older evaluations. Version 8 adds
 posterise, colour ramp, palette, ink contour, edge-aware soften, and explicit
 filter targets. Versions 1 through 7 retain byte-identical default evaluations.
 Version 9 adds region fields; versions 1 through 8 retain byte-identical default
-evaluations. Saving any older format performs the explicit migration to version 9.
+evaluations. Version 10 adds course layouts and `course_random`; versions 1
+through 9 retain byte-identical default evaluations. Saving any older format
+performs the explicit migration to version 10.
 
 The portable entry points are `paperweight::parsePmat` and
 `paperweight::serialisePmat` in `include/paperweight/pmat.hpp`.
