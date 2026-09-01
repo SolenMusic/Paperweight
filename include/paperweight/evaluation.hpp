@@ -5,6 +5,7 @@
 #include <paperweight/material.hpp>
 #include <paperweight/output.hpp>
 #include <paperweight/region.hpp>
+#include <paperweight/scatter.hpp>
 
 namespace paperweight {
 
@@ -41,6 +42,11 @@ struct EvaluatedCoordinates {
 
 [[nodiscard]] double evaluateLayerMask(
     const LayerMask& mask,
+    const EvaluationContext& context);
+
+[[nodiscard]] EvaluatedSample evaluateScatterOperation(
+    const ScatterOperation& operation,
+    const ScatterLayout& layout,
     const EvaluationContext& context);
 
 [[nodiscard]] EvaluatedSample evaluateOperation(

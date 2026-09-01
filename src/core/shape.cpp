@@ -137,47 +137,62 @@ double polygonDistance(
     return inside ? -nearest : nearest;
 }
 
-double primitiveDistance(const ShapePrimitiveOperation& operation, Point point)
+double primitiveDistance(
+    const ShapePrimitiveOperation& operation,
+    Point point,
+    double widthScale,
+    double heightScale,
+    double rotationOffsetDegrees)
 {
-    point = rotateIntoShape(point, operation.rotationDegrees);
+    point = rotateIntoShape(
+        point,
+        operation.rotationDegrees + rotationOffsetDegrees);
+    const double width = operation.width * widthScale;
+    const double height = operation.height * heightScale;
     switch (operation.kind) {
     case ShapePrimitiveKind::roundedRectangle:
         return roundedRectangleDistance(
             point,
-            operation.width,
-            operation.height,
-            operation.cornerRadius);
+            width,
+            height,
+            operation.cornerRadius * std::min(widthScale, heightScale));
     case ShapePrimitiveKind::ellipse:
-        return ellipseDistance(point, operation.width, operation.height);
+        return ellipseDistance(point, width, height);
     case ShapePrimitiveKind::capsule:
-        return capsuleDistance(point, operation.width, operation.height);
+        return capsuleDistance(point, width, height);
     case ShapePrimitiveKind::diamond:
-        return diamondDistance(point, operation.width, operation.height);
+        return diamondDistance(point, width, height);
     case ShapePrimitiveKind::convexPolygon:
         return polygonDistance(
             point,
-            operation.width,
-            operation.height,
+            width,
+            height,
             operation.vertices);
     }
     return std::numeric_limits<double>::infinity();
 }
 
-double fieldCoverage(const ShapePrimitiveOperation& operation, double distance)
+double fieldCoverage(
+    const ShapePrimitiveOperation& operation,
+    double distance,
+    double distanceScale)
 {
+    const double softness = operation.softness * distanceScale;
+    const double inset = operation.inset * distanceScale;
+    const double borderWidth = operation.borderWidth * distanceScale;
     switch (operation.field) {
     case ShapeFieldKind::fill:
-        return smoothCoverage(-distance, operation.softness);
+        return smoothCoverage(-distance, softness);
     case ShapeFieldKind::inset:
-        return smoothCoverage(-distance - operation.inset, operation.softness);
+        return smoothCoverage(-distance - inset, softness);
     case ShapeFieldKind::outline:
         return smoothCoverage(
-            operation.borderWidth * 0.5 - std::abs(distance),
-            operation.softness);
+            borderWidth * 0.5 - std::abs(distance),
+            softness);
     case ShapeFieldKind::border:
         return std::min(
-            smoothCoverage(-distance, operation.softness),
-            smoothCoverage(distance + operation.borderWidth, operation.softness));
+            smoothCoverage(-distance, softness),
+            smoothCoverage(distance + borderWidth, softness));
     }
     return 0.0;
 }
@@ -189,6 +204,30 @@ double lineCoverage(double coordinate, double width, double softness)
 }
 
 } // namespace
+
+double shapeSignedDistance(
+    const ShapePrimitiveOperation& operation,
+    double localX,
+    double localY,
+    double widthScale,
+    double heightScale,
+    double rotationOffsetDegrees)
+{
+    return primitiveDistance(
+        operation,
+        Point{localX, localY},
+        widthScale,
+        heightScale,
+        rotationOffsetDegrees);
+}
+
+double shapeFieldCoverage(
+    const ShapePrimitiveOperation& operation,
+    double signedDistance,
+    double distanceScale)
+{
+    return fieldCoverage(operation, signedDistance, distanceScale);
+}
 
 ShapeSample evaluateShapePrimitive(
     const ShapePrimitiveOperation& operation,
@@ -218,7 +257,10 @@ ShapeSample evaluateShapePrimitive(
                     operation.offsetX + rowShift),
                 scaledY - (static_cast<double>(row) + 0.5 + operation.offsetY),
             };
-            const double distance = primitiveDistance(operation, point);
+            const double distance = shapeSignedDistance(
+                operation,
+                point.x,
+                point.y);
             if (distance < nearest) {
                 nearest = distance;
                 nearestPoint = rotateIntoShape(point, operation.rotationDegrees);
@@ -241,7 +283,7 @@ ShapeSample evaluateShapePrimitive(
         LayerLimits::minimumShapeDimension,
         std::min(halfWidth, halfHeight));
     return {
-        fieldCoverage(operation, nearest),
+        shapeFieldCoverage(operation, nearest),
         nearest,
         RegionSample{
             makeRegionKey(regionDomain, nearestColumn, nearestRow),

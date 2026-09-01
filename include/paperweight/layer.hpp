@@ -422,6 +422,94 @@ struct LatticeOperation {
         const LatticeOperation&) = default;
 };
 
+enum class ScatterOverlapMode : std::uint8_t {
+    forbidden = 0,
+    controlled = 1,
+    unrestricted = 2,
+};
+
+enum class ScatterField : std::uint8_t {
+    material = 0,
+    fill = 1,
+    instanceRandom = 2,
+    localU = 3,
+    localV = 4,
+    boundaryDistance = 5,
+};
+
+struct ScatterMask {
+    bool enabled{};
+    bool inverted{};
+    std::uint32_t frequency{4};
+    double inputLow{0.35};
+    double inputHigh{0.65};
+    std::uint64_t seedOffset{};
+
+    friend constexpr bool operator==(const ScatterMask&, const ScatterMask&) = default;
+};
+
+struct ScatterPopulation {
+    double weight{1.0};
+    double minimumScale{0.7};
+    double maximumScale{1.3};
+    double minimumAspect{0.75};
+    double maximumAspect{1.35};
+    double minimumRotation{-180.0};
+    double maximumRotation{180.0};
+    Rgba8 lowColour{92, 96, 92, 255};
+    Rgba8 highColour{164, 166, 154, 255};
+    double minimumHeight{0.45};
+    double maximumHeight{0.9};
+    double minimumRoughness{0.55};
+    double maximumRoughness{0.95};
+
+    friend constexpr bool operator==(
+        const ScatterPopulation&,
+        const ScatterPopulation&) = default;
+};
+
+struct ScatterOperation {
+    ScatterField field{ScatterField::material};
+    std::uint32_t columns{16};
+    std::uint32_t rows{16};
+    double density{0.72};
+    double jitter{1.0};
+    double minimumDistance{0.018};
+    ScatterOverlapMode overlapMode{ScatterOverlapMode::controlled};
+    double maximumOverlap{0.35};
+    std::uint64_t seedOffset{};
+    ShapePrimitiveOperation stamp{
+        ShapePrimitiveKind::ellipse,
+        ShapeFieldKind::fill,
+        1,
+        1,
+        0.075,
+        0.075,
+        0.0,
+        0.0,
+        0.01,
+        0.006,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0,
+        {
+            {-0.45, -0.25},
+            {0.0, -0.48},
+            {0.45, -0.25},
+            {0.42, 0.28},
+            {0.0, 0.48},
+            {-0.42, 0.28},
+        },
+    };
+    std::vector<ScatterPopulation> populations{ScatterPopulation{}};
+    ScatterMask densityMask;
+    ScatterMask exclusionMask{false, true, 4, 0.45, 0.65, 1};
+
+    friend bool operator==(const ScatterOperation&, const ScatterOperation&) = default;
+};
+
 enum class SurfacePatternKind : std::uint8_t {
     ridgedNoise = 0,
     bands = 1,
@@ -504,7 +592,8 @@ using LayerOperation = std::variant<
     RegionSurfaceOperation,
     ShapePrimitiveOperation,
     ShapeBooleanOperation,
-    LatticeOperation>;
+    LatticeOperation,
+    ScatterOperation>;
 
 struct MaterialLayer {
     bool enabled{true};
@@ -582,6 +671,12 @@ struct LayerLimits {
     static constexpr double maximumShapeOffset = 0.5;
     static constexpr double maximumShapeRotation = 360.0;
     static constexpr std::int32_t maximumLatticeWinding = 64;
+    static constexpr std::size_t maximumScatterPopulations = 4;
+    static constexpr double minimumScatterScale = 0.1;
+    static constexpr double maximumScatterScale = 4.0;
+    static constexpr double minimumScatterAspect = 0.25;
+    static constexpr double maximumScatterAspect = 4.0;
+    static constexpr double maximumScatterDistance = 0.5;
 };
 
 [[nodiscard]] constexpr MaterialLayer makeNoiseLayer(std::uint64_t seedOffset = 0)
@@ -844,6 +939,17 @@ struct LayerLimits {
         {}};
 }
 
+[[nodiscard]] inline MaterialLayer makeScatterLayer()
+{
+    return MaterialLayer{
+        true,
+        1.0,
+        CompositeMode::blend,
+        ScatterOperation{},
+        {},
+        {}};
+}
+
 [[nodiscard]] constexpr std::uint32_t rotationDegrees(QuarterTurn rotation)
 {
     return static_cast<std::uint32_t>(rotation) * 90U;
@@ -911,6 +1017,8 @@ struct LayerLimits {
         return "shape_boolean";
     case 22:
         return "lattice";
+    case 23:
+        return "scatter";
     default:
         return "unknown";
     }
@@ -969,6 +1077,39 @@ struct LayerLimits {
         return "lines";
     case LatticeKind::diamonds:
         return "diamonds";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view scatterOverlapModeName(
+    ScatterOverlapMode mode)
+{
+    switch (mode) {
+    case ScatterOverlapMode::forbidden:
+        return "forbidden";
+    case ScatterOverlapMode::controlled:
+        return "controlled";
+    case ScatterOverlapMode::unrestricted:
+        return "unrestricted";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view scatterFieldName(ScatterField field)
+{
+    switch (field) {
+    case ScatterField::material:
+        return "material";
+    case ScatterField::fill:
+        return "fill";
+    case ScatterField::instanceRandom:
+        return "instance_random";
+    case ScatterField::localU:
+        return "local_u";
+    case ScatterField::localV:
+        return "local_v";
+    case ScatterField::boundaryDistance:
+        return "boundary_distance";
     }
     return "unknown";
 }

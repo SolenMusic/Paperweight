@@ -658,6 +658,8 @@ NSString* operationDisplayName(const paperweight::LayerOperation& operation)
         return @"Shape Boolean";
     case 22:
         return @"Seam-safe Lattice";
+    case 23:
+        return @"Instance Scatter";
     default:
         return @"Unknown";
     }
@@ -767,6 +769,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     std::uint64_t previewRevision_;
     bool dirty_;
     NSInteger selectedLayer_;
+    NSInteger selectedScatterPopulation_;
     paperweight::PhysicalSize previewCoverage_;
 }
 
@@ -866,6 +869,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @[ @"Detailed Crate", @"detailed-crate" ],
         @[ @"Decorative Fasteners", @"decorative-fasteners" ],
         @[ @"Masonry Corner Variation", @"masonry-corner-variation" ],
+        @[ @"Cel Courtyard Gravel", @"cel-courtyard-gravel" ],
+        @[ @"Scattered Debris", @"scattered-debris" ],
+        @[ @"Foliage Foundation", @"foliage-foundation" ],
     ];
     for (NSArray<NSString*>* showcase in showcases) {
         auto* item = [showcaseMenu addItemWithTitle:showcase[0]
@@ -1498,6 +1504,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @"Shape Primitive",
         @"Shape Boolean",
         @"Seam-safe Lattice",
+        @"Instance Scatter",
     ]];
     auto* addLayerButton = [NSButton buttonWithTitle:@"Add"
                                               target:self
@@ -2365,6 +2372,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         ? shape
         : shapeBoolean != nullptr ? &shapeBoolean->shape : nullptr;
     const auto* lattice = std::get_if<paperweight::LatticeOperation>(&layer->operation);
+    const auto* scatter = std::get_if<paperweight::ScatterOperation>(&layer->operation);
     self.noiseSeedRow.hidden = noise == nullptr;
     self.solidColourRow.hidden = solid == nullptr;
     self.levelsLowRow.hidden = levels == nullptr;
@@ -2404,6 +2412,16 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.inkInvertedCheckbox.hidden = YES;
     self.facetedNormalsCheckbox.hidden = YES;
     self.inkInvertedCheckbox.title = @"Ink flat regions";
+    self.facetedNormalsCheckbox.title = @"Use deliberate planar normals";
+    self.addColourEntryButton.title = @"Add Colour";
+    self.removeColourEntryButton.title = @"Remove Colour";
+    static_cast<NSTextField*>(self.processingTargetRow.views[0]).stringValue = @"Affect";
+    [self.processingTargetPopup removeAllItems];
+    [self.processingTargetPopup addItemsWithTitles:@[
+        @"Colour only", @"Surface only", @"Colour + surface",
+    ]];
+    self.facetedNormalsCheckbox.toolTip =
+        @"Preserve the seeded planar faces in the normal map without changing colour, height, or roughness.";
 
     if (noise != nullptr) {
         self.noiseSeedOffsetField.stringValue = [NSString
@@ -2413,6 +2431,15 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.solidColourWell.color = colourFromRgba8(solid->colour);
     }
     if (levels != nullptr) {
+        static_cast<NSTextField*>(self.levelsLowRow.views[0]).stringValue = @"Input low";
+        static_cast<NSTextField*>(self.levelsHighRow.views[0]).stringValue = @"Input high";
+        static_cast<NSTextField*>(self.levelsGammaRow.views[0]).stringValue = @"Gamma";
+        self.levelsLowSlider.minValue = 0.0;
+        self.levelsLowSlider.maxValue = 1.0;
+        self.levelsHighSlider.minValue = 0.0;
+        self.levelsHighSlider.maxValue = 1.0;
+        self.levelsGammaSlider.minValue = paperweight::LayerLimits::minimumGamma;
+        self.levelsGammaSlider.maxValue = paperweight::LayerLimits::maximumGamma;
         self.levelsLowSlider.doubleValue = levels->inputLow;
         self.levelsHighSlider.doubleValue = levels->inputHigh;
         self.levelsGammaSlider.doubleValue = levels->gamma;
@@ -2421,6 +2448,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.levelsGammaValue.stringValue = [NSString stringWithFormat:@"%.2f", levels->gamma];
     }
     if (threshold != nullptr) {
+        static_cast<NSTextField*>(self.thresholdRow.views[0]).stringValue = @"Threshold";
         self.thresholdSlider.doubleValue = threshold->threshold;
         self.thresholdValue.stringValue = [NSString
             stringWithFormat:@"%.2f", threshold->threshold];
@@ -2693,6 +2721,162 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.facetedNormalsCheckbox.state = sculpt->facetedNormals
             ? NSControlStateValueOn
             : NSControlStateValueOff;
+    } else if (scatter != nullptr) {
+        selectedScatterPopulation_ = std::clamp<NSInteger>(
+            selectedScatterPopulation_, 0,
+            static_cast<NSInteger>(scatter->populations.size() - 1));
+        const auto& population = scatter->populations[
+            static_cast<std::size_t>(selectedScatterPopulation_)];
+
+        self.surfaceKindRow.hidden = NO;
+        [self.surfaceKindPopup removeAllItems];
+        [self.surfaceKindPopup addItemsWithTitles:@[
+            @"Rounded Rectangle", @"Ellipse", @"Capsule", @"Diamond", @"Convex Polygon",
+        ]];
+        [self.surfaceKindPopup selectItemAtIndex:static_cast<NSInteger>(scatter->stamp.kind)];
+        self.courseFieldRow.hidden = NO;
+        [self.courseFieldPopup removeAllItems];
+        [self.courseFieldPopup addItemsWithTitles:@[
+            @"Material outputs", @"Fill mask", @"Instance random",
+            @"Local U", @"Local V", @"Boundary distance",
+        ]];
+        [self.courseFieldPopup selectItemAtIndex:static_cast<NSInteger>(scatter->field)];
+        showCount(self.patternCountXRow, self.patternCountXLabel,
+                  self.patternCountXSlider, self.patternCountXValue,
+                  @"Candidates X", scatter->columns);
+        showCount(self.patternCountYRow, self.patternCountYLabel,
+                  self.patternCountYSlider, self.patternCountYValue,
+                  @"Candidates Y", scatter->rows);
+        showValue(self.patternValueOneRow, self.patternValueOneLabel,
+                  self.patternValueOneSlider, self.patternValueOneValue,
+                  @"Density", 0.0, 1.0, scatter->density);
+        showValue(self.patternValueTwoRow, self.patternValueTwoLabel,
+                  self.patternValueTwoSlider, self.patternValueTwoValue,
+                  @"Jitter", 0.0, 1.0, scatter->jitter);
+        showValue(self.patternValueThreeRow, self.patternValueThreeLabel,
+                  self.patternValueThreeSlider, self.patternValueThreeValue,
+                  @"Minimum gap", 0.0, paperweight::LayerLimits::maximumScatterDistance,
+                  scatter->minimumDistance);
+        showValue(self.patternValueFourRow, self.patternValueFourLabel,
+                  self.patternValueFourSlider, self.patternValueFourValue,
+                  @"Max overlap", 0.0, 1.0, scatter->maximumOverlap);
+        self.processingTargetRow.hidden = NO;
+        static_cast<NSTextField*>(self.processingTargetRow.views[0]).stringValue = @"Overlap";
+        [self.processingTargetPopup removeAllItems];
+        [self.processingTargetPopup addItemsWithTitles:@[
+            @"Forbidden", @"Controlled", @"Unrestricted",
+        ]];
+        [self.processingTargetPopup selectItemAtIndex:static_cast<NSInteger>(scatter->overlapMode)];
+        self.patternSeedRow.hidden = NO;
+        self.patternSeedOffsetField.stringValue = [NSString
+            stringWithFormat:@"%llu", scatter->seedOffset];
+
+        self.rampModeRow.hidden = NO;
+        static_cast<NSTextField*>(self.rampModeRow.views[0]).stringValue = @"Population";
+        [self.rampModePopup removeAllItems];
+        for (std::size_t populationIndex = 0;
+             populationIndex < scatter->populations.size(); ++populationIndex) {
+            [self.rampModePopup addItemWithTitle:[NSString
+                stringWithFormat:@"Population %zu", populationIndex + 1]];
+        }
+        [self.rampModePopup selectItemAtIndex:selectedScatterPopulation_];
+        self.courseGapRow.hidden = NO;
+        static_cast<NSTextField*>(self.courseGapRow.views[0]).stringValue = @"Minimum scale";
+        self.courseGapSlider.minValue = paperweight::LayerLimits::minimumScatterScale;
+        self.courseGapSlider.maxValue = paperweight::LayerLimits::maximumScatterScale;
+        self.courseGapSlider.doubleValue = population.minimumScale;
+        self.courseSoftnessRow.hidden = NO;
+        static_cast<NSTextField*>(self.courseSoftnessRow.views[0]).stringValue = @"Maximum scale";
+        self.courseSoftnessSlider.minValue = paperweight::LayerLimits::minimumScatterScale;
+        self.courseSoftnessSlider.maxValue = paperweight::LayerLimits::maximumScatterScale;
+        self.courseSoftnessSlider.doubleValue = population.maximumScale;
+        self.courseOverlapRow.hidden = NO;
+        static_cast<NSTextField*>(self.courseOverlapRow.views[0]).stringValue = @"Population weight";
+        self.courseOverlapSlider.minValue = 0.01;
+        self.courseOverlapSlider.maxValue = 4.0;
+        self.courseOverlapSlider.doubleValue = population.weight;
+        self.filterSensitivityRow.hidden = NO;
+        static_cast<NSTextField*>(self.filterSensitivityRow.views[0]).stringValue = @"Stamp size";
+        self.filterSensitivitySlider.minValue = 0.001;
+        self.filterSensitivitySlider.maxValue = 0.5;
+        self.filterSensitivitySlider.doubleValue = scatter->stamp.width;
+        self.posteriseBandsRow.hidden = NO;
+        static_cast<NSTextField*>(self.posteriseBandsRow.views[0]).stringValue = @"Stamp height";
+        self.posteriseBandsSlider.minValue = 0.001;
+        self.posteriseBandsSlider.maxValue = 0.5;
+        self.posteriseBandsSlider.numberOfTickMarks = 0;
+        self.posteriseBandsSlider.allowsTickMarkValuesOnly = NO;
+        self.posteriseBandsSlider.doubleValue = scatter->stamp.height;
+        self.posteriseBandsValue.stringValue = [NSString
+            stringWithFormat:@"%.2f", scatter->stamp.height];
+        self.inkRadiusRow.hidden = NO;
+        static_cast<NSTextField*>(self.inkRadiusRow.views[0]).stringValue = @"Minimum aspect";
+        self.inkRadiusSlider.minValue = paperweight::LayerLimits::minimumScatterAspect;
+        self.inkRadiusSlider.maxValue = paperweight::LayerLimits::maximumScatterAspect;
+        self.inkRadiusSlider.doubleValue = population.minimumAspect;
+        self.inkThresholdRow.hidden = NO;
+        static_cast<NSTextField*>(self.inkThresholdRow.views[0]).stringValue = @"Maximum aspect";
+        self.inkThresholdSlider.minValue = paperweight::LayerLimits::minimumScatterAspect;
+        self.inkThresholdSlider.maxValue = paperweight::LayerLimits::maximumScatterAspect;
+        self.inkThresholdSlider.doubleValue = population.maximumAspect;
+        self.inkSoftnessRow.hidden = NO;
+        static_cast<NSTextField*>(self.inkSoftnessRow.views[0]).stringValue = @"Min rotation °";
+        self.inkSoftnessSlider.minValue = -360.0;
+        self.inkSoftnessSlider.maxValue = 360.0;
+        self.inkSoftnessSlider.doubleValue = population.minimumRotation;
+        self.inkStrengthRow.hidden = NO;
+        static_cast<NSTextField*>(self.inkStrengthRow.views[0]).stringValue = @"Max rotation °";
+        self.inkStrengthSlider.minValue = -360.0;
+        self.inkStrengthSlider.maxValue = 360.0;
+        self.inkStrengthSlider.doubleValue = population.maximumRotation;
+
+        self.levelsLowRow.hidden = NO;
+        static_cast<NSTextField*>(self.levelsLowRow.views[0]).stringValue = @"Minimum height";
+        self.levelsLowSlider.doubleValue = population.minimumHeight;
+        self.levelsHighRow.hidden = NO;
+        static_cast<NSTextField*>(self.levelsHighRow.views[0]).stringValue = @"Maximum height";
+        self.levelsHighSlider.doubleValue = population.maximumHeight;
+        self.levelsGammaRow.hidden = NO;
+        static_cast<NSTextField*>(self.levelsGammaRow.views[0]).stringValue = @"Min roughness";
+        self.levelsGammaSlider.minValue = 0.0;
+        self.levelsGammaSlider.maxValue = 1.0;
+        self.levelsGammaSlider.doubleValue = population.minimumRoughness;
+        self.thresholdRow.hidden = NO;
+        static_cast<NSTextField*>(self.thresholdRow.views[0]).stringValue = @"Max roughness";
+        self.thresholdSlider.doubleValue = population.maximumRoughness;
+
+        self.colourEntriesGroup.hidden = NO;
+        const auto colourCount = scatter->populations.size() * 2;
+        for (NSUInteger colourIndex = 0; colourIndex < self.colourEntryRows.count; ++colourIndex) {
+            NSStackView* row = self.colourEntryRows[colourIndex];
+            row.hidden = colourIndex >= colourCount;
+            if (colourIndex >= colourCount) continue;
+            const auto populationIndex = static_cast<std::size_t>(colourIndex / 2);
+            const bool high = colourIndex % 2 != 0;
+            self.colourEntryLabels[colourIndex].stringValue = [NSString
+                stringWithFormat:@"P%zu %@", populationIndex + 1, high ? @"high" : @"low"];
+            self.colourPositionSliders[colourIndex].hidden = YES;
+            self.colourPositionValues[colourIndex].hidden = YES;
+            const auto& colours = scatter->populations[populationIndex];
+            self.colourEntryWells[colourIndex].color = colourFromRgba8(
+                high ? colours.highColour : colours.lowColour);
+        }
+        self.addColourEntryButton.title = @"Add Population";
+        self.removeColourEntryButton.title = @"Remove Population";
+        self.addColourEntryButton.enabled =
+            scatter->populations.size() < paperweight::LayerLimits::maximumScatterPopulations;
+        self.removeColourEntryButton.enabled = scatter->populations.size() > 1;
+        self.inkInvertedCheckbox.hidden = NO;
+        self.inkInvertedCheckbox.title = @"Use density mask";
+        self.inkInvertedCheckbox.state = scatter->densityMask.enabled
+            ? NSControlStateValueOn : NSControlStateValueOff;
+        self.facetedNormalsCheckbox.hidden = NO;
+        self.facetedNormalsCheckbox.title = @"Use exclusion mask";
+        self.facetedNormalsCheckbox.state = scatter->exclusionMask.enabled
+            ? NSControlStateValueOn : NSControlStateValueOff;
+        self.facetedNormalsCheckbox.toolTip =
+            @"Exclude candidates with a seamless deterministic noise mask.";
+        [self updateLayerInspectorLiveValueLabels];
     } else if (editableShape != nullptr) {
         self.surfaceKindRow.hidden = NO;
         [self.surfaceKindPopup removeAllItems];
@@ -2769,6 +2953,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.posteriseBandsSlider.numberOfTickMarks =
             paperweight::LayerLimits::maximumPolygonVertices -
             paperweight::LayerLimits::minimumPolygonVertices + 1;
+        self.posteriseBandsSlider.allowsTickMarkValuesOnly = YES;
         self.posteriseBandsSlider.doubleValue =
             static_cast<double>(editableShape->vertices.size());
         self.posteriseBandsValue.stringValue = [NSString
@@ -2989,6 +3174,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.posteriseBandsSlider.numberOfTickMarks =
             paperweight::LayerLimits::maximumPosteriseBands -
             paperweight::LayerLimits::minimumPosteriseBands + 1;
+        self.posteriseBandsSlider.allowsTickMarkValuesOnly = YES;
         self.posteriseBandsSlider.doubleValue = posterise->bands;
         self.posteriseBandsValue.stringValue = [NSString
             stringWithFormat:@"%u", posterise->bands];
@@ -3245,6 +3431,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     case 26:
         material_.layers.push_back(paperweight::makeLatticeLayer());
         break;
+    case 27:
+        material_.layers.push_back(paperweight::makeScatterLayer());
+        selectedScatterPopulation_ = 0;
+        break;
     default:
         return;
     }
@@ -3325,7 +3515,18 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     if (layer == nullptr) {
         return;
     }
-    if (auto* ink = std::get_if<paperweight::InkContourOperation>(&layer->operation)) {
+    if (auto* scatter = std::get_if<paperweight::ScatterOperation>(&layer->operation)) {
+        const auto populationIndex = static_cast<std::size_t>(sender.tag / 2);
+        if (populationIndex >= scatter->populations.size()) {
+            return;
+        }
+        auto& population = scatter->populations[populationIndex];
+        if (sender.tag % 2 == 0) {
+            population.lowColour = rgba8FromColour(sender.color);
+        } else {
+            population.highColour = rgba8FromColour(sender.color);
+        }
+    } else if (auto* ink = std::get_if<paperweight::InkContourOperation>(&layer->operation)) {
         ink->colour = rgba8FromColour(self.inkColourWell.color);
     } else if (auto* ramp = std::get_if<paperweight::ColourRampOperation>(&layer->operation)) {
         const auto index = static_cast<std::size_t>(sender.tag);
@@ -3352,7 +3553,56 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     if (layer == nullptr) {
         return;
     }
-    if (auto* filter = std::get_if<paperweight::SurfaceFilterOperation>(&layer->operation)) {
+    if (auto* scatter = std::get_if<paperweight::ScatterOperation>(&layer->operation)) {
+        if (sender == self.rampModePopup) {
+            selectedScatterPopulation_ = self.rampModePopup.indexOfSelectedItem;
+            [self refreshLayerInspector];
+            return;
+        }
+        selectedScatterPopulation_ = std::clamp<NSInteger>(
+            selectedScatterPopulation_, 0,
+            static_cast<NSInteger>(scatter->populations.size() - 1));
+        auto& population = scatter->populations[
+            static_cast<std::size_t>(selectedScatterPopulation_)];
+        if (sender == self.processingTargetPopup) {
+            scatter->overlapMode = static_cast<paperweight::ScatterOverlapMode>(
+                self.processingTargetPopup.indexOfSelectedItem);
+        }
+        scatter->stamp.width = self.filterSensitivitySlider.doubleValue;
+        scatter->stamp.height = self.posteriseBandsSlider.doubleValue;
+        population.minimumAspect = std::min(
+            self.inkRadiusSlider.doubleValue,
+            self.inkThresholdSlider.doubleValue);
+        population.maximumAspect = std::max(
+            self.inkRadiusSlider.doubleValue,
+            self.inkThresholdSlider.doubleValue);
+        population.minimumRotation = std::min(
+            self.inkSoftnessSlider.doubleValue,
+            self.inkStrengthSlider.doubleValue);
+        population.maximumRotation = std::max(
+            self.inkSoftnessSlider.doubleValue,
+            self.inkStrengthSlider.doubleValue);
+        self.inkRadiusSlider.doubleValue = population.minimumAspect;
+        self.inkThresholdSlider.doubleValue = population.maximumAspect;
+        self.inkSoftnessSlider.doubleValue = population.minimumRotation;
+        self.inkStrengthSlider.doubleValue = population.maximumRotation;
+        scatter->densityMask.enabled =
+            self.inkInvertedCheckbox.state == NSControlStateValueOn;
+        scatter->exclusionMask.enabled =
+            self.facetedNormalsCheckbox.state == NSControlStateValueOn;
+        self.filterSensitivityValue.stringValue = [NSString
+            stringWithFormat:@"%.2f", scatter->stamp.width];
+        self.posteriseBandsValue.stringValue = [NSString
+            stringWithFormat:@"%.2f", scatter->stamp.height];
+        self.inkRadiusValue.stringValue = [NSString
+            stringWithFormat:@"%.2f", population.minimumAspect];
+        self.inkThresholdValue.stringValue = [NSString
+            stringWithFormat:@"%.2f", population.maximumAspect];
+        self.inkSoftnessValue.stringValue = [NSString
+            stringWithFormat:@"%.0f", population.minimumRotation];
+        self.inkStrengthValue.stringValue = [NSString
+            stringWithFormat:@"%.0f", population.maximumRotation];
+    } else if (auto* filter = std::get_if<paperweight::SurfaceFilterOperation>(&layer->operation)) {
         filter->sensitivity = self.filterSensitivitySlider.doubleValue;
         filter->target = processingTargetAtIndex(self.processingTargetPopup.indexOfSelectedItem);
         self.filterSensitivityValue.stringValue = [NSString
@@ -3457,7 +3707,13 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     if (layer == nullptr) {
         return;
     }
-    if (auto* ramp = std::get_if<paperweight::ColourRampOperation>(&layer->operation)) {
+    if (auto* scatter = std::get_if<paperweight::ScatterOperation>(&layer->operation)) {
+        if (scatter->populations.size() >= paperweight::LayerLimits::maximumScatterPopulations) {
+            return;
+        }
+        scatter->populations.push_back(scatter->populations.back());
+        selectedScatterPopulation_ = static_cast<NSInteger>(scatter->populations.size() - 1);
+    } else if (auto* ramp = std::get_if<paperweight::ColourRampOperation>(&layer->operation)) {
         if (ramp->stops.size() >= paperweight::LayerLimits::maximumColourStops) {
             return;
         }
@@ -3503,7 +3759,20 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     if (layer == nullptr) {
         return;
     }
-    if (auto* ramp = std::get_if<paperweight::ColourRampOperation>(&layer->operation)) {
+    if (auto* scatter = std::get_if<paperweight::ScatterOperation>(&layer->operation)) {
+        if (scatter->populations.size() <= 1) {
+            return;
+        }
+        const auto index = static_cast<std::size_t>(std::clamp<NSInteger>(
+            selectedScatterPopulation_, 0,
+            static_cast<NSInteger>(scatter->populations.size() - 1)));
+        scatter->populations.erase(
+            scatter->populations.begin() +
+            static_cast<std::vector<paperweight::ScatterPopulation>::difference_type>(index));
+        selectedScatterPopulation_ = std::min<NSInteger>(
+            selectedScatterPopulation_,
+            static_cast<NSInteger>(scatter->populations.size() - 1));
+    } else if (auto* ramp = std::get_if<paperweight::ColourRampOperation>(&layer->operation)) {
         if (ramp->stops.size() <= paperweight::LayerLimits::minimumColourStops) {
             return;
         }
@@ -3575,6 +3844,29 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     }
     if (auto* threshold = std::get_if<paperweight::ThresholdOperation>(&layer->operation)) {
         threshold->threshold = self.thresholdSlider.doubleValue;
+    }
+    if (auto* scatter = std::get_if<paperweight::ScatterOperation>(&layer->operation)) {
+        selectedScatterPopulation_ = std::clamp<NSInteger>(
+            selectedScatterPopulation_, 0,
+            static_cast<NSInteger>(scatter->populations.size() - 1));
+        auto& population = scatter->populations[
+            static_cast<std::size_t>(selectedScatterPopulation_)];
+        population.minimumHeight = std::min(
+            self.levelsLowSlider.doubleValue,
+            self.levelsHighSlider.doubleValue);
+        population.maximumHeight = std::max(
+            self.levelsLowSlider.doubleValue,
+            self.levelsHighSlider.doubleValue);
+        population.minimumRoughness = std::min(
+            self.levelsGammaSlider.doubleValue,
+            self.thresholdSlider.doubleValue);
+        population.maximumRoughness = std::max(
+            self.levelsGammaSlider.doubleValue,
+            self.thresholdSlider.doubleValue);
+        self.levelsLowSlider.doubleValue = population.minimumHeight;
+        self.levelsHighSlider.doubleValue = population.maximumHeight;
+        self.levelsGammaSlider.doubleValue = population.minimumRoughness;
+        self.thresholdSlider.doubleValue = population.maximumRoughness;
     }
 
     [self updateLayerInspectorLiveValueLabels];
@@ -3954,6 +4246,41 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         if (parsedSeed) {
             sculpt->seedOffset = *parsedSeed;
         }
+    } else if (auto* scatter =
+                   std::get_if<paperweight::ScatterOperation>(&layer->operation)) {
+        if (sender == self.surfaceKindPopup) {
+            scatter->stamp.kind = static_cast<paperweight::ShapePrimitiveKind>(
+                self.surfaceKindPopup.indexOfSelectedItem);
+        }
+        if (sender == self.courseFieldPopup) {
+            scatter->field = static_cast<paperweight::ScatterField>(
+                self.courseFieldPopup.indexOfSelectedItem);
+        }
+        scatter->columns = countX;
+        scatter->rows = countY;
+        scatter->density = self.patternValueOneSlider.doubleValue;
+        scatter->jitter = self.patternValueTwoSlider.doubleValue;
+        scatter->minimumDistance = self.patternValueThreeSlider.doubleValue;
+        scatter->maximumOverlap = self.patternValueFourSlider.doubleValue;
+        if (parsedSeed) {
+            scatter->seedOffset = *parsedSeed;
+        }
+        selectedScatterPopulation_ = std::clamp<NSInteger>(
+            selectedScatterPopulation_, 0,
+            static_cast<NSInteger>(scatter->populations.size() - 1));
+        auto& population = scatter->populations[
+            static_cast<std::size_t>(selectedScatterPopulation_)];
+        population.minimumScale = std::min(
+            self.courseGapSlider.doubleValue,
+            self.courseSoftnessSlider.doubleValue);
+        population.maximumScale = std::max(
+            self.courseGapSlider.doubleValue,
+            self.courseSoftnessSlider.doubleValue);
+        self.courseGapSlider.doubleValue = population.minimumScale;
+        self.courseSoftnessSlider.doubleValue = population.maximumScale;
+        population.weight = self.courseOverlapSlider.doubleValue;
+        scatter->exclusionMask.enabled =
+            self.facetedNormalsCheckbox.state == NSControlStateValueOn;
     } else if (auto* shape =
                    std::get_if<paperweight::ShapePrimitiveOperation>(&layer->operation)) {
         updateShape(*shape);

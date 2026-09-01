@@ -1,4 +1,4 @@
-# `.pmat` format version 12
+# `.pmat` format version 13
 
 Paperweight material files are UTF-8 text. They are intended to be readable,
 diffable, and small enough to embed alongside game assets.
@@ -7,7 +7,7 @@ diffable, and small enough to embed alongside game assets.
 
 ```text
 # Paperweight procedural material
-pmat.version = 12
+pmat.version = 13
 material.type = fbm
 material.seed = 18431
 material.width = 1m
@@ -68,7 +68,7 @@ no material; it never returns a partially accepted definition.
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
-| `pmat.version` | File-format version | `12` |
+| `pmat.version` | File-format version | `13` |
 | `material.type` | Generator model | `fbm` |
 | `material.seed` | Deterministic seed | Unsigned 64-bit integer |
 | `material.width` | Width of one seamless material repeat | Metre value from `0.000001m` to `1000000m` |
@@ -178,6 +178,22 @@ The operation selects exactly one parameter group:
 | `lattice` | `layer.N.lattice.width` | Decimal from 0.001 to 1 |
 | `lattice` | `layer.N.lattice.softness` | Decimal from 0 to 0.25 |
 | `lattice` | `layer.N.lattice.phase` | Decimal from 0 to 1 |
+| `scatter` | `layer.N.scatter.field` | `material`, `fill`, `instance_random`, `local_u`, `local_v`, or `boundary_distance` |
+| `scatter` | `layer.N.scatter.columns`, `rows` | Candidate-grid integers from 1 to 64 |
+| `scatter` | `layer.N.scatter.density`, `jitter` | Decimals from 0 to 1 |
+| `scatter` | `layer.N.scatter.minimum_distance` | Torus distance from 0 to 0.5 |
+| `scatter` | `layer.N.scatter.overlap` | `forbidden`, `controlled`, or `unrestricted` |
+| `scatter` | `layer.N.scatter.maximum_overlap` | Controlled-overlap fraction from 0 to 1 |
+| `scatter` | `layer.N.scatter.seed_offset` | Unsigned 64-bit integer |
+| `scatter` | `layer.N.scatter.populations` | Integer from 1 to 4 |
+| `scatter` | `layer.N.scatter.population.K.weight` | Positive relative selection weight |
+| `scatter` | `layer.N.scatter.population.K.min_scale`, `max_scale` | Ordered decimals from 0.1 to 4 |
+| `scatter` | `layer.N.scatter.population.K.min_aspect`, `max_aspect` | Ordered decimals from 0.25 to 4 |
+| `scatter` | `layer.N.scatter.population.K.min_rotation`, `max_rotation` | Ordered degrees from -360 to 360 |
+| `scatter` | `layer.N.scatter.population.K.colour_low`, `colour_high` | `0xRRGGBBAA` hexadecimal |
+| `scatter` | `layer.N.scatter.population.K.min_height`, `max_height` | Ordered decimals from 0 to 1 |
+| `scatter` | `layer.N.scatter.population.K.min_roughness`, `max_roughness` | Ordered decimals from 0 to 1 |
+| `scatter` | `layer.N.scatter.density_mask.*`, `exclusion_mask.*` | Explicit `enabled`, `inverted`, `frequency`, `input_low`, `input_high`, and `seed_offset` fields |
 | `surface_pattern` | `layer.N.surface.kind` | `ridged_noise`, `bands`, `rings`, `scatter`, or `streaks` |
 | `surface_pattern` | `layer.N.surface.scale` | Integer from 1 to 64 |
 | `surface_pattern` | `layer.N.surface.width` | Decimal from 0.001 to 1 |
@@ -252,6 +268,19 @@ tile rather than arbitrary global angles. This is what makes line and crossed
 diamond families repeat exactly on both axes. A freely chosen global rotation
 is not generally compatible with a rectangular periodic tile; repeated bounded
 shapes remain the appropriate tool when arbitrary local rotation is required.
+
+`scatter` uses the complete `shape.*` group as one local stamp, with stamp
+columns and rows fixed to one. It first creates at most one candidate per grid
+cell. Stable hash channels determine candidate probability, jitter, population,
+every attribute, placement priority, and occlusion priority. Candidates are
+sorted by exact placement priority before torus-distance rejection; neither
+output pixels nor worker scheduling participate. Density and exclusion masks
+sample periodic value noise only at candidate centres. Accepted instances use
+a bounded cell lookup, while wrapped shortest-distance evaluation makes a stamp
+crossing one edge continue from the opposite edge. Overlapping stamps select
+the exact highest occlusion priority. `material` output uses each instance's
+colour, height, and roughness on the corresponding output branch; the other
+fields expose reusable masks and local instance coordinates.
 
 Course layouts partition the complete repeat into courses and then partition
 each course into blocks. `masonry` varies widths within regular course counts,
@@ -345,7 +374,7 @@ The native editor presents those derived column and row counts explicitly. When
 an author changes the brick size or count, it recalculates `material.width` and
 `material.height` automatically so the saved definition remains seamless.
 
-Every layer in versions 3 through 12 also has this coordinate-transform group:
+Every layer in versions 3 through 13 also has this coordinate-transform group:
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
@@ -364,7 +393,7 @@ Offsets are continuous and wrap naturally. When enabled, warp uses two
 independent periodic FBM channels to displace the transformed coordinates.
 Disabling warp, or setting its strength to zero, is exactly the identity path.
 
-Every layer in versions 3 through 12 also declares its optional mask:
+Every layer in versions 3 through 13 also declares its optional mask:
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
@@ -378,7 +407,7 @@ The mask samples an independent periodic FBM field in the layer's transformed
 coordinates. Its remapped value multiplies the layer opacity, allowing smooth,
 threshold-like, or inverted spatial control without changing the operation.
 Disabled masks evaluate to exactly one. Transform, warp, and mask fields remain
-required in versions 3 through 12 even when their optional features are disabled; this
+required in versions 3 through 13 even when their optional features are disabled; this
 keeps canonical files explicit and round trips unambiguous.
 
 Noise seed offset zero reproduces the original material seed exactly. Other
@@ -394,7 +423,7 @@ formula is applied to scalar, red, green, blue, and alpha channels.
 
 ## Graph compilation
 
-Paperweight v0.0.15 retains the layer syntax, now at version 12, as the compact,
+Paperweight v0.0.16 retains the layer syntax, now at version 13, as the compact,
 human-editable authoring projection. Before generation, the portable core
 compiles it into a directed acyclic material graph:
 
@@ -423,6 +452,8 @@ Format version 11 adds constructed region surfaces and normal-only facet
 treatment without serialising derived masks or planes.
 Format version 12 adds analytic shape generators, shape Boolean processors, and
 integer-winding lattices without introducing graph-specific persistence.
+Format version 13 adds deterministic scatter generators, weighted populations,
+per-instance material attributes, and candidate-centre masks.
 
 ## Material outputs
 
@@ -444,7 +475,7 @@ generation wrap mathematically across both tile axes.
 ## Compatibility policy
 
 The `.pmat` format version and Paperweight application version are separate.
-Paperweight v0.0.15 reads versions 1 through 12 and writes version 12. A reader
+Paperweight v0.0.16 reads versions 1 through 13 and writes version 13. A reader
 rejects unsupported versions and unknown fields so that it cannot quietly
 reinterpret a future material.
 
@@ -467,7 +498,9 @@ through 9 retain byte-identical default evaluations. Version 11 adds region
 surface sculpting; versions 1 through 10 retain byte-identical default
 evaluations. Version 12 adds analytic shapes, mask Boolean operations, and
 integer-winding lattices; versions 1 through 11 retain byte-identical default
-evaluations. Saving any older format performs the explicit migration to version 12.
+evaluations. Version 13 adds deterministic scatter operations; versions 1
+through 12 retain byte-identical default evaluations. Saving any older format
+performs the explicit migration to version 13.
 
 The portable entry points are `paperweight::parsePmat` and
 `paperweight::serialisePmat` in `include/paperweight/pmat.hpp`.

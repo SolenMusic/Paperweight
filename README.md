@@ -13,15 +13,14 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-v0.0.15 is the current Shape Primitives and Lattices release. Portable analytic
-rounded rectangles, ellipses, capsules, diamonds, and convex polygons can be
-repeated, inset, outlined, bordered, and combined through mask Boolean
-operations. Each bounded instance may rotate freely. Global line and diamond
-lattices instead use explicit integer windings, which guarantees that they
-remain mathematically seamless. Four editable showcases construct a castle
-window, a detailed crate, reusable fasteners, and masonry corner ornament from
-the shared vocabulary, while older material definitions retain their historical
-output.
+v0.0.16 is the current Deterministic Instance Scattering release. A stable,
+pixel-independent candidate pass places shape stamps across the seamless tile
+torus, rejects them using explicit spacing and overlap rules, and orders visible
+instances with exact integer priorities. Up to four weighted populations vary
+scale, aspect, rotation, colour, height, and roughness without depending on
+resolution, worker scheduling, or container order. Density and exclusion masks
+are sampled only at candidate centres. Editable courtyard gravel, debris, and
+foliage-foundation showcases exercise the complete path.
 
 The staged work is tracked in [GitHub Issues](https://github.com/SolenMusic/Paperweight/issues).
 
@@ -30,7 +29,7 @@ The staged work is tracked in [GitHub Issues](https://github.com/SolenMusic/Pape
 ```text
 Portable C++20 core
   image buffers, deterministic primitives, periodic noise,
-  structural, course-layout, sculpting, shape, lattice, and surface generators,
+  structural, course-layout, sculpting, shape, lattice, scatter, and surface generators,
   exact region identity and fields,
   neighbourhood filters,
   layer-to-graph compiler, graph validation/evaluation,
@@ -64,14 +63,15 @@ Showcase loads editable realistic and stylised recipes, including toon dungeon
 stone, painted metal, graphic marble, castle flagstone, two castle masonry
 styles, castle roof slates, cel forest rock, sculpted flagstone, worn masonry,
 chamfered roof slate, a diamond castle window, a detailed crate, decorative
-fasteners, and masonry corner variation. These are the practical forerunners of the
+fasteners, masonry corner variation, cel courtyard gravel, scattered debris,
+and an initial foliage population. These are the practical forerunners of the
 planned seedless template library. Region Stones demonstrates repeatable
 per-cell variation, while Course Random gives every row one stable value.
 
-Format-version-1 through version-11 `.pmat` files still open with their
-historical output intact; saving migrates them to canonical format version 12.
-Version 12 adds shape primitives, shape Boolean processors, and seamless
-lattices. Exact block
+Format-version-1 through version-12 `.pmat` files still open with their
+historical output intact; saving migrates them to canonical format version 13.
+Version 13 adds deterministic instance placement, populations, attributes,
+shape stamps, and candidate-centre masks. Exact block
 and parent-course keys are evaluator metadata, not pixel channels, so they are
 never stored in lossy floating-point form.
 The editor does not invent a redundant graph syntax for the existing layer recipe:
@@ -148,6 +148,10 @@ fields expose the same analytic boundary. Shape Boolean combines one of those
 local shapes with the accumulated mask, while Seam-safe Lattice creates line or
 diamond grids from whole-tile winding counts. Local shape rotation is free;
 lattice direction remains restricted to repeat-compatible windings.
+Add Instance Scatter to place an analytic shape as a torus-safe population.
+The native controls cover candidate density and jitter, spacing and overlap,
+population creation and selection, scale/aspect/rotation ranges, colour pairs,
+height and roughness ranges, stamp kind and size, and density/exclusion masks.
 See [the `.pmat` format reference](docs/pmat-format.md) for the text format.
 
 Choose 3D under Preview mode to inspect all four material maps together. Select

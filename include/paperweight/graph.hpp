@@ -31,7 +31,8 @@ using GeneratorOperation = std::variant<
     SurfacePatternOperation,
     CourseLayoutOperation,
     ShapePrimitiveOperation,
-    LatticeOperation>;
+    LatticeOperation,
+    ScatterOperation>;
 
 struct GeneratorNode {
     GraphNodeId id{invalidGraphNodeId};

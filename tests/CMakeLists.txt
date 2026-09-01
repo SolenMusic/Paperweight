@@ -45,6 +45,9 @@ foreach(showcase IN ITEMS
     detailed-crate
     decorative-fasteners
     masonry-corner-variation
+    cel-courtyard-gravel
+    scattered-debris
+    foliage-foundation
 )
     configure_file(
         "${PROJECT_SOURCE_DIR}/examples/materials/${showcase}.pmat"

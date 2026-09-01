@@ -26,7 +26,7 @@ namespace {
 
 using Clock = std::chrono::steady_clock;
 
-constexpr std::array<std::string_view, 26> materialNames{
+constexpr std::array<std::string_view, 29> materialNames{
     "default",
     "brick-wall",
     "cobblestone",
@@ -53,6 +53,9 @@ constexpr std::array<std::string_view, 26> materialNames{
     "detailed-crate",
     "decorative-fasteners",
     "masonry-corner-variation",
+    "cel-courtyard-gravel",
+    "scattered-debris",
+    "foliage-foundation",
 };
 
 constexpr std::array<paperweight::MaterialOutput, 4> materialOutputs{
