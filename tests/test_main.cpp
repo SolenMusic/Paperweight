@@ -5,6 +5,7 @@
 #include <paperweight/graph.hpp>
 #include <paperweight/layer.hpp>
 #include <paperweight/material.hpp>
+#include <paperweight/material_template.hpp>
 #include <paperweight/noise.hpp>
 #include <paperweight/organic.hpp>
 #include <paperweight/pmat.hpp>
@@ -14,6 +15,7 @@
 #include <paperweight/shape.hpp>
 #include <paperweight/structural.hpp>
 #include <paperweight/surface.hpp>
+#include <paperweight/stylised_lighting.hpp>
 #include <paperweight/version.hpp>
 
 #include <algorithm>
@@ -117,9 +119,9 @@ paperweight::Material materialWithNoiseParameters(
 
 void testVersion()
 {
-    constexpr paperweight::Version expected{0, 0, 16};
+    constexpr paperweight::Version expected{0, 0, 18};
     static_assert(paperweight::currentVersion == expected);
-    expect(paperweight::versionString() == "0.0.17", "version string is 0.0.17");
+    expect(paperweight::versionString() == "0.0.18", "version string is 0.0.18");
 }
 
 void testImage()
@@ -3165,6 +3167,184 @@ void testPhysicalScale()
            "invalid material dimensions are reported as material errors");
 }
 
+void testReferenceTemplatesAndStylisedLighting()
+{
+    const auto& templates = paperweight::referenceMaterialTemplates();
+    expect(templates.size() == 10, "reference catalogue contains all ten Blastard materials");
+
+    std::vector<std::string_view> identifiers;
+    for (const auto& descriptor : templates) {
+        expect(!descriptor.identifier.empty() && !descriptor.displayName.empty() &&
+                   !descriptor.recipeResourceName.empty() &&
+                   !descriptor.referenceFileName.empty() && !descriptor.controls.empty(),
+               "each reference template has identity, source, reference, and friendly controls");
+        expect(std::find(identifiers.begin(), identifiers.end(), descriptor.identifier) ==
+                   identifiers.end(),
+               "reference template identifiers are unique");
+        identifiers.push_back(descriptor.identifier);
+        expect(paperweight::findReferenceMaterialTemplate(descriptor.identifier) == &descriptor,
+               "reference template can be found by its stable identifier");
+    }
+    expect(paperweight::findReferenceMaterialTemplate("not-a-template") == nullptr,
+           "unknown reference template identifiers are rejected");
+
+    constexpr std::array<std::uint64_t, 10> bakedGoldens{
+        2889411219681709879ULL,
+        4589141016822059237ULL,
+        10553936091438984031ULL,
+        7665254725482328274ULL,
+        4755012890138944442ULL,
+        2312567766283003603ULL,
+        1201190961296726153ULL,
+        14585860657489692377ULL,
+        3827243153770096578ULL,
+        8534288170704184381ULL,
+    };
+    constexpr std::uint64_t chosenSeed = 180018;
+    for (std::size_t templateIndex = 0; templateIndex < templates.size(); ++templateIndex) {
+        const auto& descriptor = templates[templateIndex];
+        std::ifstream file(
+            std::string(descriptor.recipeResourceName) + ".pmat",
+            std::ios::binary);
+        const std::string text(
+            std::istreambuf_iterator<char>{file},
+            std::istreambuf_iterator<char>{});
+        const auto parsed = paperweight::parsePmat(text);
+        const auto* authored = std::get_if<paperweight::Material>(&parsed);
+        expect(authored != nullptr, "reference template source parses");
+        if (authored == nullptr) {
+            continue;
+        }
+
+        const auto recipe = paperweight::makeMaterialRecipe(*authored);
+        auto material = paperweight::instantiateMaterial(recipe, chosenSeed);
+        expect(material.seed == chosenSeed && material.layers == authored->layers &&
+                   material.physicalSize == authored->physicalSize,
+               "seedless recipe instantiates with the caller's seed without changing its content");
+
+        auto controlled = material;
+        const auto controlError = paperweight::applyTemplateControl(
+            controlled,
+            descriptor.controls.front(),
+            descriptor.controls.front().defaultValue);
+        expect(!controlError.has_value() && !paperweight::validateMaterial(controlled).has_value(),
+               "friendly template controls produce valid ordinary materials");
+        expect(paperweight::applyTemplateControl(
+                   controlled,
+                   descriptor.controls.front(),
+                   descriptor.controls.front().maximumValue + 1.0).has_value(),
+               "friendly template controls reject values beyond their declared range");
+        for (const auto& control : descriptor.controls) {
+            auto low = material;
+            auto high = material;
+            const auto lowError = paperweight::applyTemplateControl(
+                low, control, control.minimumValue);
+            const auto highError = paperweight::applyTemplateControl(
+                high, control, control.maximumValue);
+            const bool controlWorks = !lowError.has_value() && !highError.has_value() &&
+                low != high && low.seed == chosenSeed && high.seed == chosenSeed;
+            if (!controlWorks) {
+                std::cerr << "Template control failed: " << descriptor.identifier << '/'
+                          << control.key << '\n';
+            }
+            expect(controlWorks,
+                   "every friendly control changes authored properties without changing the seed");
+        }
+
+        std::array<std::optional<paperweight::Image>, 4> outputs;
+        for (std::size_t outputIndex = 0;
+             outputIndex < paperweight::materialOutputs.size();
+             ++outputIndex) {
+            const auto generated = paperweight::generate({
+                material,
+                32,
+                32,
+                paperweight::materialOutputs[outputIndex],
+                std::nullopt,
+                material.physicalSize,
+                1,
+            });
+            if (const auto* image = std::get_if<paperweight::Image>(&generated)) {
+                outputs[outputIndex] = *image;
+            }
+            expect(outputs[outputIndex].has_value(),
+                   "every reference template generates every authoritative output");
+        }
+        if (!std::all_of(outputs.begin(), outputs.end(), [](const auto& image) {
+                return image.has_value();
+            })) {
+            continue;
+        }
+
+        const auto baked = paperweight::bakeStylisedLighting(
+            *outputs[paperweight::materialOutputIndex(paperweight::MaterialOutput::colour)],
+            &*outputs[paperweight::materialOutputIndex(paperweight::MaterialOutput::height)],
+            &*outputs[paperweight::materialOutputIndex(paperweight::MaterialOutput::normal)]);
+        const auto* bakedImage = std::get_if<paperweight::Image>(&baked);
+        expectChecksum(
+            bakedImage,
+            bakedGoldens[templateIndex],
+            "reference template baked presentation matches its byte-exact golden checksum");
+
+        const auto oneTile = paperweight::generate({
+            material,
+            24,
+            24,
+            paperweight::MaterialOutput::colour,
+            std::nullopt,
+            material.physicalSize,
+            1,
+        });
+        const paperweight::PhysicalSize tripleCoverage{
+            material.physicalSize.widthMetres * 3.0,
+            material.physicalSize.heightMetres * 3.0,
+        };
+        const auto threeTiles = paperweight::generate({
+            material,
+            72,
+            72,
+            paperweight::MaterialOutput::colour,
+            std::nullopt,
+            tripleCoverage,
+            4,
+        });
+        const auto* oneImage = std::get_if<paperweight::Image>(&oneTile);
+        const auto* threeImage = std::get_if<paperweight::Image>(&threeTiles);
+        bool repeatsExactly = oneImage != nullptr && threeImage != nullptr;
+        if (repeatsExactly) {
+            for (std::uint32_t y = 0; y < threeImage->height() && repeatsExactly; ++y) {
+                for (std::uint32_t x = 0; x < threeImage->width(); ++x) {
+                    if (threeImage->row(y)[x] != oneImage->row(y % 24)[x % 24]) {
+                        repeatsExactly = false;
+                        break;
+                    }
+                }
+            }
+        }
+        expect(repeatsExactly,
+               "reference template 1x1 and generated 3x3 coverage are byte-identical repeats");
+    }
+
+    paperweight::Image colour{3, 2, {160, 120, 80, 177}};
+    paperweight::Image height{3, 2, {128, 128, 128, 255}};
+    const auto originalColour = colour;
+    const auto originalHeight = height;
+    const auto heightOnly = paperweight::bakeStylisedLighting(colour, &height, nullptr);
+    expect(std::holds_alternative<paperweight::Image>(heightOnly),
+           "portable lighting can derive wrapped normals from height alone");
+    expect(std::equal(colour.pixels().begin(), colour.pixels().end(), originalColour.pixels().begin()) &&
+               std::equal(height.pixels().begin(), height.pixels().end(), originalHeight.pixels().begin()),
+           "stylised lighting never mutates authoritative input maps");
+    expect(std::holds_alternative<paperweight::StylisedLightingError>(
+               paperweight::bakeStylisedLighting(colour, nullptr, nullptr)),
+           "stylised lighting rejects a missing normal and height source");
+    paperweight::StylisedLightingSettings invalidSettings;
+    invalidSettings.diffuseBands = 1;
+    expect(std::holds_alternative<paperweight::StylisedLightingError>(
+               paperweight::bakeStylisedLighting(colour, &height, nullptr, invalidSettings)),
+           "stylised lighting validates its portable settings");
+}
+
 void testPmat()
 {
     constexpr std::string_view canonical =
@@ -3892,6 +4072,7 @@ int main()
     testMaterialGraph();
     testGenerator();
     testPhysicalScale();
+    testReferenceTemplatesAndStylisedLighting();
     testPmat();
 
     if (failures != 0) {

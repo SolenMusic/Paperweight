@@ -13,13 +13,13 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-v0.0.17 is the current Organic Structures release. Anisotropic cellular plates,
-hierarchical crack networks, four analytic leaf silhouettes, leaf ribs and veins,
-stable overlapping clusters, four species presets, and cavity- or boundary-driven
-moss and lichen now extend the portable graph vocabulary. Every placement and
-region identity is derived from stable hashes; coordinates wrap on the tile
-torus, and worker scheduling never changes the result. Editable cel forest bark
-and castle foliage showcases exercise colour, height, normal, and roughness.
+v0.0.18 is the current Reference Materials and Stylised Baking release. Ten
+Blastard-oriented material families are now exposed as genuinely seedless C++
+recipes which become ordinary editable materials only after the caller chooses a
+seed. Each has a small set of friendly high-level controls over its existing
+layer recipe. The native editor adds a dedicated reference-template browser,
+side-by-side PNG/BMP comparison, and an explicitly optional portable stylised
+lighting bake. Unlit colour, height, normal, and roughness remain authoritative.
 
 The staged work is tracked in [GitHub Issues](https://github.com/SolenMusic/Paperweight/issues).
 
@@ -42,7 +42,8 @@ Native macOS AppKit frontend
 ```
 
 See [docs/architecture.md](docs/architecture.md),
-[docs/organic-structures.md](docs/organic-structures.md), and
+[docs/organic-structures.md](docs/organic-structures.md),
+[docs/reference-materials.md](docs/reference-materials.md), and
 [docs/roadmap.md](docs/roadmap.md).
 Performance methodology and reproducible baseline measurements live in
 [docs/performance.md](docs/performance.md).
@@ -66,11 +67,13 @@ styles, castle roof slates, cel forest rock, sculpted flagstone, worn masonry,
 chamfered roof slate, a diamond castle window, a detailed crate, decorative
 fasteners, masonry corner variation, cel courtyard gravel, scattered debris,
 an initial foliage population, cel forest bark, and layered castle foliage.
-These are the practical forerunners of the
-planned seedless template library. Region Stones demonstrates repeatable
+File > New from Reference Template exposes the ten Blastard targets as seedless,
+caller-instantiated recipes with compact material-specific controls. The older
+Showcase menu remains available for direct access to the wider example set.
+Region Stones demonstrates repeatable
 per-cell variation, while Course Random gives every row one stable value.
 
-Format-version-1 through version-13 `.pmat` files still open with their
+Format-version-1 through version-14 `.pmat` files still open with their
 historical output intact; saving migrates them to canonical format version 14.
 Version 14 adds organic cells, branching cracks, parametric leaf clusters, and
 organic accumulation. Exact block
@@ -160,6 +163,17 @@ The native controls cover candidate density and jitter, spacing and overlap,
 population creation and selection, scale/aspect/rotation ranges, colour pairs,
 height and roughness ranges, stamp kind and size, and density/exclusion masks.
 See [the `.pmat` format reference](docs/pmat-format.md) for the text format.
+
+Use File > New from Reference Template to instantiate one of the ten reference
+families with the seed currently shown in the editor. Its friendly controls
+appear above the ordinary material settings; the full layer inspector remains
+available for detailed work. Open Reference Image displays a PNG or BMP beside
+the generated result without embedding that image or its path in the material.
+Enable Optional baked presentation to generate a separate colour preview from
+the unlit colour and normal/height maps. Azimuth, elevation, diffuse bands,
+highlight threshold, and ambient contribution are adjustable, and exporting
+while enabled writes the clearly named baked result. See
+[the reference-material guide](docs/reference-materials.md).
 
 Choose 3D under Preview mode to inspect all four material maps together. Select
 a plane, sphere, cube, or cylinder; drag the object to orbit and scroll to zoom.

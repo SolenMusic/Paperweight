@@ -478,7 +478,7 @@ formula is applied to scalar, red, green, blue, and alpha channels.
 
 ## Graph compilation
 
-Paperweight v0.0.17 retains the layer syntax, now at version 14, as the compact,
+Paperweight v0.0.18 retains the layer syntax, now at version 14, as the compact,
 human-editable authoring projection. Before generation, the portable core
 compiles it into a directed acyclic material graph:
 
@@ -534,7 +534,7 @@ generation wrap mathematically across both tile axes.
 ## Compatibility policy
 
 The `.pmat` format version and Paperweight application version are separate.
-Paperweight v0.0.17 reads versions 1 through 14 and writes version 14. A reader
+Paperweight v0.0.18 reads versions 1 through 14 and writes version 14. A reader
 rejects unsupported versions and unknown fields so that it cannot quietly
 reinterpret a future material.
 
