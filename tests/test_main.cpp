@@ -4061,12 +4061,43 @@ void testMaterialWizard()
         expect(!templates.empty(), "every wizard family has at least one reusable template");
         for (const auto* descriptor : templates) {
             expect(descriptor != nullptr &&
-                       paperweight::findReferenceMaterialTemplate(descriptor->identifier) == descriptor,
-                   "wizard catalogue entries resolve through the reference template catalogue");
+                       paperweight::findWizardMaterialTemplate(descriptor->identifier) == descriptor,
+                   "wizard catalogue entries resolve through the complete wizard catalogue");
+            if (descriptor == nullptr) {
+                continue;
+            }
+            std::ifstream sourceFile(
+                std::string(descriptor->recipeResourceName) + ".pmat",
+                std::ios::binary);
+            const std::string sourceText(
+                std::istreambuf_iterator<char>{sourceFile},
+                std::istreambuf_iterator<char>{});
+            const auto parsed = paperweight::parsePmat(sourceText);
+            const auto* authored = std::get_if<paperweight::Material>(&parsed);
+            bool usable = authored != nullptr;
+            if (authored != nullptr) {
+                const auto session = paperweight::makeMaterialWizardSession(
+                    *descriptor, paperweight::makeMaterialRecipe(*authored), 20020);
+                const auto* wizardSession =
+                    std::get_if<paperweight::MaterialWizardSession>(&session);
+                usable = wizardSession != nullptr &&
+                    std::holds_alternative<paperweight::Material>(
+                        paperweight::makeMaterialFromWizard(*wizardSession, *descriptor));
+            }
+            expect(usable,
+                   "every family starting point loads and applies its friendly controls");
         }
     }
+    const auto metalTemplates = paperweight::wizardTemplatesForFamily(
+        paperweight::WizardMaterialFamily::metal);
+    expect(metalTemplates.size() == 2 &&
+               metalTemplates[0]->identifier == "painted-metal" &&
+               metalTemplates[1]->identifier == "weathered-metal",
+           "metal offers actual painted and weathered metal instead of incidental metal details");
+    expect(paperweight::findWizardMaterialTemplate("not-a-wizard-template") == nullptr,
+           "unknown wizard templates are rejected");
 
-    const auto* descriptor = paperweight::findReferenceMaterialTemplate("cel-courtyard-gravel");
+    const auto* descriptor = paperweight::findWizardMaterialTemplate("cel-courtyard-gravel");
     expect(descriptor != nullptr, "wizard acceptance template exists");
     if (descriptor == nullptr) {
         return;

@@ -4,31 +4,122 @@
 
 #include <algorithm>
 #include <cmath>
+#include <initializer_list>
 #include <limits>
 
 namespace paperweight {
 namespace {
 
-constexpr std::array<WizardTemplateOption, 18> templateOptions{{
+constexpr std::array<WizardTemplateOption, 22> templateOptions{{
     {WizardMaterialFamily::masonry, "castle-flagstone"},
     {WizardMaterialFamily::masonry, "castle-stone"},
     {WizardMaterialFamily::masonry, "cel-castle-stone"},
     {WizardMaterialFamily::masonry, "castle-roof"},
     {WizardMaterialFamily::stone, "cel-forest-rock"},
     {WizardMaterialFamily::stone, "castle-flagstone"},
+    {WizardMaterialFamily::stone, "graphic-marble"},
+    {WizardMaterialFamily::stone, "mossy-pebbles"},
     {WizardMaterialFamily::wood, "cel-forest-crate"},
+    {WizardMaterialFamily::wood, "knotty-wood"},
     {WizardMaterialFamily::wood, "cel-forest-bark"},
-    {WizardMaterialFamily::metal, "castle-window"},
-    {WizardMaterialFamily::metal, "cel-forest-crate"},
+    {WizardMaterialFamily::metal, "painted-metal"},
+    {WizardMaterialFamily::metal, "weathered-metal"},
     {WizardMaterialFamily::organic, "cel-forest-bark"},
     {WizardMaterialFamily::organic, "castle-foliage"},
     {WizardMaterialFamily::foliage, "castle-foliage"},
     {WizardMaterialFamily::gravelDebris, "cel-courtyard-gravel"},
-    {WizardMaterialFamily::gravelDebris, "cel-forest-rock"},
+    {WizardMaterialFamily::gravelDebris, "scattered-debris"},
+    {WizardMaterialFamily::gravelDebris, "mossy-pebbles"},
+    {WizardMaterialFamily::abstract, "graphic-marble"},
+    {WizardMaterialFamily::abstract, "ember"},
     {WizardMaterialFamily::abstract, "castle-window"},
-    {WizardMaterialFamily::abstract, "cel-castle-stone"},
-    {WizardMaterialFamily::abstract, "castle-roof"},
 }};
+
+TemplateControl wizardControl(
+    std::string_view key,
+    std::string_view name,
+    double minimum,
+    double maximum,
+    double defaultValue,
+    double step,
+    std::initializer_list<TemplateControlBinding> bindings)
+{
+    return {key, name, minimum, maximum, defaultValue, step, bindings};
+}
+
+const std::vector<ReferenceMaterialTemplate>& additionalWizardTemplates()
+{
+    using P = TemplateProperty;
+    static const std::vector<ReferenceMaterialTemplate> templates{
+        {"painted-metal", "Painted Metal", "painted-metal", "",
+         "Brushed painted metal with controlled smoothing and a graphic palette.",
+         {wizardControl("brush-detail", "Brush detail", 0, 100, 73, 1,
+              {{P::surfaceDetail, 0, 0.4, 1.0}}),
+          wizardControl("brush-wander", "Brush wander", 0, 100, 31, 1,
+              {{P::surfaceDistortion, 0, 0.05, 0.8}}),
+          wizardControl("finish-smoothing", "Finish smoothing", 0, 100, 68, 1,
+              {{P::layerOpacity, 1, 0, 1}}),
+          wizardControl("surface-relief", "Surface relief", 0, 5, 1.4, 0.1,
+              {{P::normalStrength, 0, 0, 5}})}},
+        {"weathered-metal", "Weathered Metal", "weathered-metal", "",
+         "Scratched and pitted metal with independently adjustable rust and dirt.",
+         {wizardControl("scratch-detail", "Scratch detail", 0, 100, 83, 1,
+              {{P::surfaceDetail, 0, 0.4, 1.0}}),
+          wizardControl("pitting", "Pitting", 0, 100, 36, 1,
+              {{P::layerOpacity, 2, 0, 0.55}}),
+          wizardControl("rust-coverage", "Rust coverage", 0, 100, 69, 1,
+              {{P::layerOpacity, 3, 0, 0.9}}),
+          wizardControl("dirt-coverage", "Dirt coverage", 0, 100, 32, 1,
+              {{P::layerOpacity, 6, 0, 0.5}})}},
+        {"knotty-wood", "Knotty Wood", "knotty-wood", "",
+         "Flowing timber grain with pores, warm heartwood, and broken knots.",
+         {wizardControl("grain-detail", "Grain detail", 0, 100, 55, 1,
+              {{P::surfaceDetail, 1, 0.2, 1.0}}),
+          wizardControl("grain-wander", "Grain wander", 0, 100, 45, 1,
+              {{P::surfaceDistortion, 1, 0.1, 0.9}}),
+          wizardControl("open-pores", "Open pores", 0, 100, 34, 1,
+              {{P::layerOpacity, 3, 0, 0.35}}),
+          wizardControl("knots", "Knots", 0, 100, 33, 1,
+              {{P::layerOpacity, 6, 0, 0.4}})}},
+        {"graphic-marble", "Graphic Marble", "graphic-marble", "",
+         "Flowing marble veins with restrained relief and stylised mineral bands.",
+         {wizardControl("vein-detail", "Vein detail", 0, 100, 65, 1,
+              {{P::surfaceDetail, 0, 0.2, 1.0}}),
+          wizardControl("vein-flow", "Vein flow", 0, 100, 89, 1,
+              {{P::surfaceDistortion, 0, 0.1, 0.95}}),
+          wizardControl("graphic-banding", "Graphic banding", 0, 100, 78, 1,
+              {{P::layerOpacity, 1, 0, 1}}),
+          wizardControl("outlines", "Vein outlines", 0, 100, 72, 1,
+              {{P::layerOpacity, 2, 0, 1}})}},
+        {"scattered-debris", "Scattered Debris", "scattered-debris", "",
+         "A tileable population of chips with stable spacing and varied shapes.",
+         {wizardControl("debris-density", "Debris density", 0, 100, 48, 1,
+              {{P::scatterDensity, 0, 0.2, 1.0}}),
+          wizardControl("debris-spacing", "Debris spacing", 0, 0.04, 0.014, 0.001,
+              {{P::scatterMinimumDistance, 0, 0, 0.04}}),
+          wizardControl("surface-relief", "Surface relief", 0, 8, 3.2, 0.1,
+              {{P::normalStrength, 0, 0, 8}})}},
+        {"mossy-pebbles", "Mossy Pebbles", "mossy-pebbles", "",
+         "Rounded pebbles with mineral variation, deep joints, and damp moss.",
+         {wizardControl("stone-columns", "Stone columns", 3, 14, 8, 1,
+              {{P::worleyColumns, 0, 3, 14}}),
+          wizardControl("stone-rows", "Stone rows", 3, 14, 7, 1,
+              {{P::worleyRows, 0, 3, 14}}),
+          wizardControl("joint-width", "Joint width", 0.1, 0.5, 0.29, 0.01,
+              {{P::worleyEdgeWidth, 0, 0.1, 0.5}}),
+          wizardControl("moss-coverage", "Moss coverage", 0, 100, 50, 1,
+              {{P::layerOpacity, 5, 0, 1}})}},
+        {"ember", "Ember", "ember", "",
+         "An abstract flowing field of dark violet and hot orange material.",
+         {wizardControl("hot-coverage", "Hot coverage", 0, 100, 31, 1,
+              {{P::layerOpacity, 1, 0, 0.8}}),
+          wizardControl("flame-contrast", "Flame contrast", 0, 100, 100, 1,
+              {{P::layerOpacity, 2, 0, 1}}),
+          wizardControl("surface-relief", "Surface relief", 0, 5, 1.5, 0.1,
+              {{P::normalStrength, 0, 0, 5}})}},
+    };
+    return templates;
+}
 
 WizardControlSection sectionForControl(const TemplateControl& control)
 {
@@ -36,12 +127,19 @@ WizardControlSection sectionForControl(const TemplateControl& control)
     if (key.find("wear") != std::string_view::npos ||
         key.find("moss") != std::string_view::npos ||
         key.find("lichen") != std::string_view::npos ||
+        key.find("scratch") != std::string_view::npos ||
+        key.find("pitting") != std::string_view::npos ||
+        key.find("rust") != std::string_view::npos ||
+        key.find("dirt") != std::string_view::npos ||
+        key.find("knots") != std::string_view::npos ||
         key.find("crooked") != std::string_view::npos ||
         key.find("uneven") != std::string_view::npos ||
         key.find("character") != std::string_view::npos) {
         return WizardControlSection::wear;
     }
     if (key.find("count") != std::string_view::npos ||
+        key.find("columns") != std::string_view::npos ||
+        key.find("rows") != std::string_view::npos ||
         key.find("density") != std::string_view::npos ||
         key.find("size") != std::string_view::npos ||
         key.find("width") != std::string_view::npos ||
@@ -129,6 +227,22 @@ std::span<const WizardTemplateOption> wizardTemplateOptions()
     return templateOptions;
 }
 
+const ReferenceMaterialTemplate* findWizardMaterialTemplate(
+    std::string_view identifier)
+{
+    if (const auto* descriptor = findReferenceMaterialTemplate(identifier)) {
+        return descriptor;
+    }
+    const auto& templates = additionalWizardTemplates();
+    const auto found = std::find_if(
+        templates.begin(),
+        templates.end(),
+        [identifier](const auto& candidate) {
+            return candidate.identifier == identifier;
+        });
+    return found == templates.end() ? nullptr : &*found;
+}
+
 std::vector<const ReferenceMaterialTemplate*> wizardTemplatesForFamily(
     WizardMaterialFamily family)
 {
@@ -137,7 +251,7 @@ std::vector<const ReferenceMaterialTemplate*> wizardTemplatesForFamily(
         if (option.family != family) {
             continue;
         }
-        if (const auto* descriptor = findReferenceMaterialTemplate(option.templateIdentifier)) {
+        if (const auto* descriptor = findWizardMaterialTemplate(option.templateIdentifier)) {
             result.push_back(descriptor);
         }
     }

@@ -15,11 +15,16 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 v0.0.20 is the current Material Design Wizard release. **File > New Material**
 opens a four-step native workflow for choosing a material family and seedless
-reference template, setting the real-world repeat size, adjusting friendly
+starting recipe, setting the real-world repeat size, adjusting friendly
 construction, surface, colour, and wear controls, and comparing deterministic
 seeded alternatives. Any choice can be locked before variation. The wizard has
 live 2D and four-map 3D preview and finishes either in the complete layer editor
 or directly in the remembered working-folder library.
+
+Family choices describe the actual material rather than incidental details:
+Metal starts from Painted Metal or Weathered Metal, while proven wood, marble,
+pebble, debris, and abstract showcases supplement the ten v0.0.18 reference
+templates where appropriate.
 
 Wizard results are normal editable `Material` values and human-readable
 version-15 `.pmat` files. The wizard adds no evaluator, hidden recipe state, or
