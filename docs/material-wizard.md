@@ -10,8 +10,9 @@ Choose **File > New Material** or **New Material** in the working-folder
 library. The wizard preserves progress while moving through four steps:
 
 1. **Family** - choose masonry, stone, wood, metal, organic, foliage, gravel or
-   debris, or abstract, then choose one of the compatible v0.0.18 seedless
-   reference templates.
+   debris, or abstract, then choose a suitable seedless starting point. The
+   catalogue begins with the v0.0.18 reference templates and also promotes
+   proven bundled recipes where a family needs its own honest material.
 2. **Scale** - choose a useful physical-size preset or enter the width and
    height, in metres, covered by one seamless repeat. A summary translates that
    into millimetres per preview pixel without confusing physical size with
@@ -43,9 +44,18 @@ family selection, comparison thumbnails, and preview mode are not serialised.
 
 The portable `MaterialWizardSession` owns only a seedless `MaterialRecipe`,
 physical size, colour pair, typed template-control values, and lock state. It
-uses the v0.0.18 template catalogue and `applyTemplateControl` to construct a
-normal material. The AppKit controller owns pages, controls, background preview
-work, and library file panels.
+uses the v0.0.18 template catalogue plus selected existing showcase recipes and
+`applyTemplateControl` to construct a normal material. Showcase sources are
+lifted into `MaterialRecipe`, which deliberately removes their seed and
+identity before the caller chooses a variation. The AppKit controller owns
+pages, controls, background preview work, and library file panels.
+
+The family catalogue deliberately follows the substance of a recipe rather
+than incidental details within it. Metal therefore offers Painted Metal and
+Weathered Metal, not a wooden crate merely because that recipe happens to
+contain nails. Wood also offers Knotty Wood; stone includes Graphic Marble and
+Mossy Pebbles; gravel or debris includes Scattered Debris and Mossy Pebbles;
+and abstract includes Graphic Marble and Ember.
 
 This deliberately leaves one material engine, one layer/graph vocabulary, and
 one file format. Automatic image recreation, AI-authored recipes, visual node

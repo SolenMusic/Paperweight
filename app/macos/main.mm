@@ -11,6 +11,7 @@
 #include <paperweight/hash.hpp>
 #include <paperweight/layer.hpp>
 #include <paperweight/material_template.hpp>
+#include <paperweight/material_wizard.hpp>
 #include <paperweight/organic.hpp>
 #include <paperweight/pmat.hpp>
 #include <paperweight/stylised_lighting.hpp>
@@ -890,9 +891,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     auto* fileMenuItem = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
     [mainMenu addItem:fileMenuItem];
     auto* fileMenu = [[NSMenu alloc] initWithTitle:@"File"];
-    [fileMenu addItemWithTitle:@"New Material…"
-                        action:@selector(showMaterialWizard:)
-                 keyEquivalent:@"n"];
+    auto* newMaterialItem = [fileMenu addItemWithTitle:@"New Material…"
+                                                action:@selector(showMaterialWizard:)
+                                         keyEquivalent:@"n"];
+    newMaterialItem.target = self;
     [fileMenu addItem:[NSMenuItem separatorItem]];
     [fileMenu addItemWithTitle:@"Open…" action:@selector(openMaterial:) keyEquivalent:@"o"];
     auto* referenceTemplateItem = [[NSMenuItem alloc]
@@ -1034,7 +1036,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
             strongSelf->dirty_ = true;
             const auto* descriptor = templateIdentifier.UTF8String == nullptr
                 ? nullptr
-                : paperweight::findReferenceMaterialTemplate(templateIdentifier.UTF8String);
+                : paperweight::findWizardMaterialTemplate(templateIdentifier.UTF8String);
             [strongSelf setActiveReferenceTemplate:descriptor];
             [strongSelf clearReferenceImage:nil];
             [strongSelf applyMaterialToControls];
@@ -5744,7 +5746,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     }
 
     self.activeTemplateLabel = makeLabel([NSString stringWithFormat:
-        @"Reference template: %s", descriptor->displayName.data()]);
+        @"Material template: %s", descriptor->displayName.data()]);
     self.activeTemplateLabel.font = [NSFont systemFontOfSize:13.0 weight:NSFontWeightSemibold];
     self.activeTemplateLabel.maximumNumberOfLines = 2;
     [self.templateControlsGroup addArrangedSubview:self.activeTemplateLabel];

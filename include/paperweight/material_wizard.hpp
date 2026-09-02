@@ -48,6 +48,8 @@ struct WizardTemplateOption {
 };
 
 [[nodiscard]] std::span<const WizardTemplateOption> wizardTemplateOptions();
+[[nodiscard]] const ReferenceMaterialTemplate* findWizardMaterialTemplate(
+    std::string_view identifier);
 [[nodiscard]] std::vector<const ReferenceMaterialTemplate*> wizardTemplatesForFamily(
     WizardMaterialFamily family);
 

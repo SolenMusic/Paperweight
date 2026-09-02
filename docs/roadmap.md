@@ -229,11 +229,14 @@ inspection. See [roadmap issue #201](https://github.com/SolenMusic/Paperweight/i
 
 Implemented: add a native **New Material** workflow covering masonry, stone,
 wood, metal, organic, foliage, gravel or debris, and abstract families. Authors
-choose a compatible v0.0.18 seedless reference template, select or enter the
-physical repeat size, and adjust friendly construction, surface, colour, and
-wear controls while watching live 2D or four-map 3D preview. Seed, size, colour,
-and individual template properties may be locked while generating four stable,
-deterministic alternatives for comparison.
+choose a compatible v0.0.18 seedless reference template or a proven bundled
+recipe promoted to the same seedless model, select or enter the physical repeat
+size, and adjust friendly construction, surface, colour, and wear controls
+while watching live 2D or four-map 3D preview. Metal starts from actual Painted
+Metal or Weathered Metal recipes rather than incidental metal details inside an
+unrelated material. Seed, size, colour, and individual template properties may
+be locked while generating four stable, deterministic alternatives for
+comparison.
 
 The chosen result can enter the complete layer editor or be given identity and
 saved directly into the remembered working-folder library. Both routes produce
