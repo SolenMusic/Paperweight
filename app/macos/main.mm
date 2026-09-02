@@ -904,6 +904,21 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     return [self confirmDiscardIfNeeded];
 }
 
+- (void)windowWillClose:(NSNotification*)notification
+{
+    if (notification.object != self.window) {
+        return;
+    }
+
+    // The editor owns one reusable window rather than an NSDocument window.
+    // Once it is closed, its URL must no longer make the library believe the
+    // material is open. The retained window can subsequently be shown again
+    // when a material is opened from the library or Finder.
+    self.currentFileURL = nil;
+    self.window.documentEdited = NO;
+    self.window.representedURL = nil;
+}
+
 - (void)buildMenus
 {
     auto* mainMenu = [[NSMenu alloc] initWithTitle:@""];
@@ -1104,7 +1119,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
             }
             canRewriteHandler:^BOOL(NSURL* url) {
                 AppDelegate* strongSelf = weakSelf;
-                return strongSelf == nil || strongSelf.currentFileURL == nil ||
+                return strongSelf == nil || !strongSelf.window.isVisible ||
+                    strongSelf.currentFileURL == nil ||
                     ![strongSelf.currentFileURL isEqual:url];
             }];
     }
@@ -1232,6 +1248,11 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
                                                   defer:NO];
     self.window.title = @"Untitled.pmat — Paperweight";
     self.window.minSize = NSMakeSize(1120, 720);
+    // NSWindow releases itself when closed unless told otherwise. AppDelegate
+    // keeps and reuses this window, so allowing that release leaves the strong
+    // property pointing at a deallocated object and crashes the next editor
+    // action (or application teardown while an auxiliary window is open).
+    self.window.releasedWhenClosed = NO;
     self.window.delegate = self;
     NSColorPanel.sharedColorPanel.showsAlpha = YES;
 
@@ -6524,6 +6545,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.statusLabel.stringValue = @"Showcase loaded as a new editable material";
         self.statusLabel.textColor = NSColor.secondaryLabelColor;
     }
+    [self.window makeKeyAndOrderFront:nil];
     return YES;
 }
 
