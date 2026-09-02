@@ -13,13 +13,15 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-v0.0.18 is the current Reference Materials and Stylised Baking release. Ten
-Blastard-oriented material families are now exposed as genuinely seedless C++
-recipes which become ordinary editable materials only after the caller chooses a
-seed. Each has a small set of friendly high-level controls over its existing
-layer recipe. The native editor adds a dedicated reference-template browser,
-side-by-side PNG/BMP comparison, and an explicitly optional portable stylised
-lighting bake. Unlit colour, height, normal, and roughness remain authoritative.
+v0.0.19 is the current Working Folder and Material Library release. The native
+editor can remember a source folder, recursively browse its `.pmat` files,
+search and filter descriptive metadata, generate live thumbnails, and report
+invalid files or ambiguous identities without hiding valid siblings. Materials
+may carry a stable UID, friendly name, description, category, and tags in the
+human-readable version-15 format. Create, duplicate, rename, move, open, and
+reveal operations keep readable `.pmat` files as the source of truth. Preview
+resolution is selectable from 64x64 through 1024x1024 for 2D, baked, and 3D
+inspection, and remains editor state rather than material content.
 
 The staged work is tracked in [GitHub Issues](https://github.com/SolenMusic/Paperweight/issues).
 
@@ -43,7 +45,8 @@ Native macOS AppKit frontend
 
 See [docs/architecture.md](docs/architecture.md),
 [docs/organic-structures.md](docs/organic-structures.md),
-[docs/reference-materials.md](docs/reference-materials.md), and
+[docs/reference-materials.md](docs/reference-materials.md),
+[docs/material-library.md](docs/material-library.md), and
 [docs/roadmap.md](docs/roadmap.md).
 Performance methodology and reproducible baseline measurements live in
 [docs/performance.md](docs/performance.md).
@@ -73,10 +76,10 @@ Showcase menu remains available for direct access to the wider example set.
 Region Stones demonstrates repeatable
 per-cell variation, while Course Random gives every row one stable value.
 
-Format-version-1 through version-14 `.pmat` files still open with their
-historical output intact; saving migrates them to canonical format version 14.
-Version 14 adds organic cells, branching cracks, parametric leaf clusters, and
-organic accumulation. Exact block
+Format-version-1 through version-15 `.pmat` files open with their historical
+output intact; saving migrates them to canonical format version 15. Version 15
+adds optional identity and descriptive metadata only; generated pixels are
+unchanged. Exact block
 and parent-course keys are evaluator metadata, not pixel channels, so they are
 never stored in lossy floating-point form.
 The editor does not invent a redundant graph syntax for the existing layer recipe:

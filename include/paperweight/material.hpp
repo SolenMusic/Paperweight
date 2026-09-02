@@ -13,6 +13,16 @@
 
 namespace paperweight {
 
+struct MaterialMetadata {
+    std::string uid;
+    std::string name;
+    std::string description;
+    std::string category;
+    std::vector<std::string> tags;
+
+    friend bool operator==(const MaterialMetadata&, const MaterialMetadata&) = default;
+};
+
 struct Material {
     std::uint64_t seed{18431};
     std::uint32_t frequency{4};
@@ -26,6 +36,7 @@ struct Material {
     double roughnessHigh{0.85};
     std::vector<MaterialLayer> layers;
     PhysicalSize physicalSize;
+    std::optional<MaterialMetadata> metadata;
 
     friend bool operator==(const Material&, const Material&) = default;
 };
@@ -44,6 +55,11 @@ struct MaterialLimits {
     static constexpr double minimumRoughness = 0.0;
     static constexpr double maximumRoughness = 1.0;
     static constexpr std::uint32_t maximumLatticePeriod = 4096;
+    static constexpr std::size_t maximumNameLength = 128;
+    static constexpr std::size_t maximumDescriptionLength = 512;
+    static constexpr std::size_t maximumCategoryLength = 64;
+    static constexpr std::size_t maximumTags = 32;
+    static constexpr std::size_t maximumTagLength = 48;
 };
 
 enum class MaterialParameter {
@@ -116,6 +132,9 @@ inline constexpr std::array<ColourParameterMetadata, 2> colourParameterMetadata{
 
 [[nodiscard]] std::optional<std::string> validateMaterial(const Material& material);
 [[nodiscard]] std::optional<std::string> validateMaterialSettings(const Material& material);
+[[nodiscard]] bool isCanonicalMaterialUid(std::string_view uid);
+[[nodiscard]] std::optional<std::string> validateMaterialMetadata(
+    const MaterialMetadata& metadata);
 [[nodiscard]] std::optional<std::string> validateMaterialLayer(
     const MaterialLayer& layer,
     std::string_view prefix = {});

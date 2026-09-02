@@ -54,6 +54,8 @@ add_executable(Paperweight MACOSX_BUNDLE
     ImageBridge.mm
     Material3DPreviewView.hpp
     Material3DPreviewView.mm
+    MaterialLibraryWindowController.hpp
+    MaterialLibraryWindowController.mm
     main.mm
     ${PAPERWEIGHT_METAL_SHADER}
     ${PAPERWEIGHT_SHOWCASE_MATERIALS}

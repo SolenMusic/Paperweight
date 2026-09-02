@@ -211,6 +211,36 @@ and portable dependency-free C++20 semantics. Detailed Codex-sized child issues
 are expanded only when a milestone becomes active, allowing implementation
 evidence to shape the local backlog without creating a second roadmap.
 
+## v0.0.19 - Working Folder and Material Library
+
+Implemented: choose and remember a working folder; recursively index readable
+`.pmat` source files; browse generated thumbnails; search names, tags,
+categories, descriptions, UIDs, and paths; and filter by category. Version-15
+material metadata adds an optional stable UID, friendly name, description,
+category, and tags without changing evaluation. Missing identity, duplicate
+UIDs, malformed files, and missing friendly names are visible diagnostics and
+do not prevent valid siblings from loading. Safe create, duplicate, friendly
+rename, in-root move, open, reveal, explicit refresh, and external-change
+refresh operations avoid silent overwrite. The editor also offers remembered
+64, 128, 256, 512, and 1024 square preview resolutions across 2D, baked, and 3D
+inspection. See [roadmap issue #201](https://github.com/SolenMusic/Paperweight/issues/201).
+
+## v0.0.20 - Material Design Wizard
+
+Planned: turn the growing procedural vocabulary into a guided material-design
+workflow. Authors choose a broad family and answer visual questions about
+construction, scale, surface condition, style, and desired outputs. The wizard
+instantiates ordinary editable layers from seedless recipes; it does not create
+a second evaluator or hide permanent state behind the generated material.
+
+## v0.0.21 - Portable Library Packs
+
+Planned: compile a working-folder library into a deterministic binary game blob
+with a versioned directory, UID lookup, integrity hashes, and measured
+compression. Human-readable `.pmat` files remain authoritative and suitable for
+Git. Packing and unpacking must be portable, bounded, and byte-stable across
+supported architectures; RLE is adopted only where measurements justify it.
+
 ## v0.1.0 - Game Library
 
 Stabilise the embedding API and add material-definition versioning, generator
@@ -221,10 +251,6 @@ launch, load time, or during development-time asset processing.
 
 ## Unscheduled future work
 
-- Working-folder material libraries with stable IDs, friendly names, and
-  browsing or organisation beyond the seedless reference templates in v0.0.18.
-- A measured packed-library export for games, while readable `.pmat` files
-  remain the source of truth.
 - Optional Git assistance layered over a working folder.
 - An Emscripten/WebAssembly portability proof.
 
