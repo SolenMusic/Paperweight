@@ -11,6 +11,7 @@
 #include <paperweight/noise.hpp>
 #include <paperweight/organic.hpp>
 #include <paperweight/pmat.hpp>
+#include <paperweight/pwlib.hpp>
 #include <paperweight/region.hpp>
 #include <paperweight/scatter.hpp>
 #include <paperweight/sculpt.hpp>
@@ -121,9 +122,9 @@ paperweight::Material materialWithNoiseParameters(
 
 void testVersion()
 {
-    constexpr paperweight::Version expected{0, 0, 20};
+    constexpr paperweight::Version expected{0, 0, 21};
     static_assert(paperweight::currentVersion == expected);
-    expect(paperweight::versionString() == "0.0.20", "version string is 0.0.20");
+    expect(paperweight::versionString() == "0.0.21", "version string is 0.0.21");
 }
 
 void testImage()
@@ -4393,6 +4394,206 @@ void testMaterialIdentityAndLibrary()
            "library results are byte-stable when filesystem discovery order changes");
 }
 
+void testPackedMaterialLibrary()
+{
+    const auto loadMaterial = [](const char* path, std::string uid, std::string name) {
+        std::ifstream file(path, std::ios::binary);
+        const std::string text(
+            std::istreambuf_iterator<char>{file},
+            std::istreambuf_iterator<char>{});
+        const auto parsed = paperweight::parsePmat(text);
+        auto material = std::get<paperweight::Material>(parsed);
+        material.metadata = paperweight::MaterialMetadata{
+            std::move(uid), std::move(name), {}, "Game", {"packed", "test"},
+        };
+        return material;
+    };
+    auto brick = loadMaterial(
+        "brick-wall.pmat",
+        "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "Packed Test Brick");
+    brick.metadata->description = std::string(480, 'a');
+    const auto noise = loadMaterial(
+        "default.pmat",
+        "11111111-2222-3333-4444-555555555555",
+        "Packed Test Noise");
+    const auto brickText = std::get<std::string>(paperweight::serialisePmat(brick));
+    const auto noiseText = std::get<std::string>(paperweight::serialisePmat(noise));
+    const std::array sources{
+        paperweight::MaterialLibrarySource{"walls/brick.pmat", brickText},
+        paperweight::MaterialLibrarySource{"abstract/noise.pmat", noiseText},
+    };
+
+    const auto packedResult = paperweight::packPwlib(sources);
+    const auto* packedBytes = std::get_if<std::vector<std::uint8_t>>(&packedResult);
+    expect(packedBytes != nullptr && !packedBytes->empty(),
+           "valid source materials compile into a packed library");
+    if (packedBytes == nullptr) {
+        return;
+    }
+    auto reversedSources = sources;
+    std::reverse(reversedSources.begin(), reversedSources.end());
+    const auto reversedResult = paperweight::packPwlib(reversedSources);
+    const auto* reversedBytes = std::get_if<std::vector<std::uint8_t>>(&reversedResult);
+    expect(reversedBytes != nullptr && *reversedBytes == *packedBytes,
+           "packed library bytes do not depend on source discovery order");
+
+    const auto openedResult = paperweight::readPwlib(*packedBytes);
+    const auto* library = std::get_if<paperweight::PackedMaterialLibrary>(&openedResult);
+    expect(library != nullptr && library->formatVersion() == 1 &&
+               library->bytes().size() == packedBytes->size() &&
+               library->entries().size() == 2,
+           "the portable reader opens and enumerates a memory-backed version-1 library");
+    if (library == nullptr) {
+        return;
+    }
+    expect(library->checksum() == 12018005776477956188ULL,
+           "packed library matches its cross-architecture golden checksum");
+    expect(library->entries()[0].uid == noise.metadata->uid &&
+               library->entries()[0].name == noise.metadata->name &&
+               library->entries()[1].uid == brick.metadata->uid &&
+               library->entries()[1].name == brick.metadata->name,
+           "entry table has deterministic UID ordering and friendly names");
+    expect(std::any_of(
+               library->entries().begin(), library->entries().end(), [](const auto& entry) {
+                   return entry.storageMode == paperweight::PwlibStorageMode::rle &&
+                       entry.storedSize < entry.uncompressedSize;
+               }),
+           "automatic mode uses RLE for an entry only when it is smaller");
+    expect(library->findByUid(brick.metadata->uid) != nullptr &&
+               library->findByUid("ffffffff-ffff-ffff-ffff-ffffffffffff") == nullptr,
+           "memory-backed entry lookup uses canonical material UIDs");
+
+    const auto rawResult = paperweight::packPwlib(sources, {false});
+    const auto* rawBytes = std::get_if<std::vector<std::uint8_t>>(&rawResult);
+    const auto rawOpened = rawBytes != nullptr
+        ? paperweight::readPwlib(*rawBytes)
+        : paperweight::PwlibReadResult{paperweight::PwlibError{}};
+    const auto* rawLibrary = std::get_if<paperweight::PackedMaterialLibrary>(&rawOpened);
+    expect(rawLibrary != nullptr && std::all_of(
+               rawLibrary->entries().begin(), rawLibrary->entries().end(), [](const auto& entry) {
+                   return entry.storageMode == paperweight::PwlibStorageMode::raw &&
+                       entry.storedSize == entry.uncompressedSize;
+               }),
+           "raw storage mode retains canonical PMAT bytes without RLE");
+
+    constexpr std::uint64_t chosenSeed = 210021;
+    for (const auto& sourceMaterial : {brick, noise}) {
+        const auto sourceUid = sourceMaterial.metadata->uid;
+        const auto storedResult = library->materialByUid(sourceUid);
+        const auto* stored = std::get_if<paperweight::Material>(&storedResult);
+        const auto instantiatedResult = library->instantiateByUid(sourceUid, chosenSeed);
+        const auto* instantiated = std::get_if<paperweight::Material>(&instantiatedResult);
+        auto direct = sourceMaterial;
+        direct.seed = chosenSeed;
+        expect(stored != nullptr && stored->seed == sourceMaterial.seed &&
+                   instantiated != nullptr && *instantiated == direct,
+               "packed materials can be retrieved or instantiated with a caller-selected seed");
+        if (instantiated == nullptr) {
+            continue;
+        }
+        for (const auto output : paperweight::materialOutputs) {
+            const auto sourceImage = paperweight::generate({
+                direct, 10, 8, output, std::nullopt, std::nullopt, 1,
+            });
+            const auto packedImage = paperweight::generate({
+                *instantiated, 10, 8, output, std::nullopt, std::nullopt, 4,
+            });
+            const auto* sourcePixels = std::get_if<paperweight::Image>(&sourceImage);
+            const auto* packedPixels = std::get_if<paperweight::Image>(&packedImage);
+            expect(sourcePixels != nullptr && packedPixels != nullptr &&
+                       std::equal(
+                           sourcePixels->pixels().begin(), sourcePixels->pixels().end(),
+                           packedPixels->pixels().begin()),
+                   "source PMAT and packed template generate byte-identical material outputs");
+        }
+    }
+    expect(std::holds_alternative<paperweight::PwlibError>(
+               library->instantiateByUid(
+                   "ffffffff-ffff-ffff-ffff-ffffffffffff", chosenSeed)),
+           "packed material lookup reports an unknown UID");
+
+    if (rawBytes != nullptr) {
+        auto invalidMagic = *rawBytes;
+        invalidMagic[0] ^= 0xffU;
+        const auto invalidMagicResult = paperweight::readPwlib(invalidMagic);
+        const auto* invalidMagicError = std::get_if<paperweight::PwlibError>(&invalidMagicResult);
+        expect(invalidMagicError != nullptr &&
+                   invalidMagicError->code == paperweight::PwlibErrorCode::invalidMagic,
+               "packed reader rejects invalid magic");
+
+        auto incompatible = *rawBytes;
+        incompatible[8] = 2;
+        const auto incompatibleResult = paperweight::readPwlib(incompatible);
+        const auto* incompatibleError = std::get_if<paperweight::PwlibError>(&incompatibleResult);
+        expect(incompatibleError != nullptr &&
+                   incompatibleError->code == paperweight::PwlibErrorCode::incompatibleVersion,
+               "packed reader rejects incompatible format versions");
+
+        auto truncated = *rawBytes;
+        truncated.pop_back();
+        const auto truncatedResult = paperweight::readPwlib(truncated);
+        const auto* truncatedError = std::get_if<paperweight::PwlibError>(&truncatedResult);
+        expect(truncatedError != nullptr &&
+                   truncatedError->code == paperweight::PwlibErrorCode::truncatedData,
+               "packed reader rejects truncated data before touching payloads");
+
+        auto corruptEntry = *rawBytes;
+        corruptEntry.back() ^= 1U;
+        const auto corruptEntryResult = paperweight::readPwlib(corruptEntry);
+        const auto* corruptEntryError = std::get_if<paperweight::PwlibError>(&corruptEntryResult);
+        expect(corruptEntryError != nullptr &&
+                   corruptEntryError->code == paperweight::PwlibErrorCode::checksumMismatch &&
+                   corruptEntryError->entryIndex != paperweight::pwlibNoEntry,
+               "per-entry checksum identifies corrupted material data");
+
+        auto corruptWhole = *rawBytes;
+        corruptWhole[48] ^= 1U;
+        const auto corruptWholeResult = paperweight::readPwlib(corruptWhole);
+        const auto* corruptWholeError = std::get_if<paperweight::PwlibError>(&corruptWholeResult);
+        expect(corruptWholeError != nullptr &&
+                   corruptWholeError->code == paperweight::PwlibErrorCode::checksumMismatch &&
+                   corruptWholeError->entryIndex == paperweight::pwlibNoEntry,
+               "whole-library checksum detects corruption outside an entry payload");
+
+        auto duplicateUid = *rawBytes;
+        std::copy_n(duplicateUid.begin() + 64, 36, duplicateUid.begin() + 64 + 88);
+        const auto duplicateUidResult = paperweight::readPwlib(duplicateUid);
+        const auto* duplicateUidError = std::get_if<paperweight::PwlibError>(&duplicateUidResult);
+        expect(duplicateUidError != nullptr &&
+                   duplicateUidError->code == paperweight::PwlibErrorCode::duplicateUid,
+               "packed reader detects duplicate entry identities");
+    }
+
+    auto duplicate = noise;
+    duplicate.metadata->name = "Duplicate Noise";
+    const std::array duplicateSources{
+        sources[0],
+        sources[1],
+        paperweight::MaterialLibrarySource{
+            "duplicate.pmat",
+            std::get<std::string>(paperweight::serialisePmat(duplicate)),
+        },
+    };
+    const auto duplicatePack = paperweight::packPwlib(duplicateSources);
+    expect(std::holds_alternative<paperweight::PwlibError>(duplicatePack) &&
+               std::get<paperweight::PwlibError>(duplicatePack).code ==
+                   paperweight::PwlibErrorCode::duplicateUid,
+           "packer rejects duplicate source identities");
+    const auto emptyPack = paperweight::packPwlib(
+        std::span<const paperweight::MaterialLibrarySource>{});
+    expect(std::holds_alternative<paperweight::PwlibError>(emptyPack) &&
+               std::get<paperweight::PwlibError>(emptyPack).code ==
+                   paperweight::PwlibErrorCode::emptyLibrary,
+           "packer rejects an empty source library");
+    const std::array invalidSource{
+        paperweight::MaterialLibrarySource{"broken.pmat", "not a pmat"},
+    };
+    expect(std::holds_alternative<paperweight::PwlibError>(
+               paperweight::packPwlib(invalidSource)),
+           "packer rejects malformed source material definitions");
+}
+
 } // namespace
 
 int main()
@@ -4420,6 +4621,7 @@ int main()
     testMaterialWizard();
     testPmat();
     testMaterialIdentityAndLibrary();
+    testPackedMaterialLibrary();
 
     if (failures != 0) {
         std::cerr << failures << " test assertion(s) failed\n";

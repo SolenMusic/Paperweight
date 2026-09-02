@@ -6,6 +6,7 @@
 #include "Material3DPreviewView.hpp"
 #include "MaterialLibraryWindowController.hpp"
 #include "MaterialWizardWindowController.hpp"
+#include "PackedLibraryWindowController.hpp"
 
 #include <paperweight/generator.hpp>
 #include <paperweight/hash.hpp>
@@ -134,6 +135,8 @@
 @property(nonatomic, strong) BenchmarkWindowController* benchmarkWindowController;
 @property(nonatomic, strong) MaterialLibraryWindowController* materialLibraryWindowController;
 @property(nonatomic, strong) MaterialWizardWindowController* materialWizardWindowController;
+@property(nonatomic, strong) PackedLibraryWindowController* packedLibraryWindowController;
+@property(nonatomic, strong) NSArray<NSURL*>* pendingOpenURLs;
 @property(nonatomic, strong) NSTextField* materialUidField;
 @property(nonatomic, strong) NSView* previewContainer;
 @property(nonatomic, strong) NSStackView* comparisonStack;
@@ -841,6 +844,33 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     [self.window center];
     [self.window makeKeyAndOrderFront:nil];
     [NSApp activateIgnoringOtherApps:YES];
+
+    NSArray<NSURL*>* pendingURLs = self.pendingOpenURLs;
+    self.pendingOpenURLs = nil;
+    for (NSURL* url in pendingURLs) {
+        [self openDocumentAtURL:url];
+    }
+}
+
+- (void)application:(NSApplication*)sender openFiles:(NSArray<NSString*>*)filenames
+{
+    auto* urls = [NSMutableArray arrayWithCapacity:filenames.count];
+    for (NSString* filename in filenames) {
+        [urls addObject:[NSURL fileURLWithPath:filename]];
+    }
+    if (self.window == nil) {
+        self.pendingOpenURLs = urls;
+        [sender replyToOpenOrPrint:NSApplicationDelegateReplySuccess];
+        return;
+    }
+
+    BOOL success = YES;
+    for (NSURL* url in urls) {
+        success = [self openDocumentAtURL:url] && success;
+    }
+    [sender replyToOpenOrPrint:success
+        ? NSApplicationDelegateReplySuccess
+        : NSApplicationDelegateReplyFailure];
 }
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication*)sender
@@ -6282,15 +6312,57 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 {
     static_cast<void>(sender);
     auto* panel = [NSOpenPanel openPanel];
-    panel.title = @"Open Paperweight Material";
-    panel.allowedFileTypes = @[ @"pmat" ];
+    panel.title = @"Open Paperweight File";
+    panel.allowedFileTypes = @[ @"pmat", @"pwlib" ];
     panel.allowsMultipleSelection = NO;
     panel.canChooseDirectories = NO;
     if ([panel runModal] != NSModalResponseOK) {
         return;
     }
 
-    [self openMaterialAtURL:panel.URL asShowcase:NO];
+    [self openDocumentAtURL:panel.URL];
+}
+
+- (BOOL)openDocumentAtURL:(NSURL*)url
+{
+    NSString* extension = url.pathExtension.lowercaseString;
+    if ([extension isEqualToString:@"pmat"]) {
+        return [self openMaterialAtURL:url asShowcase:NO];
+    }
+    if ([extension isEqualToString:@"pwlib"]) {
+        return [self openPackedLibraryAtURL:url];
+    }
+    [self showErrorWithTitle:@"This file type is not supported"
+                     message:@"Paperweight can open .pmat materials and .pwlib material packs."];
+    return NO;
+}
+
+- (BOOL)openPackedLibraryAtURL:(NSURL*)url
+{
+    __weak AppDelegate* weakSelf = self;
+    self.packedLibraryWindowController = [[PackedLibraryWindowController alloc]
+        initWithURL:url
+        openHandler:^(paperweight::Material material) {
+            AppDelegate* strongSelf = weakSelf;
+            if (strongSelf == nil || ![strongSelf confirmDiscardIfNeeded]) {
+                return;
+            }
+            strongSelf->material_ = std::move(material);
+            strongSelf->selectedLayer_ = 0;
+            strongSelf.currentFileURL = nil;
+            strongSelf->dirty_ = true;
+            [strongSelf setActiveReferenceTemplate:nullptr];
+            [strongSelf clearReferenceImage:nil];
+            [strongSelf applyMaterialToControls];
+            [strongSelf updateWindowTitle];
+            strongSelf.statusLabel.stringValue =
+                @"Packed material instantiated as a new editable document.";
+            strongSelf.statusLabel.textColor = NSColor.secondaryLabelColor;
+            [strongSelf.window makeKeyAndOrderFront:nil];
+        }];
+    [self.packedLibraryWindowController showPackedLibrary];
+    [NSDocumentController.sharedDocumentController noteNewRecentDocumentURL:url];
+    return YES;
 }
 
 - (void)openReferenceTemplate:(NSMenuItem*)sender

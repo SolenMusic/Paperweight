@@ -350,6 +350,14 @@ library index accepts source path/text pairs rather than filesystem APIs,
 keeping folder discovery, file coordination, thumbnails, and user defaults in
 the AppKit frontend. Index ordering and duplicate-UID diagnostics are stable
 regardless of filesystem enumeration order.
+Paperweight v0.0.21 adds a separate derived `.pwlib` format around canonical
+version-15 PMAT payloads. Its encoder and memory-backed reader remain in the
+portable core; filesystem discovery and save panels remain outside it. A strict
+little-endian directory exposes UID and friendly-name lookup without evaluating
+or parsing pixels. Raw and bounded RLE storage feed the same PMAT parser and
+ordinary `Material` type, so packing introduces no second evaluator. Fixed
+layout rules and entry/library FNV-1a checksums make corruption and architecture
+drift observable. See [pwlib-format.md](pwlib-format.md).
 Direct-graph text persistence is deferred until a node-authoring workflow can
 round-trip it without discarding information.
 See [pmat-format.md](pmat-format.md).

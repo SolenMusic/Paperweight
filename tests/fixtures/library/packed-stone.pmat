@@ -1,0 +1,21 @@
+# Paperweight procedural material
+pmat.version = 15
+material.type = fbm
+material.uid = 22222222-2222-2222-2222-222222222222
+material.name = Packed Stone
+material.description = Another library-ready command-line fixture
+material.category = Stone
+material.tags = fixture, packed
+material.seed = 918273
+material.width = 2m
+material.height = 1m
+colour.low = 0x30343AFF
+colour.high = 0x8A9098FF
+noise.frequency = 7
+noise.octaves = 4
+noise.lacunarity = 2
+noise.gain = 0.42
+normal.strength = 2.5
+roughness.low = 0.4
+roughness.high = 0.92
+layers.count = 0
