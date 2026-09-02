@@ -668,23 +668,7 @@ std::string slugForName(NSString* name)
 
 - (void)createMaterial:(id)sender
 {
-    static_cast<void>(sender);
-    if (self.workingFolderURL == nil) {
-        [self chooseWorkingFolder:nil];
-        if (self.workingFolderURL == nil) return;
-    }
-    NSString* name = [self promptWithTitle:@"New Material"
-                                   message:@"Choose a friendly name. Paperweight will assign a stable UID."
-                                     value:@"New Material"];
-    if (name == nil) return;
-    paperweight::Material material;
-    material.layers.push_back(paperweight::makeNoiseLayer());
-    material.metadata = paperweight::MaterialMetadata{
-        NSUUID.UUID.UUIDString.lowercaseString.UTF8String, name.UTF8String, "", "", {}};
-    NSURL* url = [self uniqueURLInFolder:self.workingFolderURL name:name];
-    if (url == nil || ![self writeMaterial:material toURL:url]) return;
-    [self refreshLibrary:nil];
-    if (self.openMaterialHandler != nil) self.openMaterialHandler(url);
+    [NSApp sendAction:@selector(showMaterialWizard:) to:NSApp.delegate from:sender];
 }
 
 - (void)duplicateSelected:(id)sender

@@ -5,6 +5,7 @@
 #include "ImageBridge.hpp"
 #include "Material3DPreviewView.hpp"
 #include "MaterialLibraryWindowController.hpp"
+#include "MaterialWizardWindowController.hpp"
 
 #include <paperweight/generator.hpp>
 #include <paperweight/hash.hpp>
@@ -131,6 +132,7 @@
 @property(nonatomic, strong) NSWindow* window;
 @property(nonatomic, strong) BenchmarkWindowController* benchmarkWindowController;
 @property(nonatomic, strong) MaterialLibraryWindowController* materialLibraryWindowController;
+@property(nonatomic, strong) MaterialWizardWindowController* materialWizardWindowController;
 @property(nonatomic, strong) NSTextField* materialUidField;
 @property(nonatomic, strong) NSView* previewContainer;
 @property(nonatomic, strong) NSStackView* comparisonStack;
@@ -888,6 +890,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     auto* fileMenuItem = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
     [mainMenu addItem:fileMenuItem];
     auto* fileMenu = [[NSMenu alloc] initWithTitle:@"File"];
+    [fileMenu addItemWithTitle:@"New Material…"
+                        action:@selector(showMaterialWizard:)
+                 keyEquivalent:@"n"];
+    [fileMenu addItem:[NSMenuItem separatorItem]];
     [fileMenu addItemWithTitle:@"Open…" action:@selector(openMaterial:) keyEquivalent:@"o"];
     auto* referenceTemplateItem = [[NSMenuItem alloc]
         initWithTitle:@"New from Reference Template"
@@ -1003,6 +1009,46 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     toolsMenuItem.submenu = toolsMenu;
 
     NSApp.mainMenu = mainMenu;
+}
+
+- (void)showMaterialWizard:(id)sender
+{
+    static_cast<void>(sender);
+    if (self.materialWizardWindowController.window.isVisible) {
+        [self.materialWizardWindowController showMaterialWizard];
+        return;
+    }
+    __weak AppDelegate* weakSelf = self;
+    self.materialWizardWindowController = [[MaterialWizardWindowController alloc]
+        initWithPreviewResolution:previewResolution_
+        useMaterialHandler:^BOOL(
+            const paperweight::Material& material,
+            NSString* templateIdentifier) {
+            AppDelegate* strongSelf = weakSelf;
+            if (strongSelf == nil || ![strongSelf confirmDiscardIfNeeded]) {
+                return NO;
+            }
+            strongSelf->material_ = material;
+            strongSelf->selectedLayer_ = 0;
+            strongSelf.currentFileURL = nil;
+            strongSelf->dirty_ = true;
+            const auto* descriptor = templateIdentifier.UTF8String == nullptr
+                ? nullptr
+                : paperweight::findReferenceMaterialTemplate(templateIdentifier.UTF8String);
+            [strongSelf setActiveReferenceTemplate:descriptor];
+            [strongSelf clearReferenceImage:nil];
+            [strongSelf applyMaterialToControls];
+            [strongSelf updateWindowTitle];
+            strongSelf.statusLabel.stringValue = @"Wizard material is ready for detailed editing.";
+            strongSelf.statusLabel.textColor = NSColor.secondaryLabelColor;
+            [strongSelf.window makeKeyAndOrderFront:nil];
+            return YES;
+        }
+        savedMaterialHandler:^(NSURL* url) {
+            AppDelegate* strongSelf = weakSelf;
+            [strongSelf.materialLibraryWindowController noteMaterialSavedAtURL:url];
+        }];
+    [self.materialWizardWindowController showMaterialWizard];
 }
 
 - (void)showMaterialLibrary:(id)sender

@@ -271,6 +271,19 @@ copies it into a normal `Material` only after a caller supplies that value.
 High-level template controls are typed mappings onto ordinary material or layer
 properties, so the catalogue adds no parallel evaluator and no hidden state.
 
+The v0.0.20 wizard remains on that same boundary. Its portable session contains
+a seedless recipe, caller-selected seed and physical size, ordinary material
+colours, typed template-control values, and transient locks. Deterministic
+alternative generation perturbs only unlocked values using stable integer
+hashes, then calls the same template-control and material-validation paths as
+every other caller. A selected candidate is a complete ordinary `Material`;
+family, page, lock, and comparison state never enter the graph or `.pmat`.
+
+AppKit owns the guided pages, live 2D and Metal presentation, cancellation,
+comparison thumbnails, and working-folder save dialogue. Both preview modes use
+the existing generator and 3D view, while finishing either hands the material to
+the full editor or serialises it through the existing portable writer.
+
 The portable stylised bake consumes completed colour plus normal or height
 images and returns an independent image. It remains outside `MaterialOutput`,
 the graph, and `.pmat` serialisation. Reference images and bake settings are
@@ -300,7 +313,7 @@ hit rate and bounded memory without altering the cancellation contract.
 `.pmat` is a human-readable, versioned text format. Parsing and serialisation live in the portable core. Round trips should be stable and errors should identify useful source locations.
 
 The format version is deliberately independent of the application version.
-Paperweight v0.0.19 reads `.pmat` format versions 1 through 15 and writes version 15.
+Paperweight v0.0.20 reads `.pmat` format versions 1 through 15 and writes version 15.
 Unknown keys and unsupported format versions fail explicitly instead of being
 silently ignored. Version 1 maps to the original implicit FBM source; adding an
 explicit base noise layer produces byte-identical output. Version-2 layers map
