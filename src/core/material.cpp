@@ -1,6 +1,7 @@
 #include <paperweight/material.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <limits>
 #include <type_traits>
@@ -497,8 +498,77 @@ std::optional<std::string> validateOrganicAccumulation(
 
 } // namespace
 
+bool isCanonicalMaterialUid(std::string_view uid)
+{
+    if (uid.size() != 36) {
+        return false;
+    }
+    for (std::size_t index = 0; index < uid.size(); ++index) {
+        if (index == 8 || index == 13 || index == 18 || index == 23) {
+            if (uid[index] != '-') {
+                return false;
+            }
+            continue;
+        }
+        const auto character = static_cast<unsigned char>(uid[index]);
+        if (!std::isdigit(character) && !(character >= 'a' && character <= 'f')) {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::optional<std::string> validateMaterialMetadata(const MaterialMetadata& metadata)
+{
+    const auto validText = [](std::string_view value, std::size_t maximumLength) {
+        if (value.size() > maximumLength ||
+            (!value.empty() &&
+             (std::isspace(static_cast<unsigned char>(value.front())) != 0 ||
+              std::isspace(static_cast<unsigned char>(value.back())) != 0))) {
+            return false;
+        }
+        return std::none_of(value.begin(), value.end(), [](char valueCharacter) {
+            const auto character = static_cast<unsigned char>(valueCharacter);
+            return character < 0x20 || character == 0x7f || valueCharacter == '#' ||
+                valueCharacter == '=';
+        });
+    };
+
+    if (metadata.uid.empty() && metadata.name.empty() && metadata.description.empty() &&
+        metadata.category.empty() && metadata.tags.empty()) {
+        return "material metadata must contain at least one value";
+    }
+    if (!metadata.uid.empty() && !isCanonicalMaterialUid(metadata.uid)) {
+        return "material UID must be a lowercase canonical UUID";
+    }
+    if (!validText(metadata.name, MaterialLimits::maximumNameLength)) {
+        return "material name must contain at most 128 trimmed, single-line characters";
+    }
+    if (!validText(metadata.description, MaterialLimits::maximumDescriptionLength)) {
+        return "material description must contain at most 512 trimmed, single-line characters";
+    }
+    if (!validText(metadata.category, MaterialLimits::maximumCategoryLength)) {
+        return "material category must contain at most 64 trimmed, single-line characters";
+    }
+    if (metadata.tags.size() > MaterialLimits::maximumTags) {
+        return "material metadata may contain at most 32 tags";
+    }
+    for (const auto& tag : metadata.tags) {
+        if (tag.empty() || !validText(tag, MaterialLimits::maximumTagLength) ||
+            tag.find(',') != std::string::npos) {
+            return "material tags must be non-empty, comma-free, trimmed, and at most 48 characters";
+        }
+    }
+    return std::nullopt;
+}
+
 std::optional<std::string> validateMaterial(const Material& material)
 {
+    if (material.metadata) {
+        if (const auto error = validateMaterialMetadata(*material.metadata)) {
+            return error;
+        }
+    }
     if (!validPhysicalMetres(material.physicalSize.widthMetres) ||
         !validPhysicalMetres(material.physicalSize.heightMetres)) {
         return "material physical width and height must be finite and between 0.000001m and 1000000m";

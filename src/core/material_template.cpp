@@ -241,6 +241,7 @@ Material instantiateMaterial(const MaterialRecipe& recipe, std::uint64_t seed)
         recipe.roughnessHigh,
         recipe.layers,
         recipe.physicalSize,
+        std::nullopt,
     };
 }
 

@@ -1,4 +1,4 @@
-# `.pmat` format version 14
+# `.pmat` format version 15
 
 Paperweight material files are UTF-8 text. They are intended to be readable,
 diffable, and small enough to embed alongside game assets.
@@ -7,7 +7,7 @@ diffable, and small enough to embed alongside game assets.
 
 ```text
 # Paperweight procedural material
-pmat.version = 14
+pmat.version = 15
 material.type = fbm
 material.seed = 18431
 material.width = 1m
@@ -478,7 +478,7 @@ formula is applied to scalar, red, green, blue, and alpha channels.
 
 ## Graph compilation
 
-Paperweight v0.0.18 retains the layer syntax, now at version 14, as the compact,
+Paperweight v0.0.19 retains the layer syntax, now at version 15, as the compact,
 human-editable authoring projection. Before generation, the portable core
 compiles it into a directed acyclic material graph:
 
@@ -514,6 +514,24 @@ generators plus an organic-accumulation processor. Species presets expand to
 ordinary leaf parameters before serialisation, so no hidden preset state is
 stored.
 
+Format version 15 adds optional library identity and descriptive fields. These
+are catalogue data only and never enter graph compilation or evaluation:
+
+```text
+material.uid = 01234567-89ab-cdef-0123-456789abcdef
+material.name = Dungeon Flagstone
+material.description = Hand-cut stone for damp corridors
+material.category = Masonry
+material.tags = stone, dungeon, seamless
+```
+
+UIDs use one lowercase canonical UUID spelling. Text values are deliberately
+single-line and unquoted; `#` and `=` remain syntax rather than escaped content.
+Tags are a comma-separated list. Any subset may be stored in an ordinary
+material, while the material-library index requires a UID and friendly name for
+a ready entry. Templates remain identity-free when instantiated so two saved
+materials cannot accidentally inherit the same UID.
+
 ## Material outputs
 
 Every layer-authored output derives from the same final graph sample at
@@ -534,7 +552,7 @@ generation wrap mathematically across both tile axes.
 ## Compatibility policy
 
 The `.pmat` format version and Paperweight application version are separate.
-Paperweight v0.0.18 reads versions 1 through 14 and writes version 14. A reader
+Paperweight v0.0.19 reads versions 1 through 15 and writes version 15. A reader
 rejects unsupported versions and unknown fields so that it cannot quietly
 reinterpret a future material.
 
@@ -560,7 +578,9 @@ integer-winding lattices; versions 1 through 11 retain byte-identical default
 evaluations. Version 13 adds deterministic scatter operations; versions 1
 through 12 retain byte-identical default evaluations. Version 14 adds organic
 structures; versions 1 through 13 retain byte-identical default evaluations.
-Saving any older format performs the explicit migration to version 14.
+Version 15 adds metadata only; versions 1 through 14 retain byte-identical
+default evaluations. Saving any older format performs the explicit migration to
+version 15.
 
 The portable entry points are `paperweight::parsePmat` and
 `paperweight::serialisePmat` in `include/paperweight/pmat.hpp`.

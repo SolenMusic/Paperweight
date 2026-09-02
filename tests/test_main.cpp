@@ -5,6 +5,7 @@
 #include <paperweight/graph.hpp>
 #include <paperweight/layer.hpp>
 #include <paperweight/material.hpp>
+#include <paperweight/material_library.hpp>
 #include <paperweight/material_template.hpp>
 #include <paperweight/noise.hpp>
 #include <paperweight/organic.hpp>
@@ -121,7 +122,7 @@ void testVersion()
 {
     constexpr paperweight::Version expected{0, 0, 18};
     static_assert(paperweight::currentVersion == expected);
-    expect(paperweight::versionString() == "0.0.18", "version string is 0.0.18");
+    expect(paperweight::versionString() == "0.0.19", "version string is 0.0.19");
 }
 
 void testImage()
@@ -919,7 +920,7 @@ void testRegionAttributes()
 
     const auto serialised = paperweight::serialisePmat(layered);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 14") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 15") != std::string::npos &&
                text->find("operation = region_field") != std::string::npos,
            "region fields introduced in version 9 serialise canonically as current .pmat");
     if (text != nullptr) {
@@ -928,8 +929,8 @@ void testRegionAttributes()
                    std::get<paperweight::Material>(reparsed) == layered,
                "region-field materials round-trip exactly through canonical .pmat");
         auto premature = *text;
-        const auto marker = premature.find("pmat.version = 14");
-        premature.replace(marker, std::string("pmat.version = 14").size(),
+        const auto marker = premature.find("pmat.version = 15");
+        premature.replace(marker, std::string("pmat.version = 15").size(),
                           "pmat.version = 8");
         const auto result = paperweight::parsePmat(premature);
         expect(std::holds_alternative<paperweight::ParseDiagnostic>(result) &&
@@ -1104,7 +1105,7 @@ void testCourseLayouts()
 
     const auto serialised = paperweight::serialisePmat(physicalMaterial);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 14") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 15") != std::string::npos &&
                text->find("operation = course_layout") != std::string::npos &&
                text->find("course.sizing = physical") != std::string::npos,
            "physical course layouts serialise explicitly in .pmat version 10");
@@ -1114,8 +1115,8 @@ void testCourseLayouts()
                    std::get<paperweight::Material>(reparsed) == physicalMaterial,
                "course layouts round-trip exactly through .pmat version 10");
         auto premature = *text;
-        const auto marker = premature.find("pmat.version = 14");
-        premature.replace(marker, std::string("pmat.version = 14").size(),
+        const auto marker = premature.find("pmat.version = 15");
+        premature.replace(marker, std::string("pmat.version = 15").size(),
                           "pmat.version = 9");
         const auto rejected = paperweight::parsePmat(premature);
         expect(std::holds_alternative<paperweight::ParseDiagnostic>(rejected) &&
@@ -1331,7 +1332,7 @@ void testRegionSurfaceSculpting()
 
     const auto serialised = paperweight::serialisePmat(material);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 14") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 15") != std::string::npos &&
                text->find("operation = region_surface") != std::string::npos &&
                text->find("sculpt.faceted_normals = true") != std::string::npos,
            "region sculpture serialises explicitly in .pmat version 11");
@@ -1341,8 +1342,8 @@ void testRegionSurfaceSculpting()
                    std::get<paperweight::Material>(reparsed) == material,
                "region sculpture round-trips exactly through .pmat version 11");
         auto premature = *text;
-        const auto marker = premature.find("pmat.version = 14");
-        premature.replace(marker, std::string("pmat.version = 14").size(),
+        const auto marker = premature.find("pmat.version = 15");
+        premature.replace(marker, std::string("pmat.version = 15").size(),
                           "pmat.version = 10");
         const auto rejected = paperweight::parsePmat(premature);
         expect(std::holds_alternative<paperweight::ParseDiagnostic>(rejected) &&
@@ -1573,7 +1574,7 @@ void testShapePrimitivesAndLattices()
 
     const auto serialised = paperweight::serialisePmat(graphMaterial);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 14") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 15") != std::string::npos &&
                text->find("operation = shape_boolean") != std::string::npos &&
                text->find("shape.vertex.5.y") != std::string::npos &&
                text->find("lattice.winding_x = 5") != std::string::npos,
@@ -1584,8 +1585,8 @@ void testShapePrimitivesAndLattices()
                    std::get<paperweight::Material>(reparsed) == graphMaterial,
                "shape and lattice materials round-trip exactly through .pmat version 12");
         auto premature = *text;
-        const auto marker = premature.find("pmat.version = 14");
-        premature.replace(marker, std::string("pmat.version = 14").size(),
+        const auto marker = premature.find("pmat.version = 15");
+        premature.replace(marker, std::string("pmat.version = 15").size(),
                           "pmat.version = 11");
         const auto rejected = paperweight::parsePmat(premature);
         expect(std::holds_alternative<paperweight::ParseDiagnostic>(rejected) &&
@@ -1808,7 +1809,7 @@ void testDeterministicScatter()
     const auto serialised = paperweight::serialisePmat(material);
     const auto* scatterText = std::get_if<std::string>(&serialised);
     expect(scatterText != nullptr &&
-               scatterText->find("pmat.version = 14") != std::string::npos &&
+               scatterText->find("pmat.version = 15") != std::string::npos &&
                scatterText->find("scatter.population.1.colour_high") != std::string::npos &&
                scatterText->find("scatter.exclusion_mask.enabled") != std::string::npos,
            "scatter populations, attributes, and masks serialise explicitly in .pmat version 13");
@@ -1818,8 +1819,8 @@ void testDeterministicScatter()
         expect(reparsed != nullptr && *reparsed == material,
                "deterministic scatter materials round-trip exactly through .pmat version 13");
         auto premature = *scatterText;
-        const auto marker = premature.find("pmat.version = 14");
-        premature.replace(marker, std::string("pmat.version = 14").size(),
+        const auto marker = premature.find("pmat.version = 15");
+        premature.replace(marker, std::string("pmat.version = 15").size(),
                           "pmat.version = 12");
         const auto rejected = paperweight::parsePmat(premature);
         const auto* diagnostic = std::get_if<paperweight::ParseDiagnostic>(&rejected);
@@ -2064,7 +2065,7 @@ void testOrganicStructures()
     const auto serialised = paperweight::serialisePmat(material);
     const auto* organicText = std::get_if<std::string>(&serialised);
     expect(organicText != nullptr &&
-               organicText->find("pmat.version = 14") != std::string::npos &&
+               organicText->find("pmat.version = 15") != std::string::npos &&
                organicText->find("leaf.vein_pairs") != std::string::npos &&
                organicText->find("organic.accumulation.kind") != std::string::npos,
            "organic structures serialise explicitly in .pmat version 14");
@@ -2074,8 +2075,8 @@ void testOrganicStructures()
                    std::get<paperweight::Material>(reparsed) == material,
                "organic materials round-trip exactly through .pmat version 14");
         auto premature = *organicText;
-        const auto marker = premature.find("pmat.version = 14");
-        premature.replace(marker, std::string("pmat.version = 14").size(),
+        const auto marker = premature.find("pmat.version = 15");
+        premature.replace(marker, std::string("pmat.version = 15").size(),
                           "pmat.version = 13");
         const auto rejected = paperweight::parsePmat(premature);
         const auto* diagnostic = std::get_if<paperweight::ParseDiagnostic>(&rejected);
@@ -2279,9 +2280,9 @@ void testAdvancedSurfaceOperations()
                    std::get<paperweight::Material>(reparsed) == material,
                "advanced surface recipes round-trip through .pmat version 8 exactly");
         auto premature = *text;
-        const auto marker = premature.find("pmat.version = 14");
+        const auto marker = premature.find("pmat.version = 15");
         if (marker != std::string::npos) {
-            premature.replace(marker, std::string("pmat.version = 14").size(),
+            premature.replace(marker, std::string("pmat.version = 15").size(),
                               "pmat.version = 7");
         }
         const auto prematureResult = paperweight::parsePmat(premature);
@@ -2450,7 +2451,7 @@ void testStylisedOperations()
 
     const auto serialised = paperweight::serialisePmat(stylised);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 14") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 15") != std::string::npos &&
                text->find("operation = colour_ramp") != std::string::npos &&
                text->find("operation = ink_contour") != std::string::npos,
            "stylisation serialises in the human-readable .pmat v9 format");
@@ -3349,7 +3350,7 @@ void testPmat()
 {
     constexpr std::string_view canonical =
         "# Paperweight procedural material\n"
-        "pmat.version = 14\n"
+        "pmat.version = 15\n"
         "material.type = fbm\n"
         "material.seed = 18431\n"
         "material.width = 1m\n"
@@ -3615,13 +3616,13 @@ void testPmat()
         legacyBrickMaterial.layers = {paperweight::makeBrickGridLayer()};
         auto versionFourBrick = std::get<std::string>(
             paperweight::serialisePmat(legacyBrickMaterial));
-        const auto versionMarkerPosition = versionFourBrick.find("pmat.version = 14");
+        const auto versionMarkerPosition = versionFourBrick.find("pmat.version = 15");
         expect(versionMarkerPosition != std::string::npos,
                "current brick fixture declares format version 12");
         if (versionMarkerPosition != std::string::npos) {
             versionFourBrick.replace(
                 versionMarkerPosition,
-                std::string("pmat.version = 14").size(),
+                std::string("pmat.version = 15").size(),
                 "pmat.version = 4");
         }
         for (const auto& field : {
@@ -3784,7 +3785,8 @@ void testPmat()
             0.15,
             0.95,
             {},
-            {}},
+            {},
+            std::nullopt},
         layeredRoundTrip,
         structuralRoundTrip,
     };
@@ -3944,7 +3946,7 @@ void testPmat()
         }
     };
 
-    expectDiagnostic("pmat.version = 15\n", 1, "unsupported");
+    expectDiagnostic("pmat.version = 16\n", 1, "unsupported");
     expectDiagnostic("unknown.key = 1\n", 1, "unknown key");
     expectDiagnostic("pmat.version = 1\npmat.version = 1\n", 2, "duplicate");
     expectDiagnostic("pmat.version = nope\n", 1, "integer");
@@ -3973,7 +3975,7 @@ void testPmat()
     auto missingV3Field = std::get<std::string>(
         paperweight::serialisePmat(paperweight::Material{
             18431, 4, 5, 2, 0.5, {0, 0, 0, 255}, {255, 255, 255, 255},
-            1.0, 0.25, 0.85, {paperweight::makeNoiseLayer()}, {}}));
+            1.0, 0.25, 0.85, {paperweight::makeNoiseLayer()}, {}, std::nullopt}));
     const auto maskHighPosition = missingV3Field.find("layer.0.mask.input_high = 1\n");
     expect(maskHighPosition != std::string::npos, "v3 fixture contains its mask high field");
     if (maskHighPosition != std::string::npos) {
@@ -4049,6 +4051,107 @@ void testPmat()
            "invalid materials are not serialised");
 }
 
+void testMaterialIdentityAndLibrary()
+{
+    paperweight::Material identified;
+    identified.metadata = paperweight::MaterialMetadata{
+        "01234567-89ab-cdef-0123-456789abcdef",
+        "Dungeon Flagstone",
+        "Hand-cut stone for damp corridors",
+        "Masonry",
+        {"stone", "dungeon", "seamless"},
+    };
+    expect(!paperweight::validateMaterial(identified),
+           "canonical material identity and metadata validate");
+    expect(paperweight::isCanonicalMaterialUid(identified.metadata->uid),
+           "canonical lowercase UUIDs are recognised");
+    expect(!paperweight::isCanonicalMaterialUid("01234567-89AB-CDEF-0123-456789ABCDEF"),
+           "uppercase UUID text is rejected to preserve one canonical spelling");
+    const auto recipe = paperweight::makeMaterialRecipe(identified);
+    expect(!paperweight::instantiateMaterial(recipe, 99).metadata,
+           "seedless templates deliberately do not copy library identity");
+
+    const auto serialised = paperweight::serialisePmat(identified);
+    const auto* text = std::get_if<std::string>(&serialised);
+    expect(text != nullptr && text->find("pmat.version = 15") != std::string::npos &&
+               text->find("material.uid = 01234567-89ab-cdef-0123-456789abcdef") !=
+                   std::string::npos &&
+               text->find("material.name = Dungeon Flagstone") != std::string::npos &&
+               text->find("material.tags = stone, dungeon, seamless") != std::string::npos,
+           ".pmat version 15 writes identity and metadata readably");
+    if (text != nullptr) {
+        const auto reparsed = paperweight::parsePmat(*text);
+        expect(std::holds_alternative<paperweight::Material>(reparsed) &&
+                   std::get<paperweight::Material>(reparsed) == identified,
+               "material identity and metadata round-trip exactly");
+
+        auto oldVersion = *text;
+        const auto version = oldVersion.find("pmat.version = 15");
+        oldVersion.replace(version, std::string("pmat.version = 15").size(),
+                           "pmat.version = 14");
+        const auto rejected = paperweight::parsePmat(oldVersion);
+        const auto* diagnostic = std::get_if<paperweight::ParseDiagnostic>(&rejected);
+        expect(diagnostic != nullptr &&
+                   diagnostic->message.find("require .pmat version 15") != std::string::npos,
+               "identity metadata cannot be smuggled into older .pmat versions");
+    }
+
+    auto withoutIdentity = identified;
+    withoutIdentity.metadata.reset();
+    const auto identifiedImage = paperweight::generate({
+        identified, 48, 32, paperweight::MaterialOutput::colour, std::nullopt, std::nullopt});
+    const auto anonymousImage = paperweight::generate({
+        withoutIdentity, 48, 32, paperweight::MaterialOutput::colour, std::nullopt, std::nullopt});
+    const auto* identifiedPixels = std::get_if<paperweight::Image>(&identifiedImage);
+    const auto* anonymousPixels = std::get_if<paperweight::Image>(&anonymousImage);
+    expect(identifiedPixels != nullptr && anonymousPixels != nullptr &&
+               std::equal(
+                   identifiedPixels->pixels().begin(),
+                   identifiedPixels->pixels().end(),
+                   anonymousPixels->pixels().begin()),
+           "library identity has no effect on generated pixels");
+
+    auto second = identified;
+    second.metadata->uid = "11111111-2222-3333-4444-555555555555";
+    second.metadata->name = "Castle Roof";
+    second.metadata->category = "Roofing";
+    const auto secondText = std::get<std::string>(paperweight::serialisePmat(second));
+
+    auto duplicate = identified;
+    duplicate.metadata->name = "Duplicate Flagstone";
+    const auto duplicateText = std::get<std::string>(paperweight::serialisePmat(duplicate));
+    const auto anonymousText = std::get<std::string>(paperweight::serialisePmat(withoutIdentity));
+
+    const auto identifiedText = text != nullptr ? *text : std::string{};
+    const std::array sources{
+        paperweight::MaterialLibrarySource{"roof/castle-roof.pmat", secondText},
+        paperweight::MaterialLibrarySource{"stone/flagstone.pmat", identifiedText},
+        paperweight::MaterialLibrarySource{"broken.pmat", "not a pmat"},
+        paperweight::MaterialLibrarySource{"legacy/anonymous.pmat", anonymousText},
+        paperweight::MaterialLibrarySource{"stone/duplicate.pmat", duplicateText},
+    };
+    const auto index = paperweight::indexMaterialLibrary(sources);
+    expect(index.entries().size() == 4 && index.diagnostics().size() == 5,
+           "library indexing preserves parseable siblings and reports every problem");
+    expect(index.entries().front().path == "legacy/anonymous.pmat" &&
+               index.entries().back().path == "stone/flagstone.pmat",
+           "library entries have stable path ordering independent of discovery order");
+    expect(index.findByUid(second.metadata->uid) != nullptr &&
+               index.findByUid(identified.metadata->uid) == nullptr,
+           "UID lookup accepts unique identities and rejects ambiguous duplicates");
+
+    auto reversedSources = sources;
+    std::reverse(reversedSources.begin(), reversedSources.end());
+    const auto reversedIndex = paperweight::indexMaterialLibrary(reversedSources);
+    expect(std::equal(
+               index.entries().begin(), index.entries().end(), reversedIndex.entries().begin()) &&
+               std::equal(
+                   index.diagnostics().begin(),
+                   index.diagnostics().end(),
+                   reversedIndex.diagnostics().begin()),
+           "library results are byte-stable when filesystem discovery order changes");
+}
+
 } // namespace
 
 int main()
@@ -4074,6 +4177,7 @@ int main()
     testPhysicalScale();
     testReferenceTemplatesAndStylisedLighting();
     testPmat();
+    testMaterialIdentityAndLibrary();
 
     if (failures != 0) {
         std::cerr << failures << " test assertion(s) failed\n";

@@ -4,6 +4,7 @@
 #include "BenchmarkWindowController.hpp"
 #include "ImageBridge.hpp"
 #include "Material3DPreviewView.hpp"
+#include "MaterialLibraryWindowController.hpp"
 
 #include <paperweight/generator.hpp>
 #include <paperweight/hash.hpp>
@@ -129,6 +130,8 @@
 
 @property(nonatomic, strong) NSWindow* window;
 @property(nonatomic, strong) BenchmarkWindowController* benchmarkWindowController;
+@property(nonatomic, strong) MaterialLibraryWindowController* materialLibraryWindowController;
+@property(nonatomic, strong) NSTextField* materialUidField;
 @property(nonatomic, strong) NSView* previewContainer;
 @property(nonatomic, strong) NSStackView* comparisonStack;
 @property(nonatomic, strong) NSStackView* referencePanel;
@@ -176,6 +179,7 @@
 @property(nonatomic, strong) NSTextField* bakeAmbientValue;
 @property(nonatomic, strong) NSSegmentedControl* tilingControl;
 @property(nonatomic, strong) NSSegmentedControl* previewModeControl;
+@property(nonatomic, strong) NSPopUpButton* previewResolutionPopup;
 @property(nonatomic, strong) NSStackView* twoDPreviewControls;
 @property(nonatomic, strong) NSStackView* threeDPreviewControls;
 @property(nonatomic, strong) NSPopUpButton* previewShapePopup;
@@ -804,6 +808,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     NSInteger selectedLayer_;
     NSInteger selectedScatterPopulation_;
     paperweight::PhysicalSize previewCoverage_;
+    std::uint32_t previewResolution_;
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification*)notification
@@ -814,6 +819,13 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     activeTemplate_ = nullptr;
     material_.layers.push_back(paperweight::makeNoiseLayer());
     previewCoverage_ = material_.physicalSize;
+    const NSInteger savedPreviewResolution =
+        [NSUserDefaults.standardUserDefaults integerForKey:@"previewResolution"];
+    previewResolution_ = savedPreviewResolution == 64 || savedPreviewResolution == 128 ||
+            savedPreviewResolution == 256 || savedPreviewResolution == 512 ||
+            savedPreviewResolution == 1024
+        ? static_cast<std::uint32_t>(savedPreviewResolution)
+        : 512;
     selectedLayer_ = 0;
     previewQueue_ = dispatch_queue_create(
         "org.solen-music.paperweight.preview",
@@ -969,15 +981,158 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     auto* toolsMenuItem = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
     [mainMenu addItem:toolsMenuItem];
     auto* toolsMenu = [[NSMenu alloc] initWithTitle:@"Tools"];
+    auto* libraryItem = [toolsMenu addItemWithTitle:@"Material Library…"
+                                             action:@selector(showMaterialLibrary:)
+                                      keyEquivalent:@"l"];
+    libraryItem.target = self;
+    libraryItem.keyEquivalentModifierMask =
+        NSEventModifierFlagCommand | NSEventModifierFlagOption;
     auto* benchmarkItem = [toolsMenu addItemWithTitle:@"Performance Benchmark…"
                                                action:@selector(showPerformanceBenchmark:)
                                         keyEquivalent:@"b"];
     benchmarkItem.target = self;
     benchmarkItem.keyEquivalentModifierMask =
         NSEventModifierFlagCommand | NSEventModifierFlagOption;
+    [toolsMenu addItem:[NSMenuItem separatorItem]];
+    auto* materialInformationItem = [toolsMenu addItemWithTitle:@"Material Information…"
+                                                          action:@selector(showMaterialInformation:)
+                                                   keyEquivalent:@"i"];
+    materialInformationItem.target = self;
+    materialInformationItem.keyEquivalentModifierMask =
+        NSEventModifierFlagCommand | NSEventModifierFlagOption;
     toolsMenuItem.submenu = toolsMenu;
 
     NSApp.mainMenu = mainMenu;
+}
+
+- (void)showMaterialLibrary:(id)sender
+{
+    static_cast<void>(sender);
+    if (self.materialLibraryWindowController == nil) {
+        __weak AppDelegate* weakSelf = self;
+        self.materialLibraryWindowController = [[MaterialLibraryWindowController alloc]
+            initWithOpenMaterialHandler:^(NSURL* url) {
+                AppDelegate* strongSelf = weakSelf;
+                if (strongSelf != nil) {
+                    [strongSelf openMaterialAtURL:url asShowcase:NO];
+                }
+            }
+            relocationHandler:^(NSURL* oldURL, NSURL* newURL) {
+                AppDelegate* strongSelf = weakSelf;
+                if (strongSelf != nil && [strongSelf.currentFileURL isEqual:oldURL]) {
+                    strongSelf.currentFileURL = newURL;
+                    [strongSelf updateWindowTitle];
+                }
+            }
+            canRewriteHandler:^BOOL(NSURL* url) {
+                AppDelegate* strongSelf = weakSelf;
+                return strongSelf == nil || strongSelf.currentFileURL == nil ||
+                    ![strongSelf.currentFileURL isEqual:url];
+            }];
+    }
+    [self.materialLibraryWindowController showMaterialLibrary];
+}
+
+- (void)assignMaterialUid:(id)sender
+{
+    static_cast<void>(sender);
+    if (self.materialUidField.stringValue.length == 0) {
+        self.materialUidField.stringValue = NSUUID.UUID.UUIDString.lowercaseString;
+    }
+}
+
+- (void)showMaterialInformation:(id)sender
+{
+    static_cast<void>(sender);
+    const paperweight::MaterialMetadata current = material_.metadata.value_or(
+        paperweight::MaterialMetadata{});
+    auto stringFromUtf8 = [](const std::string& value) {
+        return [NSString stringWithUTF8String:value.c_str()];
+    };
+
+    auto* nameField = [NSTextField textFieldWithString:stringFromUtf8(current.name)];
+    auto* categoryField = [NSTextField textFieldWithString:stringFromUtf8(current.category)];
+    auto* descriptionField = [NSTextField textFieldWithString:stringFromUtf8(current.description)];
+    std::string joinedTags;
+    for (std::size_t index = 0; index < current.tags.size(); ++index) {
+        if (index != 0) {
+            joinedTags += ", ";
+        }
+        joinedTags += current.tags[index];
+    }
+    auto* tagsField = [NSTextField textFieldWithString:stringFromUtf8(joinedTags)];
+    self.materialUidField = [NSTextField labelWithString:stringFromUtf8(current.uid)];
+    self.materialUidField.selectable = YES;
+    self.materialUidField.lineBreakMode = NSLineBreakByTruncatingMiddle;
+    auto* assignUidButton = [NSButton buttonWithTitle:@"Assign UID"
+                                               target:self
+                                               action:@selector(assignMaterialUid:)];
+    assignUidButton.enabled = current.uid.empty();
+    assignUidButton.toolTip = current.uid.empty()
+        ? @"Give this material a stable identity for use in a library."
+        : @"The material already has a stable identity.";
+    auto* uidRow = [NSStackView stackViewWithViews:@[self.materialUidField, assignUidButton]];
+    uidRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    uidRow.distribution = NSStackViewDistributionFillProportionally;
+    uidRow.spacing = 8.0;
+
+    auto* grid = [NSGridView gridViewWithViews:@[
+        @[makeLabel(@"Name"), nameField],
+        @[makeLabel(@"UID"), uidRow],
+        @[makeLabel(@"Category"), categoryField],
+        @[makeLabel(@"Tags"), tagsField],
+        @[makeLabel(@"Description"), descriptionField],
+    ]];
+    grid.translatesAutoresizingMaskIntoConstraints = NO;
+    grid.rowSpacing = 8.0;
+    grid.columnSpacing = 10.0;
+    grid.xPlacement = NSGridCellPlacementFill;
+    [grid.widthAnchor constraintEqualToConstant:520.0].active = YES;
+
+    auto* alert = [[NSAlert alloc] init];
+    alert.messageText = @"Material Information";
+    alert.informativeText =
+        @"Identity and descriptive details do not alter the generated texture.";
+    alert.accessoryView = grid;
+    [alert addButtonWithTitle:@"Save Information"];
+    [alert addButtonWithTitle:@"Cancel"];
+    if ([alert runModal] != NSAlertFirstButtonReturn) {
+        self.materialUidField = nil;
+        return;
+    }
+
+    auto trimmed = [](NSString* value) {
+        return [value stringByTrimmingCharactersInSet:
+            NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    };
+    paperweight::MaterialMetadata updated;
+    updated.uid = trimmed(self.materialUidField.stringValue).UTF8String;
+    updated.name = trimmed(nameField.stringValue).UTF8String;
+    updated.category = trimmed(categoryField.stringValue).UTF8String;
+    updated.description = trimmed(descriptionField.stringValue).UTF8String;
+    for (NSString* component in [tagsField.stringValue componentsSeparatedByString:@","]) {
+        NSString* tag = trimmed(component);
+        if (tag.length != 0) {
+            updated.tags.emplace_back(tag.UTF8String);
+        }
+    }
+    self.materialUidField = nil;
+
+    const bool empty = updated.uid.empty() && updated.name.empty() &&
+        updated.category.empty() && updated.description.empty() && updated.tags.empty();
+    if (!empty) {
+        if (const auto error = paperweight::validateMaterialMetadata(updated)) {
+            [self showErrorWithTitle:@"The material information is not valid"
+                             message:[NSString stringWithUTF8String:error->c_str()]];
+            return;
+        }
+        material_.metadata = std::move(updated);
+    } else {
+        material_.metadata.reset();
+    }
+    [self markDirty];
+    self.statusLabel.stringValue = @"Material information updated";
+    self.statusLabel.textColor = NSColor.secondaryLabelColor;
 }
 
 - (void)showPerformanceBenchmark:(id)sender
@@ -1289,6 +1444,19 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.previewModeControl.toolTip = @"This Mac does not provide a compatible Metal device.";
     }
 
+    auto* previewResolutionLabel = makeLabel(@"Texture resolution");
+    self.previewResolutionPopup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+    [self.previewResolutionPopup addItemsWithTitles:@[
+        @"64 × 64", @"128 × 128", @"256 × 256", @"512 × 512", @"1024 × 1024",
+    ]];
+    const NSArray<NSNumber*>* previewResolutions = @[@64, @128, @256, @512, @1024];
+    [self.previewResolutionPopup selectItemAtIndex:static_cast<NSInteger>(
+        [previewResolutions indexOfObject:@(previewResolution_)])];
+    self.previewResolutionPopup.target = self;
+    self.previewResolutionPopup.action = @selector(previewResolutionChanged:);
+    self.previewResolutionPopup.toolTip =
+        @"Sets the generated texture size for 2D, baked, and 3D previews.";
+
     auto* outputLabel = makeLabel(@"Material output");
     self.outputControl = [[NSSegmentedControl alloc] initWithFrame:NSZeroRect];
     self.outputControl.segmentCount = 4;
@@ -1564,6 +1732,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         makeSeparator(),
         previewModeLabel,
         self.previewModeControl,
+        previewResolutionLabel,
+        self.previewResolutionPopup,
         self.twoDPreviewControls,
         self.threeDPreviewControls,
         resetButton,
@@ -1594,6 +1764,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         [controlStack.topAnchor constraintEqualToAnchor:controlsDocument.topAnchor constant:24.0],
         [controlStack.bottomAnchor constraintEqualToAnchor:controlsDocument.bottomAnchor constant:-24.0],
         [self.previewModeControl.widthAnchor constraintEqualToAnchor:controlStack.widthAnchor],
+        [self.previewResolutionPopup.widthAnchor constraintEqualToAnchor:controlStack.widthAnchor],
         [self.twoDPreviewControls.widthAnchor constraintEqualToAnchor:controlStack.widthAnchor],
         [self.threeDPreviewControls.widthAnchor constraintEqualToAnchor:controlStack.widthAnchor],
         [self.templateControlsGroup.widthAnchor constraintEqualToAnchor:controlStack.widthAnchor],
@@ -5321,6 +5492,20 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     return bakedPresentationSelected_ ? @"Baked Presentation" : outputName(selectedOutput_);
 }
 
+- (void)previewResolutionChanged:(id)sender
+{
+    static_cast<void>(sender);
+    constexpr std::array<std::uint32_t, 5> resolutions{64, 128, 256, 512, 1024};
+    const auto index = static_cast<std::size_t>(self.previewResolutionPopup.indexOfSelectedItem);
+    if (index >= resolutions.size()) {
+        return;
+    }
+    previewResolution_ = resolutions[index];
+    [NSUserDefaults.standardUserDefaults setInteger:previewResolution_
+                                             forKey:@"previewResolution"];
+    [self regeneratePreview];
+}
+
 - (void)previewModeChanged:(id)sender
 {
     static_cast<void>(sender);
@@ -5634,7 +5819,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     }
 
     const paperweight::GenerationRequest request{
-        material_, 512, 512, selectedOutput_, std::nullopt, previewCoverage_};
+        material_, previewResolution_, previewResolution_, selectedOutput_, std::nullopt,
+        previewCoverage_};
     auto cancellation = std::make_shared<std::atomic_bool>(false);
     previewCancellation_ = cancellation;
     __weak AppDelegate* weakSelf = self;
@@ -5666,7 +5852,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
                 strongSelf->generatedImage_ = *image;
                 strongSelf.exportMenuItem.enabled = YES;
                 strongSelf.statusLabel.stringValue = [NSString
-                    stringWithFormat:@"512 × 512 %@ — %.6g × %.6g m — %zu-node graph — seamless",
+                    stringWithFormat:@"%u × %u %@ — %.6g × %.6g m — %zu-node graph — seamless",
+                                     strongSelf->previewResolution_,
+                                     strongSelf->previewResolution_,
                                      outputName(strongSelf->selectedOutput_),
                                      strongSelf->previewCoverage_.widthMetres,
                                      strongSelf->previewCoverage_.heightMetres,
@@ -5689,8 +5877,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 {
     const paperweight::GenerationRequest request{
         material_,
-        512,
-        512,
+        previewResolution_,
+        previewResolution_,
         paperweight::MaterialOutput::colour,
         std::nullopt,
         previewCoverage_,
@@ -5765,7 +5953,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
                 strongSelf->generatedImage_ = *image;
                 strongSelf.exportMenuItem.enabled = YES;
                 strongSelf.statusLabel.stringValue = [NSString stringWithFormat:
-                    @"512 × 512 Baked Presentation — separate from unlit colour — %zu-node graph — seamless",
+                    @"%u × %u Baked Presentation — separate from unlit colour — %zu-node graph — seamless",
+                    strongSelf->previewResolution_,
+                    strongSelf->previewResolution_,
                     graphNodeCount];
                 strongSelf.statusLabel.textColor = NSColor.secondaryLabelColor;
                 return;
@@ -5783,8 +5973,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 {
     const paperweight::GenerationRequest request{
         material_,
-        256,
-        256,
+        previewResolution_,
+        previewResolution_,
         paperweight::MaterialOutput::colour,
         std::nullopt,
         previewCoverage_,
@@ -5856,7 +6046,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
                                                   roughnessImage:maps->roughness];
                 strongSelf->generated3DMaps_ = maps;
                 strongSelf.statusLabel.stringValue = [NSString stringWithFormat:
-                    @"Four 256 × 256 maps — %.6g × %.6g m — %zu-node graph — drag to orbit, scroll to zoom",
+                    @"Four %u × %u maps — %.6g × %.6g m — %zu-node graph — drag to orbit, scroll to zoom",
+                    strongSelf->previewResolution_,
+                    strongSelf->previewResolution_,
                     strongSelf->previewCoverage_.widthMetres,
                     strongSelf->previewCoverage_.heightMetres,
                     graphNodeCount];
@@ -5890,13 +6082,16 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.exportMenuItem.enabled = NO;
     if (self.previewModeControl.selectedSegment == 1) {
         [self.material3DPreviewView clearMaterialImages];
-        self.statusLabel.stringValue = @"Rendering four 256 × 256 material maps for 3D…";
+        self.statusLabel.stringValue = [NSString stringWithFormat:
+            @"Rendering four %u × %u material maps for 3D…",
+            previewResolution_, previewResolution_];
         self.previewLoadingLabel.stringValue = @"Rendering 3D material maps…";
     } else if (bakedPresentationSelected_) {
         self.statusLabel.stringValue = @"Rendering colour, height and normal maps for a baked presentation…";
         self.previewLoadingLabel.stringValue = @"Baking stylised lighting…";
     } else {
-        self.statusLabel.stringValue = @"Rendering 512 × 512 preview…";
+        self.statusLabel.stringValue = [NSString stringWithFormat:
+            @"Rendering %u × %u preview…", previewResolution_, previewResolution_];
         self.previewLoadingLabel.stringValue = @"Rendering preview…";
     }
     self.statusLabel.textColor = NSColor.secondaryLabelColor;
@@ -6012,6 +6207,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     dirty_ = false;
     [self updateWindowTitle];
     [NSDocumentController.sharedDocumentController noteNewRecentDocumentURL:url];
+    [self.materialLibraryWindowController noteMaterialSavedAtURL:url];
     self.statusLabel.stringValue = @"Material saved";
     self.statusLabel.textColor = NSColor.secondaryLabelColor;
     return YES;

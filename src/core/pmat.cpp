@@ -21,6 +21,11 @@ enum class Field : std::size_t {
     version,
     type,
     seed,
+    uid,
+    name,
+    description,
+    category,
+    tags,
     physicalWidth,
     physicalHeight,
     lowColour,
@@ -40,6 +45,11 @@ constexpr std::array<std::string_view, static_cast<std::size_t>(Field::count)> f
     "pmat.version",
     "material.type",
     "material.seed",
+    "material.uid",
+    "material.name",
+    "material.description",
+    "material.category",
+    "material.tags",
     "material.width",
     "material.height",
     "colour.low",
@@ -1374,6 +1384,45 @@ ParseResult parsePmat(std::string_view text)
                             "material.seed must be an unsigned integer");
                     }
                     break;
+                case Field::uid:
+                case Field::name:
+                case Field::description:
+                case Field::category:
+                case Field::tags: {
+                    if (!material.metadata) {
+                        material.metadata.emplace();
+                    }
+                    if (*field == Field::uid) {
+                        material.metadata->uid = value;
+                    } else if (*field == Field::name) {
+                        material.metadata->name = value;
+                    } else if (*field == Field::description) {
+                        material.metadata->description = value;
+                    } else if (*field == Field::category) {
+                        material.metadata->category = value;
+                    } else {
+                        std::size_t tagOffset = 0;
+                        while (tagOffset <= value.size()) {
+                            const auto comma = value.find(',', tagOffset);
+                            const auto tagEnd = comma == std::string_view::npos
+                                ? value.size()
+                                : comma;
+                            const auto tag = trim(value.substr(tagOffset, tagEnd - tagOffset));
+                            if (tag.empty()) {
+                                return diagnostic(
+                                    lineNumber,
+                                    valueColumn + tagOffset,
+                                    "material.tags must be a comma-separated list of non-empty tags");
+                            }
+                            material.metadata->tags.emplace_back(tag);
+                            if (comma == std::string_view::npos) {
+                                break;
+                            }
+                            tagOffset = comma + 1;
+                        }
+                    }
+                    break;
+                }
                 case Field::physicalWidth:
                     if (!parseMetres(value, material.physicalSize.widthMetres)) {
                         return diagnostic(
@@ -3107,8 +3156,10 @@ ParseResult parsePmat(std::string_view text)
              field == Field::roughnessHigh || field == Field::layerCount);
         const bool introducedInVersionSix =
             field == Field::physicalWidth || field == Field::physicalHeight;
+        const bool optionalMetadata = field == Field::uid || field == Field::name ||
+            field == Field::description || field == Field::category || field == Field::tags;
         if (!seen[index] && !optionalInVersionOne &&
-            !(formatVersion < 6 && introducedInVersionSix)) {
+            !optionalMetadata && !(formatVersion < 6 && introducedInVersionSix)) {
             return diagnostic(
                 lineNumber + 1,
                 1,
@@ -3123,6 +3174,18 @@ ParseResult parsePmat(std::string_view text)
             lineNumber + 1,
             1,
             "physical material dimensions require .pmat version 6");
+    }
+
+    if (formatVersion < 15 &&
+        (seen[static_cast<std::size_t>(Field::uid)] ||
+         seen[static_cast<std::size_t>(Field::name)] ||
+         seen[static_cast<std::size_t>(Field::description)] ||
+         seen[static_cast<std::size_t>(Field::category)] ||
+         seen[static_cast<std::size_t>(Field::tags)])) {
+        return diagnostic(
+            lineNumber + 1,
+            1,
+            "material identity and library metadata require .pmat version 15");
     }
 
     if (formatVersion == 1) {
@@ -4926,7 +4989,22 @@ ParseResult parsePmat(std::string_view text)
 
     if (const auto error = validateMaterial(material)) {
         Field relevantField = Field::frequency;
-        if (error->find("physical") != std::string::npos && formatVersion >= 6) {
+        if (error->find("UID") != std::string::npos &&
+            seen[static_cast<std::size_t>(Field::uid)]) {
+            relevantField = Field::uid;
+        } else if (error->find("name") != std::string::npos &&
+                   seen[static_cast<std::size_t>(Field::name)]) {
+            relevantField = Field::name;
+        } else if (error->find("description") != std::string::npos &&
+                   seen[static_cast<std::size_t>(Field::description)]) {
+            relevantField = Field::description;
+        } else if (error->find("category") != std::string::npos &&
+                   seen[static_cast<std::size_t>(Field::category)]) {
+            relevantField = Field::category;
+        } else if (error->find("tag") != std::string::npos &&
+                   seen[static_cast<std::size_t>(Field::tags)]) {
+            relevantField = Field::tags;
+        } else if (error->find("physical") != std::string::npos && formatVersion >= 6) {
             relevantField = Field::physicalWidth;
         } else if (material.frequency >= MaterialLimits::minimumFrequency &&
             material.frequency <= MaterialLimits::maximumFrequency) {
@@ -4982,6 +5060,31 @@ SerialisationResult serialisePmat(const Material& material)
     output += "pmat.version = " + std::to_string(currentPmatVersion) + "\n";
     output += "material.type = fbm\n";
     output += "material.seed = " + std::to_string(material.seed) + "\n";
+    if (material.metadata) {
+        const auto& metadata = *material.metadata;
+        if (!metadata.uid.empty()) {
+            output += "material.uid = " + metadata.uid + "\n";
+        }
+        if (!metadata.name.empty()) {
+            output += "material.name = " + metadata.name + "\n";
+        }
+        if (!metadata.description.empty()) {
+            output += "material.description = " + metadata.description + "\n";
+        }
+        if (!metadata.category.empty()) {
+            output += "material.category = " + metadata.category + "\n";
+        }
+        if (!metadata.tags.empty()) {
+            output += "material.tags = ";
+            for (std::size_t index = 0; index < metadata.tags.size(); ++index) {
+                if (index != 0) {
+                    output += ", ";
+                }
+                output += metadata.tags[index];
+            }
+            output += "\n";
+        }
+    }
     output += "material.width = " + physicalWidth + "\n";
     output += "material.height = " + physicalHeight + "\n";
     output += "colour.low = " + formatColour(material.lowColour) + "\n";
