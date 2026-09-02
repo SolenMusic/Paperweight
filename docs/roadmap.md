@@ -248,11 +248,31 @@ material engine or inaccessible state. See
 
 ## v0.0.21 - Portable Library Packs
 
-Planned: compile a working-folder library into a deterministic binary game blob
-with a versioned directory, UID lookup, integrity hashes, and measured
-compression. Human-readable `.pmat` files remain authoritative and suitable for
-Git. Packing and unpacking must be portable, bounded, and byte-stable across
-supported architectures; RLE is adopted only where measurements justify it.
+Implemented: compile an entire working folder or selected materials into one
+deterministic `.pwlib` game blob. Version 1 has a strict little-endian header,
+fixed entry table, canonical UIDs and friendly names, per-entry checksums, and a
+whole-library checksum. Canonical PMAT payloads use bounded PackBits-style RLE
+only when it is strictly smaller; raw storage remains available.
+
+The dependency-free C++ reader operates on a caller-owned memory span, lists
+entries, retrieves by UID, and instantiates a normal material with a chosen
+seed. The command-line packer accepts folders or selected files and can emit a
+C/C++ byte-array header. The native material-library window exports all or the
+current multi-selection and previews per-entry and total source/packed sizes.
+Finder opens `.pmat` in the editor and `.pwlib` in a read-only Pack Inspector;
+an inspected entry can be instantiated with a chosen seed. Corruption,
+truncation, incompatible versions,
+duplicate identities, and directory/payload mismatch are rejected. Source and
+pack generation are checked across every material output against a fixed pack
+checksum on native and Intel test slices. Human-readable `.pmat` files remain
+authoritative and suitable for Git. See [pwlib-format.md](pwlib-format.md).
+The staged implementation is recorded in
+[roadmap issue #224](https://github.com/SolenMusic/Paperweight/issues/224).
+
+Still out of scope here: visual node-graph editing, generators that bypass the
+reusable operation vocabulary, texture caches, asynchronous generation,
+runtime resolution policy, Git assistance, and GPU generation. The pack format
+is expressly provisional until a Blastard integration has exercised it.
 
 ## v0.1.0 - Game Library
 
@@ -266,6 +286,11 @@ launch, load time, or during development-time asset processing.
 
 - Optional Git assistance layered over a working folder.
 - An Emscripten/WebAssembly portability proof.
+- Per-axis seam policy (`X`, `Y`, both, or none) for directional materials.
+- Material-authored placement permissions for X/Y mirroring and quarter-turn
+  rotation, including correct tangent-space normal transforms and physical-size
+  handling. See
+  [future issue #233](https://github.com/SolenMusic/Paperweight/issues/233).
 
 These remain planned but intentionally do not displace the numbered roadmap
 above.

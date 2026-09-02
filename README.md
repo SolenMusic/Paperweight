@@ -13,9 +13,27 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-v0.0.20 is the current Material Design Wizard release. **File > New Material**
-opens a four-step native workflow for choosing a material family and seedless
-starting recipe, setting the real-world repeat size, adjusting friendly
+v0.0.21 is the current Portable Material Library Packs release. **Tools >
+Material Library > Export Pack** compiles an entire working folder or selected
+materials into one deterministic `.pwlib` deployment blob. The portable C++20
+reader lists entries directly from caller-owned memory, retrieves by canonical
+UID, and instantiates an ordinary material with the game's chosen seed. The
+source `.pmat` files remain the editable truth.
+
+Finder recognises both formats. Opening a `.pmat` loads the editable source in
+the main window. Opening a `.pwlib` presents a read-only Pack Inspector with
+entry names, UIDs, storage modes, sizes, checksums, and chosen-seed
+instantiation into an ordinary new editor document.
+
+Each pack has a versioned little-endian directory, friendly names, entry and
+whole-library checksums, and canonical PMAT payloads. Bounded RLE is selected
+per entry only when it is smaller than raw storage. The `paperweight_pack`
+command-line tool accepts folders or individual materials and can emit a C/C++
+byte-array header for direct executable embedding.
+
+The v0.0.20 Material Design Wizard remains available through **File > New
+Material**. It opens a four-step native workflow for choosing a material family
+and seedless starting recipe, setting the real-world repeat size, adjusting friendly
 construction, surface, colour, and wear controls, and comparing deterministic
 seeded alternatives. Any choice can be locked before variation. The wizard has
 live 2D and four-map 3D preview and finishes either in the complete layer editor
@@ -56,7 +74,8 @@ See [docs/architecture.md](docs/architecture.md),
 [docs/organic-structures.md](docs/organic-structures.md),
 [docs/reference-materials.md](docs/reference-materials.md),
 [docs/material-wizard.md](docs/material-wizard.md),
-[docs/material-library.md](docs/material-library.md), and
+[docs/material-library.md](docs/material-library.md),
+[docs/pwlib-format.md](docs/pwlib-format.md), and
 [docs/roadmap.md](docs/roadmap.md).
 Performance methodology and reproducible baseline measurements live in
 [docs/performance.md](docs/performance.md).
@@ -66,8 +85,7 @@ Performance methodology and reproducible baseline measurements live in
 The native editor retains its approachable layer interface. **File > New
 Material** and the library's **New Material** button open the guided wizard;
 **Edit Material** hands the finished ordinary recipe to that complete editor.
-Each
-edit compiles the stack into a fresh graph and renders only the requested output
+Each edit compiles the stack into a fresh graph and renders only the requested output
 branch; the preview status shows the resulting node count. Structural controls,
 transforms, warp, masks, output selection, 1x1/3x3 tiling, open/save, and PNG
 export behave as before. Preview work remains cancellable and off AppKit's event
@@ -110,6 +128,7 @@ Vulkan/MoltenVK research remains separate from ordinary `libpaperweight` builds.
 include/paperweight/  Public portable C++ API
 src/core/             Portable C++ implementation
 app/macos/            Native AppKit frontend and Objective-C++ glue
+tools/                Portable-library command-line packer
 tests/                Automated core and format tests
 examples/materials/   Example .pmat definitions
 docs/                 Architecture and roadmap
@@ -147,8 +166,9 @@ open build/app/macos/Paperweight.app
 ```
 
 In the app, use File > New Material to create a physically scaled material with
-the guided workflow, File > Open to load a `.pmat` definition, or File > New
-from Showcase to start from an advanced editable recipe. File > Save or Save As
+the guided workflow, File > Open to load a `.pmat` definition or inspect a
+`.pwlib` pack, or File > New from Showcase to start from an advanced editable
+recipe. Both file types also open directly from Finder. File > Save or Save As
 to store one, build a stack in the Layer Stack panel, choose a material output,
 and use File > Export PNG to write that 512x512 RGBA8 tile. Select a layer and
 use the Layer, Transform, and Mask tabs to shape it. Structural operations show
@@ -234,6 +254,23 @@ four material outputs deliberately select different sources. Layer-oriented
 callers can continue using `GenerationRequest` exactly as before; the core
 compiles their material once per request. Set `physicalCoverage` when a caller
 needs more than the material's single default repeat.
+
+`paperweight_pack` compiles library-ready PMAT sources for game deployment:
+
+```sh
+build/tools/paperweight_pack -o game-materials.pwlib path/to/material-library
+```
+
+Add `--cpp-header paperweight_materials.h --symbol paperweight_materials` for a
+C/C++ byte array. `examples/embed_pwlib.cpp` shows how Blastard or another game
+can enumerate that memory, choose a UID and seed, and call the unchanged
+generator API. The pack format is still provisional; v0.1.0 will stabilise the
+lessons learned from an actual game integration.
+
+The Material Library table previews each source PMAT size and the storage mode
+and payload size it would occupy in the current pack. Its summary shows the
+source total, complete PWLIB size including directory overhead, stored and
+canonical payload totals, and RLE entry count before export.
 
 ## Licence
 

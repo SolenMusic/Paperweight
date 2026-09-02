@@ -5,6 +5,17 @@ authoritative material library. There is no database and no hidden copy. The
 folder may be backed up, searched, edited with ordinary text tools, or placed in
 Git without involving Paperweight-specific infrastructure.
 
+Paperweight v0.0.21 can derive a compact `.pwlib` deployment artefact from the
+whole folder or selected rows. The readable `.pmat` files remain authoritative;
+editing or importing a pack is deliberately unsupported. See
+[pwlib-format.md](pwlib-format.md) for its portable in-memory API, checksums,
+automatic RLE, command-line packer, and C/C++ embedding route.
+
+The browser shows the source PMAT byte count and prospective raw or RLE payload
+size for each material. The footer previews the source total and complete
+PWLIB size, including pack overhead, before export. Size calculation uses the
+same core encoder as the eventual file rather than an estimate.
+
 ## Identity
 
 A library-ready material has a lowercase canonical UUID and a friendly name.
@@ -38,11 +49,21 @@ destination inside the current working folder and refuses to overwrite an
 existing file. Reveal opens Finder at the source file. Ordinary editor saves
 notify an open library window so its diagnostics and thumbnail are refreshed.
 
+The table permits multiple selection for pack export. Ordinary Open, Duplicate,
+Rename, Move, and Reveal actions remain single-material operations. **Export
+Pack** validates every chosen source before showing the save panel. Invalid
+PMAT, missing identity, missing friendly name, or duplicate UID prevents an
+incomplete game library from being produced.
+
 In v0.0.20, **New Material** opens the Material Design Wizard. Its **Save to
 Library** finish assigns a fresh UID, captures friendly metadata, writes
 canonical readable `.pmat` text to a collision-free filename in the working
 folder, and refreshes the browser. **Edit Material** instead sends the same
 ordinary material to the complete editor. No private wizard document is kept.
+
+Both `.pmat` and `.pwlib` are registered with Finder. A source material opens
+in the normal editor; a pack opens in the read-only Pack Inspector, from which
+one entry can be instantiated with a chosen seed as a new editable material.
 
 ## Preview resolution
 

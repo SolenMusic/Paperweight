@@ -24,6 +24,18 @@
             <key>LSHandlerRank</key>
             <string>Owner</string>
         </dict>
+        <dict>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>pwlib</string>
+            </array>
+            <key>CFBundleTypeName</key>
+            <string>Paperweight Material Library Pack</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>Owner</string>
+        </dict>
     </array>
     <key>CFBundleName</key>
     <string>Paperweight</string>
@@ -55,6 +67,23 @@
                 <key>public.filename-extension</key>
                 <array>
                     <string>pmat</string>
+                </array>
+            </dict>
+        </dict>
+        <dict>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+            </array>
+            <key>UTTypeDescription</key>
+            <string>Paperweight Material Library Pack</string>
+            <key>UTTypeIdentifier</key>
+            <string>com.solenmusic.paperweight.pwlib</string>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>pwlib</string>
                 </array>
             </dict>
         </dict>

@@ -64,3 +64,14 @@ set_target_properties(paperweight_tests PROPERTIES CXX_EXTENSIONS OFF)
 paperweight_enable_project_warnings(paperweight_tests)
 
 add_test(NAME paperweight.core COMMAND paperweight_tests)
+
+if(PAPERWEIGHT_BUILD_TOOLS)
+    add_test(
+        NAME paperweight.packer
+        COMMAND $<TARGET_FILE:paperweight_pack>
+            -o "${CMAKE_CURRENT_BINARY_DIR}/fixture-library.pwlib"
+            --cpp-header "${CMAKE_CURRENT_BINARY_DIR}/fixture-library.h"
+            --symbol fixture_library
+            "${PROJECT_SOURCE_DIR}/tests/fixtures/library"
+    )
+endif()

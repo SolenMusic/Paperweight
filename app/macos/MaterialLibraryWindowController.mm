@@ -5,6 +5,7 @@
 #include <paperweight/generator.hpp>
 #include <paperweight/material_library.hpp>
 #include <paperweight/pmat.hpp>
+#include <paperweight/pwlib.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -22,6 +23,9 @@
 @property(nonatomic, copy) NSString* category;
 @property(nonatomic, copy) NSString* searchText;
 @property(nonatomic, copy) NSString* status;
+@property(nonatomic, copy) NSString* sourceSize;
+@property(nonatomic, copy) NSString* packedSize;
+@property(nonatomic, copy) NSString* packedSizeDetail;
 @property(nonatomic, strong) NSImage* thumbnail;
 @property(nonatomic) BOOL ready;
 @end
@@ -44,6 +48,19 @@ NSString* utf8(const std::string& value)
 {
     auto* result = [NSString stringWithUTF8String:value.c_str()];
     return result != nil ? result : @"";
+}
+
+NSString* byteCount(std::uint64_t bytes)
+{
+    constexpr double kibibyte = 1024.0;
+    constexpr double mebibyte = kibibyte * 1024.0;
+    if (bytes < 1024) {
+        return [NSString stringWithFormat:@"%llu B", static_cast<unsigned long long>(bytes)];
+    }
+    if (static_cast<double>(bytes) < mebibyte) {
+        return [NSString stringWithFormat:@"%.1f KiB", static_cast<double>(bytes) / kibibyte];
+    }
+    return [NSString stringWithFormat:@"%.1f MiB", static_cast<double>(bytes) / mebibyte];
 }
 
 std::string slugForName(NSString* name)
@@ -91,6 +108,7 @@ std::string slugForName(NSString* name)
 @property(nonatomic, strong) NSButton* renameButton;
 @property(nonatomic, strong) NSButton* moveButton;
 @property(nonatomic, strong) NSButton* revealButton;
+@property(nonatomic, strong) NSButton* exportPackButton;
 @end
 
 @implementation MaterialLibraryWindowController {
@@ -105,7 +123,7 @@ std::string slugForName(NSString* name)
 {
     const NSWindowStyleMask style = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
         NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;
-    auto* window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 920, 620)
+    auto* window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 1100, 620)
                                                 styleMask:style
                                                   backing:NSBackingStoreBuffered
                                                     defer:NO];
@@ -119,7 +137,7 @@ std::string slugForName(NSString* name)
         thumbnailQueue_ = dispatch_queue_create(
             "org.solen-music.paperweight.library-thumbnails", DISPATCH_QUEUE_SERIAL);
         window.title = @"Material Library — Paperweight";
-        window.minSize = NSMakeSize(740, 460);
+        window.minSize = NSMakeSize(900, 460);
         window.delegate = self;
         [NSNotificationCenter.defaultCenter addObserver:self
                                                selector:@selector(applicationDidBecomeActive:)
@@ -208,12 +226,14 @@ std::string slugForName(NSString* name)
     self.tableView.rowHeight = 54.0;
     self.tableView.usesAlternatingRowBackgroundColors = YES;
     self.tableView.allowsEmptySelection = YES;
+    self.tableView.allowsMultipleSelection = YES;
     self.tableView.doubleAction = @selector(openSelected:);
     self.tableView.target = self;
     const NSArray* columns = @[
-        @[@"preview", @"", @64], @[@"name", @"Name", @220],
-        @[@"category", @"Category", @110], @[@"path", @"Location", @210],
-        @[@"status", @"Status", @240],
+        @[@"preview", @"", @54], @[@"name", @"Name", @190],
+        @[@"category", @"Category", @100], @[@"path", @"Location", @170],
+        @[@"source", @"PMAT", @80], @[@"packed", @"Pack payload", @105],
+        @[@"status", @"Status", @185],
     ];
     for (NSArray* specification in columns) {
         auto* column = [[NSTableColumn alloc] initWithIdentifier:specification[0]];
@@ -229,6 +249,8 @@ std::string slugForName(NSString* name)
 
     auto* newButton = [NSButton buttonWithTitle:@"New Material…"
                                           target:self action:@selector(createMaterial:)];
+    self.exportPackButton = [NSButton buttonWithTitle:@"Export Pack…"
+                                                target:self action:@selector(exportPack:)];
     self.openButton = [NSButton buttonWithTitle:@"Open"
                                           target:self action:@selector(openSelected:)];
     self.duplicateButton = [NSButton buttonWithTitle:@"Duplicate…"
@@ -240,7 +262,7 @@ std::string slugForName(NSString* name)
     self.revealButton = [NSButton buttonWithTitle:@"Reveal"
                                             target:self action:@selector(revealSelected:)];
     auto* actions = [NSStackView stackViewWithViews:@[
-        newButton, self.openButton, self.duplicateButton, self.renameButton,
+        newButton, self.exportPackButton, self.openButton, self.duplicateButton, self.renameButton,
         self.moveButton, self.revealButton,
     ]];
     actions.orientation = NSUserInterfaceLayoutOrientationHorizontal;
@@ -353,6 +375,8 @@ std::string slugForName(NSString* name)
     std::vector<paperweight::MaterialLibrarySource> sources;
     sources.reserve(urls.count);
     std::unordered_map<std::string, NSURL*> urlsByPath;
+    std::unordered_map<std::string, std::uint64_t> sourceSizes;
+    std::uint64_t totalSourceBytes{};
     const std::string root = self.workingFolderURL.path.UTF8String;
     for (NSURL* url in urls) {
         std::string fullPath = url.path.UTF8String;
@@ -363,7 +387,11 @@ std::string slugForName(NSString* name)
         NSString* contents = [NSString stringWithContentsOfURL:url
                                                        encoding:NSUTF8StringEncoding
                                                           error:&error];
-        sources.push_back({relative, contents.UTF8String != nullptr ? contents.UTF8String : ""});
+        const char* utf8Contents = contents.UTF8String;
+        std::string sourceText = utf8Contents != nullptr ? utf8Contents : "";
+        sourceSizes.emplace(relative, sourceText.size());
+        totalSourceBytes += sourceText.size();
+        sources.push_back({relative, std::move(sourceText)});
         urlsByPath.emplace(relative, url);
     }
     const auto index = paperweight::indexMaterialLibrary(sources);
@@ -379,6 +407,36 @@ std::string slugForName(NSString* name)
         status += diagnostic.message;
     }
 
+    struct PackedSize {
+        std::uint64_t stored{};
+        std::uint64_t canonical{};
+        paperweight::PwlibStorageMode mode{paperweight::PwlibStorageMode::raw};
+    };
+    std::unordered_map<std::string, PackedSize> packedSizes;
+    std::uint64_t storedPayloadBytes{};
+    std::uint64_t canonicalPayloadBytes{};
+    std::size_t rleCount{};
+    std::optional<std::size_t> completePackBytes;
+    if (index.diagnostics().empty() && !sources.empty()) {
+        auto packResult = paperweight::packPwlib(sources);
+        if (auto* bytes = std::get_if<std::vector<std::uint8_t>>(&packResult)) {
+            auto readResult = paperweight::readPwlib(*bytes);
+            if (auto* library = std::get_if<paperweight::PackedMaterialLibrary>(&readResult)) {
+                completePackBytes = bytes->size();
+                for (const auto& entry : library->entries()) {
+                    packedSizes.emplace(
+                        std::string(entry.uid),
+                        PackedSize{entry.storedSize, entry.uncompressedSize, entry.storageMode});
+                    storedPayloadBytes += entry.storedSize;
+                    canonicalPayloadBytes += entry.uncompressedSize;
+                    if (entry.storageMode == paperweight::PwlibStorageMode::rle) {
+                        ++rleCount;
+                    }
+                }
+            }
+        }
+    }
+
     auto* rows = [NSMutableArray arrayWithCapacity:urls.count];
     std::unordered_map<std::string, PWMaterialLibraryRow*> rowsByPath;
     for (const auto& entry : index.entries()) {
@@ -390,6 +448,20 @@ std::string slugForName(NSString* name)
         row.category = metadata.category.empty() ? @"Uncategorised" : utf8(metadata.category);
         row.ready = entry.libraryReady;
         row.status = entry.libraryReady ? @"Ready" : utf8(statuses[entry.path]);
+        row.sourceSize = byteCount(sourceSizes[entry.path]);
+        if (const auto packed = packedSizes.find(metadata.uid); packed != packedSizes.end()) {
+            row.packedSize = [NSString stringWithFormat:@"%@ %@",
+                byteCount(packed->second.stored),
+                packed->second.mode == paperweight::PwlibStorageMode::rle ? @"RLE" : @"raw"];
+            row.packedSizeDetail = [NSString stringWithFormat:
+                @"%@ stored from %@ canonical PMAT payload",
+                byteCount(packed->second.stored), byteCount(packed->second.canonical)];
+        } else {
+            row.packedSize = @"—";
+            row.packedSizeDetail = entry.libraryReady
+                ? @"Fix other library problems to calculate the complete pack."
+                : @"This material is not ready for packing.";
+        }
         std::string search = entry.path + " " + metadata.uid + " " + metadata.name + " " +
             metadata.category + " " + metadata.description;
         for (const auto& tag : metadata.tags) {
@@ -447,6 +519,9 @@ std::string slugForName(NSString* name)
         row.category = @"Invalid";
         row.ready = NO;
         row.status = utf8(statuses[source.path]);
+        row.sourceSize = byteCount(sourceSizes[source.path]);
+        row.packedSize = @"—";
+        row.packedSizeDetail = @"This material is not ready for packing.";
         row.searchText = [NSString stringWithFormat:@"%@ %@", row.relativePath, row.status].lowercaseString;
         [rows addObject:row];
     }
@@ -469,10 +544,21 @@ std::string slugForName(NSString* name)
     }
     [self filterChanged:nil];
     const NSUInteger problemCount = index.diagnostics().size();
-    self.summaryLabel.stringValue = [NSString stringWithFormat:
-        @"%lu material file%@, %lu problem%@. Thumbnails are generated from the source definitions.",
-        static_cast<unsigned long>(urls.count), urls.count == 1 ? @"" : @"s",
-        static_cast<unsigned long>(problemCount), problemCount == 1 ? @"" : @"s"];
+    if (completePackBytes) {
+        self.summaryLabel.stringValue = [NSString stringWithFormat:
+            @"%lu material file%@, %lu problem%@. PMAT total %@; PWLIB total %@ "
+             "(%@ stored from %@ canonical payload, %zu RLE).",
+            static_cast<unsigned long>(urls.count), urls.count == 1 ? @"" : @"s",
+            static_cast<unsigned long>(problemCount), problemCount == 1 ? @"" : @"s",
+            byteCount(totalSourceBytes), byteCount(*completePackBytes),
+            byteCount(storedPayloadBytes), byteCount(canonicalPayloadBytes), rleCount];
+    } else {
+        self.summaryLabel.stringValue = [NSString stringWithFormat:
+            @"%lu material file%@, %lu problem%@. PMAT total %@; fix library problems to preview PWLIB size.",
+            static_cast<unsigned long>(urls.count), urls.count == 1 ? @"" : @"s",
+            static_cast<unsigned long>(problemCount), problemCount == 1 ? @"" : @"s",
+            byteCount(totalSourceBytes)];
+    }
 }
 
 - (void)filterChanged:(id)sender
@@ -527,12 +613,16 @@ std::string slugForName(NSString* name)
     if ([tableColumn.identifier isEqualToString:@"name"]) value = row.displayName;
     else if ([tableColumn.identifier isEqualToString:@"category"]) value = row.category;
     else if ([tableColumn.identifier isEqualToString:@"path"]) value = row.relativePath;
+    else if ([tableColumn.identifier isEqualToString:@"source"]) value = row.sourceSize;
+    else if ([tableColumn.identifier isEqualToString:@"packed"]) value = row.packedSize;
     else if ([tableColumn.identifier isEqualToString:@"status"]) value = row.status;
     auto* view = label(value);
     if ([tableColumn.identifier isEqualToString:@"status"] && !row.ready) {
         view.textColor = NSColor.systemRedColor;
     }
-    view.toolTip = value;
+    view.toolTip = [tableColumn.identifier isEqualToString:@"packed"]
+        ? row.packedSizeDetail
+        : value;
     return view;
 }
 
@@ -552,12 +642,13 @@ std::string slugForName(NSString* name)
 
 - (void)updateSelectionButtons
 {
-    const BOOL selected = [self selectedRow] != nil;
-    self.openButton.enabled = selected;
-    self.duplicateButton.enabled = selected;
-    self.renameButton.enabled = selected;
-    self.moveButton.enabled = selected;
-    self.revealButton.enabled = selected;
+    const BOOL singleSelection = self.tableView.selectedRowIndexes.count == 1;
+    self.openButton.enabled = singleSelection;
+    self.duplicateButton.enabled = singleSelection;
+    self.renameButton.enabled = singleSelection;
+    self.moveButton.enabled = singleSelection;
+    self.revealButton.enabled = singleSelection;
+    self.exportPackButton.enabled = self.workingFolderURL != nil && self.allRows.count != 0;
 }
 
 - (void)openSelected:(id)sender
@@ -669,6 +760,108 @@ std::string slugForName(NSString* name)
 - (void)createMaterial:(id)sender
 {
     [NSApp sendAction:@selector(showMaterialWizard:) to:NSApp.delegate from:sender];
+}
+
+- (NSArray<PWMaterialLibraryRow*>*)selectedRows
+{
+    auto* rows = [NSMutableArray array];
+    [self.tableView.selectedRowIndexes enumerateIndexesUsingBlock:
+        ^(NSUInteger index, BOOL* stop) {
+            static_cast<void>(stop);
+            if (index < self.visibleRows.count) {
+                [rows addObject:self.visibleRows[index]];
+            }
+        }];
+    return rows;
+}
+
+- (void)exportPack:(id)sender
+{
+    static_cast<void>(sender);
+    NSArray<PWMaterialLibraryRow*>* rows = self.allRows;
+    NSArray<PWMaterialLibraryRow*>* selected = [self selectedRows];
+    if (selected.count != 0) {
+        auto* scope = [[NSAlert alloc] init];
+        scope.messageText = @"Export Portable Material Pack";
+        scope.informativeText = [NSString stringWithFormat:
+            @"Export the entire working folder, or only the %lu selected material%@?",
+            static_cast<unsigned long>(selected.count), selected.count == 1 ? @"" : @"s"];
+        [scope addButtonWithTitle:@"Entire Folder"];
+        [scope addButtonWithTitle:[NSString stringWithFormat:
+            @"Selected (%lu)", static_cast<unsigned long>(selected.count)]];
+        [scope addButtonWithTitle:@"Cancel"];
+        const auto response = [scope runModal];
+        if (response == NSAlertThirdButtonReturn) {
+            return;
+        }
+        if (response == NSAlertSecondButtonReturn) {
+            rows = selected;
+        }
+    }
+    if (rows.count == 0) {
+        [self showOperationError:@"There are no material files to export."];
+        return;
+    }
+
+    std::vector<paperweight::MaterialLibrarySource> sources;
+    sources.reserve(rows.count);
+    const std::string root = self.workingFolderURL.path.UTF8String;
+    for (PWMaterialLibraryRow* row in rows) {
+        NSError* readError = nil;
+        NSString* contents = [NSString stringWithContentsOfURL:row.url
+                                                       encoding:NSUTF8StringEncoding
+                                                          error:&readError];
+        if (contents == nil || contents.UTF8String == nullptr) {
+            [self showOperationError:readError.localizedDescription != nil
+                ? readError.localizedDescription
+                : @"A selected material could not be read."];
+            return;
+        }
+        std::string fullPath = row.url.path.UTF8String;
+        std::string relative = fullPath.size() > root.size() + 1
+            ? fullPath.substr(root.size() + 1)
+            : fullPath;
+        sources.push_back({relative, contents.UTF8String});
+    }
+    const auto packed = paperweight::packPwlib(sources);
+    if (const auto* packError = std::get_if<paperweight::PwlibError>(&packed)) {
+        [self showOperationError:utf8(packError->message)];
+        return;
+    }
+    const auto& bytes = std::get<std::vector<std::uint8_t>>(packed);
+
+    auto* panel = [NSSavePanel savePanel];
+    panel.title = @"Export Portable Material Pack";
+    panel.nameFieldStringValue = @"Paperweight-Library.pwlib";
+    panel.allowedFileTypes = @[@"pwlib"];
+    panel.canCreateDirectories = YES;
+    if ([panel runModal] != NSModalResponseOK) {
+        return;
+    }
+    NSData* data = [NSData dataWithBytes:bytes.data() length:bytes.size()];
+    NSError* writeError = nil;
+    if (![data writeToURL:panel.URL options:NSDataWritingAtomic error:&writeError]) {
+        [self showOperationError:writeError.localizedDescription != nil
+            ? writeError.localizedDescription
+            : @"The portable material pack could not be written."];
+        return;
+    }
+
+    std::size_t rleCount{};
+    const auto opened = paperweight::readPwlib(bytes);
+    if (const auto* library = std::get_if<paperweight::PackedMaterialLibrary>(&opened)) {
+        rleCount = static_cast<std::size_t>(std::count_if(
+            library->entries().begin(), library->entries().end(), [](const auto& entry) {
+                return entry.storageMode == paperweight::PwlibStorageMode::rle;
+            }));
+    }
+    auto* success = [[NSAlert alloc] init];
+    success.messageText = @"Portable material pack exported";
+    success.informativeText = [NSString stringWithFormat:
+        @"%lu material%@, %lu bytes. RLE was smaller for %zu entr%@; the remaining entries are raw.",
+        static_cast<unsigned long>(rows.count), rows.count == 1 ? @"" : @"s",
+        static_cast<unsigned long>(bytes.size()), rleCount, rleCount == 1 ? @"y" : @"ies"];
+    [success runModal];
 }
 
 - (void)duplicateSelected:(id)sender

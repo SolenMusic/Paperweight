@@ -6,11 +6,12 @@ if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" AND
         "Minimum macOS version supported by Paperweight")
 endif()
 
-project(Paperweight VERSION 0.0.20 LANGUAGES CXX)
+project(Paperweight VERSION 0.0.21 LANGUAGES CXX)
 
 option(PAPERWEIGHT_BUILD_TESTS "Build the Paperweight test suite" ON)
 option(PAPERWEIGHT_BUILD_MACOS_APP "Build the native macOS application" ${APPLE})
 option(PAPERWEIGHT_BUILD_EXAMPLES "Build Paperweight core examples" ON)
+option(PAPERWEIGHT_BUILD_TOOLS "Build Paperweight command-line tools" ON)
 option(PAPERWEIGHT_BUILD_BENCHMARKS "Build the Paperweight performance benchmarks" OFF)
 set(PAPERWEIGHT_THREADS_DEFAULT ON)
 if(EMSCRIPTEN)
@@ -46,6 +47,7 @@ add_library(paperweight_core STATIC
     src/core/noise.cpp
     src/core/organic.cpp
     src/core/pmat.cpp
+    src/core/pwlib.cpp
     src/core/course.cpp
     src/core/region.cpp
     src/core/sculpt.cpp
@@ -85,6 +87,10 @@ endif()
 
 if(PAPERWEIGHT_BUILD_EXAMPLES)
     add_subdirectory(examples)
+endif()
+
+if(PAPERWEIGHT_BUILD_TOOLS)
+    add_subdirectory(tools)
 endif()
 
 if(PAPERWEIGHT_BUILD_BENCHMARKS)
