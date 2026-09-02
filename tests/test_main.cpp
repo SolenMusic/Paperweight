@@ -7,6 +7,7 @@
 #include <paperweight/material.hpp>
 #include <paperweight/material_library.hpp>
 #include <paperweight/material_template.hpp>
+#include <paperweight/material_wizard.hpp>
 #include <paperweight/noise.hpp>
 #include <paperweight/organic.hpp>
 #include <paperweight/pmat.hpp>
@@ -120,9 +121,9 @@ paperweight::Material materialWithNoiseParameters(
 
 void testVersion()
 {
-    constexpr paperweight::Version expected{0, 0, 18};
+    constexpr paperweight::Version expected{0, 0, 20};
     static_assert(paperweight::currentVersion == expected);
-    expect(paperweight::versionString() == "0.0.19", "version string is 0.0.19");
+    expect(paperweight::versionString() == "0.0.20", "version string is 0.0.20");
 }
 
 void testImage()
@@ -4051,6 +4052,215 @@ void testPmat()
            "invalid materials are not serialised");
 }
 
+void testMaterialWizard()
+{
+    expect(paperweight::wizardMaterialFamilies.size() == 8,
+           "wizard exposes all eight requested material families");
+    for (const auto& family : paperweight::wizardMaterialFamilies) {
+        const auto templates = paperweight::wizardTemplatesForFamily(family.family);
+        expect(!templates.empty(), "every wizard family has at least one reusable template");
+        for (const auto* descriptor : templates) {
+            expect(descriptor != nullptr &&
+                       paperweight::findReferenceMaterialTemplate(descriptor->identifier) == descriptor,
+                   "wizard catalogue entries resolve through the reference template catalogue");
+        }
+    }
+
+    const auto* descriptor = paperweight::findReferenceMaterialTemplate("cel-courtyard-gravel");
+    expect(descriptor != nullptr, "wizard acceptance template exists");
+    if (descriptor == nullptr) {
+        return;
+    }
+    std::ifstream sourceFile("cel-courtyard-gravel.pmat", std::ios::binary);
+    const std::string sourceText(
+        std::istreambuf_iterator<char>{sourceFile},
+        std::istreambuf_iterator<char>{});
+    const auto parsed = paperweight::parsePmat(sourceText);
+    const auto* authored = std::get_if<paperweight::Material>(&parsed);
+    expect(authored != nullptr, "wizard can load an ordinary template source");
+    if (authored == nullptr) {
+        return;
+    }
+
+    auto sessionResult = paperweight::makeMaterialWizardSession(
+        *descriptor, paperweight::makeMaterialRecipe(*authored), 741852963ULL);
+    auto* session = std::get_if<paperweight::MaterialWizardSession>(&sessionResult);
+    expect(session != nullptr && session->controls.size() == descriptor->controls.size(),
+           "wizard session exposes every existing typed template control");
+    if (session == nullptr) {
+        return;
+    }
+    const auto* mismatchedDescriptor =
+        paperweight::findReferenceMaterialTemplate("castle-stone");
+    expect(mismatchedDescriptor != nullptr &&
+               std::holds_alternative<paperweight::MaterialWizardError>(
+                   paperweight::makeMaterialFromWizard(*session, *mismatchedDescriptor)),
+           "wizard rejects a session paired with the wrong template");
+    auto invalidControlSession = *session;
+    invalidControlSession.controls.front().value =
+        descriptor->controls.front().maximumValue + 1.0;
+    expect(std::holds_alternative<paperweight::MaterialWizardError>(
+               paperweight::makeMaterialFromWizard(invalidControlSession, *descriptor)),
+           "wizard reports an out-of-range friendly control instead of clamping hidden state");
+
+    session->physicalSize = {3.2, 1.8};
+    session->lowColour = {31, 45, 52, 255};
+    session->highColour = {174, 181, 167, 255};
+    session->controls.front().value = descriptor->controls.front().minimumValue;
+    const auto materialResult = paperweight::makeMaterialFromWizard(*session, *descriptor);
+    const auto* material = std::get_if<paperweight::Material>(&materialResult);
+    expect(material != nullptr && material->physicalSize == session->physicalSize &&
+               material->lowColour == session->lowColour &&
+               material->highColour == session->highColour && !material->metadata,
+           "wizard choices become ordinary accessible Material properties");
+    if (material != nullptr) {
+        const auto serialised = paperweight::serialisePmat(*material);
+        const auto* text = std::get_if<std::string>(&serialised);
+        const auto reparsed = text != nullptr
+            ? paperweight::parsePmat(*text)
+            : paperweight::ParseResult{paperweight::ParseDiagnostic{0, 0, "missing"}};
+        expect(std::holds_alternative<paperweight::Material>(reparsed) &&
+                   std::get<paperweight::Material>(reparsed) == *material,
+               "wizard result round-trips as an ordinary canonical .pmat");
+    }
+
+    const auto alternativesOne = paperweight::generateMaterialWizardAlternatives(
+        *session, *descriptor, 4);
+    const auto alternativesTwo = paperweight::generateMaterialWizardAlternatives(
+        *session, *descriptor, 4);
+    const auto* firstSet = std::get_if<std::vector<paperweight::MaterialWizardAlternative>>(
+        &alternativesOne);
+    const auto* secondSet = std::get_if<std::vector<paperweight::MaterialWizardAlternative>>(
+        &alternativesTwo);
+    expect(firstSet != nullptr && secondSet != nullptr && *firstSet == *secondSet &&
+               firstSet->size() == 4,
+           "wizard alternatives are deterministic and remain in stable comparison order");
+    if (firstSet != nullptr && secondSet != nullptr &&
+        firstSet->size() == 4 && secondSet->size() == 4) {
+        expect((*firstSet)[0].material.seed != (*firstSet)[1].material.seed,
+               "unlocked alternatives receive distinct deterministic seeds");
+        expect(std::all_of(firstSet->begin(), firstSet->end(), [](const auto& alternative) {
+                   return !alternative.material.metadata.has_value();
+               }),
+               "wizard alternatives never smuggle identity or hidden state into materials");
+
+        std::array<std::uint64_t, 4> forwardChecksums{};
+        bool reorderedExecutionMatches = firstSet->size() == forwardChecksums.size() &&
+            secondSet->size() == forwardChecksums.size();
+        for (std::size_t index = 0; index < forwardChecksums.size() &&
+             reorderedExecutionMatches; ++index) {
+            auto generated = paperweight::generate({
+                (*firstSet)[index].material,
+                20,
+                20,
+                paperweight::MaterialOutput::colour,
+                std::nullopt,
+                std::nullopt,
+                1,
+            });
+            const auto* image = std::get_if<paperweight::Image>(&generated);
+            reorderedExecutionMatches = image != nullptr;
+            if (image != nullptr) forwardChecksums[index] = checksum(image->pixels());
+        }
+        for (std::size_t reverse = forwardChecksums.size();
+             reverse > 0 && reorderedExecutionMatches; --reverse) {
+            const auto index = reverse - 1;
+            auto generated = paperweight::generate({
+                (*secondSet)[index].material,
+                20,
+                20,
+                paperweight::MaterialOutput::colour,
+                std::nullopt,
+                std::nullopt,
+                4,
+            });
+            const auto* image = std::get_if<paperweight::Image>(&generated);
+            reorderedExecutionMatches = image != nullptr &&
+                checksum(image->pixels()) == forwardChecksums[index];
+        }
+        expect(reorderedExecutionMatches,
+               "wizard candidates remain byte-identical under reversed and parallel rendering");
+
+        const auto& repeatMaterial = firstSet->front().material;
+        const auto oneTile = paperweight::generate({
+            repeatMaterial,
+            18,
+            18,
+            paperweight::MaterialOutput::colour,
+            std::nullopt,
+            repeatMaterial.physicalSize,
+            1,
+        });
+        const auto threeTiles = paperweight::generate({
+            repeatMaterial,
+            54,
+            54,
+            paperweight::MaterialOutput::colour,
+            std::nullopt,
+            paperweight::PhysicalSize{
+                repeatMaterial.physicalSize.widthMetres * 3.0,
+                repeatMaterial.physicalSize.heightMetres * 3.0,
+            },
+            4,
+        });
+        const auto* oneImage = std::get_if<paperweight::Image>(&oneTile);
+        const auto* threeImage = std::get_if<paperweight::Image>(&threeTiles);
+        bool repeatsExactly = oneImage != nullptr && threeImage != nullptr;
+        for (std::uint32_t y = 0; threeImage != nullptr && y < threeImage->height() &&
+             repeatsExactly; ++y) {
+            for (std::uint32_t x = 0; x < threeImage->width(); ++x) {
+                if (threeImage->row(y)[x] != oneImage->row(y % 18)[x % 18]) {
+                    repeatsExactly = false;
+                    break;
+                }
+            }
+        }
+        expect(repeatsExactly,
+               "a wizard candidate remains a byte-exact seamless 1x1/3x3 material");
+    }
+
+    auto locked = *session;
+    locked.seedLocked = true;
+    locked.physicalSizeLocked = true;
+    locked.coloursLocked = true;
+    for (auto& control : locked.controls) {
+        control.locked = true;
+    }
+    const auto lockedBase = paperweight::makeMaterialFromWizard(locked, *descriptor);
+    const auto lockedAlternatives = paperweight::generateMaterialWizardAlternatives(
+        locked, *descriptor, 4);
+    const auto* baseMaterial = std::get_if<paperweight::Material>(&lockedBase);
+    const auto* lockedSet = std::get_if<std::vector<paperweight::MaterialWizardAlternative>>(
+        &lockedAlternatives);
+    expect(baseMaterial != nullptr && lockedSet != nullptr &&
+               std::all_of(lockedSet->begin(), lockedSet->end(), [&](const auto& alternative) {
+                   return alternative.material == *baseMaterial;
+               }),
+           "locking seed, scale, colours, and controls preserves every authored property");
+    expect(std::holds_alternative<paperweight::MaterialWizardError>(
+               paperweight::generateMaterialWizardAlternatives(*session, *descriptor, 0)),
+           "wizard rejects an empty comparison set");
+
+    auto boundarySession = *session;
+    boundarySession.physicalSize = {
+        paperweight::PhysicalLimits::maximumMetres,
+        paperweight::PhysicalLimits::maximumMetres,
+    };
+    boundarySession.physicalSizeLocked = false;
+    const auto boundaryAlternatives = paperweight::generateMaterialWizardAlternatives(
+        boundarySession, *descriptor, 4);
+    const auto* boundarySet =
+        std::get_if<std::vector<paperweight::MaterialWizardAlternative>>(&boundaryAlternatives);
+    expect(boundarySet != nullptr && std::all_of(
+               boundarySet->begin(), boundarySet->end(), [](const auto& alternative) {
+                   return alternative.material.physicalSize.widthMetres <=
+                              paperweight::PhysicalLimits::maximumMetres &&
+                       alternative.material.physicalSize.heightMetres <=
+                              paperweight::PhysicalLimits::maximumMetres;
+               }),
+           "unlocked scale alternatives remain inside portable physical limits");
+}
+
 void testMaterialIdentityAndLibrary()
 {
     paperweight::Material identified;
@@ -4176,6 +4386,7 @@ int main()
     testGenerator();
     testPhysicalScale();
     testReferenceTemplatesAndStylisedLighting();
+    testMaterialWizard();
     testPmat();
     testMaterialIdentityAndLibrary();
 

@@ -38,6 +38,12 @@ destination inside the current working folder and refuses to overwrite an
 existing file. Reveal opens Finder at the source file. Ordinary editor saves
 notify an open library window so its diagnostics and thumbnail are refreshed.
 
+In v0.0.20, **New Material** opens the Material Design Wizard. Its **Save to
+Library** finish assigns a fresh UID, captures friendly metadata, writes
+canonical readable `.pmat` text to a collision-free filename in the working
+folder, and refreshes the browser. **Edit Material** instead sends the same
+ordinary material to the complete editor. No private wizard document is kept.
+
 ## Preview resolution
 
 The editor remembers a preview size of 64, 128, 256, 512, or 1024 pixels square.

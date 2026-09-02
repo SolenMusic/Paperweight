@@ -13,15 +13,19 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-v0.0.19 is the current Working Folder and Material Library release. The native
-editor can remember a source folder, recursively browse its `.pmat` files,
-search and filter descriptive metadata, generate live thumbnails, and report
-invalid files or ambiguous identities without hiding valid siblings. Materials
-may carry a stable UID, friendly name, description, category, and tags in the
-human-readable version-15 format. Create, duplicate, rename, move, open, and
-reveal operations keep readable `.pmat` files as the source of truth. Preview
-resolution is selectable from 64x64 through 1024x1024 for 2D, baked, and 3D
-inspection, and remains editor state rather than material content.
+v0.0.20 is the current Material Design Wizard release. **File > New Material**
+opens a four-step native workflow for choosing a material family and seedless
+reference template, setting the real-world repeat size, adjusting friendly
+construction, surface, colour, and wear controls, and comparing deterministic
+seeded alternatives. Any choice can be locked before variation. The wizard has
+live 2D and four-map 3D preview and finishes either in the complete layer editor
+or directly in the remembered working-folder library.
+
+Wizard results are normal editable `Material` values and human-readable
+version-15 `.pmat` files. The wizard adds no evaluator, hidden recipe state, or
+new serialisation format. The v0.0.19 working-folder browser, metadata,
+diagnostics, safe file operations, and selectable 64x64 through 1024x1024
+preview resolution remain available.
 
 The staged work is tracked in [GitHub Issues](https://github.com/SolenMusic/Paperweight/issues).
 
@@ -46,6 +50,7 @@ Native macOS AppKit frontend
 See [docs/architecture.md](docs/architecture.md),
 [docs/organic-structures.md](docs/organic-structures.md),
 [docs/reference-materials.md](docs/reference-materials.md),
+[docs/material-wizard.md](docs/material-wizard.md),
 [docs/material-library.md](docs/material-library.md), and
 [docs/roadmap.md](docs/roadmap.md).
 Performance methodology and reproducible baseline measurements live in
@@ -53,7 +58,10 @@ Performance methodology and reproducible baseline measurements live in
 
 ## Current scope
 
-The native editor retains its approachable layer interface. Each
+The native editor retains its approachable layer interface. **File > New
+Material** and the library's **New Material** button open the guided wizard;
+**Edit Material** hands the finished ordinary recipe to that complete editor.
+Each
 edit compiles the stack into a fresh graph and renders only the requested output
 branch; the preview status shows the resulting node count. Structural controls,
 transforms, warp, masks, output selection, 1x1/3x3 tiling, open/save, and PNG
@@ -133,8 +141,9 @@ Open it in Finder or run:
 open build/app/macos/Paperweight.app
 ```
 
-In the app, use File > Open to load a `.pmat` definition, File > New from
-Showcase to start from an advanced editable recipe, File > Save or Save As
+In the app, use File > New Material to create a physically scaled material with
+the guided workflow, File > Open to load a `.pmat` definition, or File > New
+from Showcase to start from an advanced editable recipe. File > Save or Save As
 to store one, build a stack in the Layer Stack panel, choose a material output,
 and use File > Export PNG to write that 512x512 RGBA8 tile. Select a layer and
 use the Layer, Transform, and Mask tabs to shape it. Structural operations show

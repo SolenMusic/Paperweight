@@ -56,6 +56,8 @@ add_executable(Paperweight MACOSX_BUNDLE
     Material3DPreviewView.mm
     MaterialLibraryWindowController.hpp
     MaterialLibraryWindowController.mm
+    MaterialWizardWindowController.hpp
+    MaterialWizardWindowController.mm
     main.mm
     ${PAPERWEIGHT_METAL_SHADER}
     ${PAPERWEIGHT_SHOWCASE_MATERIALS}

@@ -227,11 +227,21 @@ inspection. See [roadmap issue #201](https://github.com/SolenMusic/Paperweight/i
 
 ## v0.0.20 - Material Design Wizard
 
-Planned: turn the growing procedural vocabulary into a guided material-design
-workflow. Authors choose a broad family and answer visual questions about
-construction, scale, surface condition, style, and desired outputs. The wizard
-instantiates ordinary editable layers from seedless recipes; it does not create
-a second evaluator or hide permanent state behind the generated material.
+Implemented: add a native **New Material** workflow covering masonry, stone,
+wood, metal, organic, foliage, gravel or debris, and abstract families. Authors
+choose a compatible v0.0.18 seedless reference template, select or enter the
+physical repeat size, and adjust friendly construction, surface, colour, and
+wear controls while watching live 2D or four-map 3D preview. Seed, size, colour,
+and individual template properties may be locked while generating four stable,
+deterministic alternatives for comparison.
+
+The chosen result can enter the complete layer editor or be given identity and
+saved directly into the remembered working-folder library. Both routes produce
+an ordinary editable version-15 `.pmat`; family, locks, comparison state, and
+preview settings are deliberately transient. The portable wizard model maps
+onto the existing recipe and typed template-control APIs, so there is no second
+material engine or inaccessible state. See
+[roadmap issue #211](https://github.com/SolenMusic/Paperweight/issues/211).
 
 ## v0.0.21 - Portable Library Packs
 
