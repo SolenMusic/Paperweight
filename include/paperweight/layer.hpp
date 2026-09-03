@@ -8,6 +8,7 @@
 #include <vector>
 
 #include <paperweight/image.hpp>
+#include <paperweight/output.hpp>
 
 namespace paperweight {
 
@@ -15,6 +16,9 @@ enum class CompositeMode {
     blend,
     add,
     multiply,
+    minimum,
+    maximum,
+    detail,
 };
 
 enum class QuarterTurn : std::uint8_t {
@@ -62,6 +66,14 @@ struct SolidColourOperation {
     friend constexpr bool operator==(
         const SolidColourOperation&,
         const SolidColourOperation&) = default;
+};
+
+struct SurfaceValueOperation {
+    double value{0.5};
+
+    friend constexpr bool operator==(
+        const SurfaceValueOperation&,
+        const SurfaceValueOperation&) = default;
 };
 
 struct LevelsOperation {
@@ -752,7 +764,37 @@ using LayerOperation = std::variant<
     OrganicCellOperation,
     OrganicCrackOperation,
     LeafClusterOperation,
-    OrganicAccumulationOperation>;
+    OrganicAccumulationOperation,
+    SurfaceValueOperation>;
+
+struct LayerOutputRouting {
+    bool colour{true};
+    bool height{true};
+    bool roughness{true};
+
+    [[nodiscard]] constexpr bool includes(MaterialOutput output) const
+    {
+        switch (output) {
+        case MaterialOutput::colour:
+            return colour;
+        case MaterialOutput::height:
+        case MaterialOutput::normal:
+            return height;
+        case MaterialOutput::roughness:
+            return roughness;
+        }
+        return false;
+    }
+
+    [[nodiscard]] constexpr bool isLegacyAll() const
+    {
+        return colour && height && roughness;
+    }
+
+    friend constexpr bool operator==(
+        const LayerOutputRouting&,
+        const LayerOutputRouting&) = default;
+};
 
 struct MaterialLayer {
     bool enabled{true};
@@ -761,6 +803,7 @@ struct MaterialLayer {
     LayerOperation operation{NoiseOperation{}};
     CoordinateTransform transform;
     LayerMask mask;
+    LayerOutputRouting outputs;
 
     friend constexpr bool operator==(const MaterialLayer&, const MaterialLayer&) = default;
 };
@@ -854,6 +897,7 @@ struct LayerLimits {
         CompositeMode::blend,
         NoiseOperation{seedOffset},
         {},
+        {},
         {}};
 }
 
@@ -866,6 +910,7 @@ struct LayerLimits {
         CompositeMode::blend,
         SolidColourOperation{colour},
         {},
+        {},
         {}};
 }
 
@@ -876,6 +921,7 @@ struct LayerLimits {
         1.0,
         CompositeMode::blend,
         LevelsOperation{},
+        {},
         {},
         {}};
 }
@@ -888,6 +934,7 @@ struct LayerLimits {
         CompositeMode::blend,
         ThresholdOperation{},
         {},
+        {},
         {}};
 }
 
@@ -898,6 +945,7 @@ struct LayerLimits {
         1.0,
         CompositeMode::blend,
         BrickGridOperation{},
+        {},
         {},
         {}};
 }
@@ -910,6 +958,7 @@ struct LayerLimits {
         CompositeMode::blend,
         TileGridOperation{},
         {},
+        {},
         {}};
 }
 
@@ -920,6 +969,7 @@ struct LayerLimits {
         1.0,
         CompositeMode::blend,
         WorleyCellsOperation{},
+        {},
         {},
         {}};
 }
@@ -932,6 +982,7 @@ struct LayerLimits {
         CompositeMode::blend,
         RandomCellsOperation{},
         {},
+        {},
         {}};
 }
 
@@ -942,6 +993,7 @@ struct LayerLimits {
         1.0,
         CompositeMode::blend,
         LinesOperation{},
+        {},
         {},
         {}};
 }
@@ -954,6 +1006,7 @@ struct LayerLimits {
         CompositeMode::blend,
         RectanglesOperation{},
         {},
+        {},
         {}};
 }
 
@@ -964,6 +1017,7 @@ struct LayerLimits {
         1.0,
         CompositeMode::blend,
         CirclesOperation{},
+        {},
         {},
         {}};
 }
@@ -979,6 +1033,7 @@ struct LayerLimits {
         CompositeMode::blend,
         operation,
         {},
+        {},
         {}};
 }
 
@@ -993,6 +1048,7 @@ struct LayerLimits {
         CompositeMode::blend,
         operation,
         {},
+        {},
         {}};
 }
 
@@ -1003,6 +1059,7 @@ struct LayerLimits {
         1.0,
         CompositeMode::blend,
         PosteriseOperation{},
+        {},
         {},
         {}};
 }
@@ -1015,6 +1072,7 @@ struct LayerLimits {
         CompositeMode::blend,
         ColourRampOperation{},
         {},
+        {},
         {}};
 }
 
@@ -1025,6 +1083,7 @@ struct LayerLimits {
         1.0,
         CompositeMode::blend,
         PaletteOperation{},
+        {},
         {},
         {}};
 }
@@ -1037,6 +1096,7 @@ struct LayerLimits {
         CompositeMode::blend,
         InkContourOperation{},
         {},
+        {},
         {}};
 }
 
@@ -1047,6 +1107,7 @@ struct LayerLimits {
         1.0,
         CompositeMode::blend,
         RegionFieldOperation{},
+        {},
         {},
         {}};
 }
@@ -1059,6 +1120,7 @@ struct LayerLimits {
         CompositeMode::blend,
         CourseLayoutOperation{},
         {},
+        {},
         {}};
 }
 
@@ -1069,6 +1131,7 @@ struct LayerLimits {
         1.0,
         CompositeMode::blend,
         RegionSurfaceOperation{},
+        {},
         {},
         {}};
 }
@@ -1081,6 +1144,7 @@ struct LayerLimits {
         CompositeMode::blend,
         ShapePrimitiveOperation{},
         {},
+        {},
         {}};
 }
 
@@ -1091,6 +1155,7 @@ struct LayerLimits {
         1.0,
         CompositeMode::blend,
         ShapeBooleanOperation{},
+        {},
         {},
         {}};
 }
@@ -1103,6 +1168,7 @@ struct LayerLimits {
         CompositeMode::blend,
         LatticeOperation{},
         {},
+        {},
         {}};
 }
 
@@ -1113,6 +1179,7 @@ struct LayerLimits {
         1.0,
         CompositeMode::blend,
         ScatterOperation{},
+        {},
         {},
         {}};
 }
@@ -1125,6 +1192,7 @@ struct LayerLimits {
         CompositeMode::blend,
         OrganicCellOperation{},
         {},
+        {},
         {}};
 }
 
@@ -1135,6 +1203,7 @@ struct LayerLimits {
         1.0,
         CompositeMode::blend,
         OrganicCrackOperation{},
+        {},
         {},
         {}};
 }
@@ -1147,6 +1216,7 @@ struct LayerLimits {
         CompositeMode::blend,
         LeafClusterOperation{},
         {},
+        {},
         {}};
 }
 
@@ -1157,6 +1227,19 @@ struct LayerLimits {
         1.0,
         CompositeMode::blend,
         OrganicAccumulationOperation{},
+        {},
+        {},
+        {}};
+}
+
+[[nodiscard]] constexpr MaterialLayer makeSurfaceValueLayer(double value = 0.5)
+{
+    return MaterialLayer{
+        true,
+        1.0,
+        CompositeMode::blend,
+        SurfaceValueOperation{value},
+        {},
         {},
         {}};
 }
@@ -1175,6 +1258,12 @@ struct LayerLimits {
         return "add";
     case CompositeMode::multiply:
         return "multiply";
+    case CompositeMode::minimum:
+        return "minimum";
+    case CompositeMode::maximum:
+        return "maximum";
+    case CompositeMode::detail:
+        return "detail";
     }
     return "unknown";
 }
@@ -1238,6 +1327,8 @@ struct LayerLimits {
         return "leaf_cluster";
     case 27:
         return "organic_accumulation";
+    case 28:
+        return "surface_value";
     default:
         return "unknown";
     }

@@ -37,7 +37,7 @@ collects a friendly name, category, and tags, chooses a collision-free filename,
 and writes directly into the remembered working folder.
 
 Both routes produce an ordinary `Material`. Saving serialises the same readable
-version-15 `.pmat` text used elsewhere in Paperweight. Wizard state, locks,
+version-16 `.pmat` text used elsewhere in Paperweight. Wizard state, locks,
 family selection, comparison thumbnails, and preview mode are not serialised.
 
 ## Architecture

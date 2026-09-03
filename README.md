@@ -13,7 +13,24 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-v0.0.22 is the current Library Workspace release. Paperweight now opens on the
+v0.0.23 is the current Surface Channel Authoring release. Layers can target
+colour, height (and its derived normal), and roughness independently. A material
+may declare physical relief depth in metres, making normal-map slopes independent
+of export resolution while correctly accounting for real-world repeat size;
+normal strength remains an
+optional artistic multiplier. Existing levels, threshold, posterise, surface
+filters, transforms, and masks now operate on whichever output branches a layer
+targets. Minimum, maximum, and centred detail composites add non-destructive
+surface combination tools, while a constant Surface Value layer provides clear
+height and roughness baselines.
+
+The editor and Material Design Wizard expose the new controls directly. Polished
+Marble, Wet Mortar, Engraved Metal, and Varnished Wood demonstrate independently
+authored polish, wet joints, cut relief, brushing, and clear coat. Existing
+version-15 materials retain their byte-exact output through a dedicated legacy
+graph path; saving migrates them explicitly to readable version-16 `.pmat`.
+
+The v0.0.22 Library Workspace remains intact. Paperweight opens on the
 full material library instead of manufacturing an unnamed editor document.
 Every opened material has an independent editing session and appears as a
 native macOS tab alongside the library. Tabs can be dragged out or moved with
@@ -54,12 +71,12 @@ live 2D and four-map 3D preview and finishes either in the complete layer editor
 or directly in the remembered working-folder library.
 
 Family choices describe the actual material rather than incidental details:
-Metal starts from Painted Metal or Weathered Metal, while proven wood, marble,
+Metal starts from Painted Metal, Weathered Metal, or Engraved Metal, while proven wood, marble,
 pebble, debris, and abstract showcases supplement the ten v0.0.18 reference
 templates where appropriate.
 
 Wizard results are normal editable `Material` values and human-readable
-version-15 `.pmat` files. The wizard adds no evaluator, hidden recipe state, or
+version-16 `.pmat` files. The wizard adds no evaluator, hidden recipe state, or
 new serialisation format. The v0.0.19 working-folder browser, metadata,
 diagnostics, safe file operations, and selectable 64x64 through 1024x1024
 preview resolution remain available.
@@ -121,10 +138,10 @@ Showcase menu remains available for direct access to the wider example set.
 Region Stones demonstrates repeatable
 per-cell variation, while Course Random gives every row one stable value.
 
-Format-version-1 through version-15 `.pmat` files open with their historical
-output intact; saving migrates them to canonical format version 15. Version 15
-adds optional identity and descriptive metadata only; generated pixels are
-unchanged. Exact block
+Format-version-1 through version-16 `.pmat` files open. Versions 1 through 15
+retain their historical output intact; saving migrates them to canonical format
+version 16. Version 16 adds output routing and optional physical relief without
+changing the legacy default. Exact block
 and parent-course keys are evaluator metadata, not pixel channels, so they are
 never stored in lossy floating-point form.
 The editor does not invent a redundant graph syntax for the existing layer recipe:

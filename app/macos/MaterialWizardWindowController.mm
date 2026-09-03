@@ -109,6 +109,8 @@ NSString* controlSectionName(paperweight::WizardControlSection section)
 @property(nonatomic, strong) NSPopUpButton* scalePresetPopup;
 @property(nonatomic, strong) NSTextField* widthField;
 @property(nonatomic, strong) NSTextField* heightField;
+@property(nonatomic, strong) NSTextField* reliefDepthField;
+@property(nonatomic, strong) NSTextField* normalMultiplierField;
 @property(nonatomic, strong) NSTextField* scaleSummary;
 @property(nonatomic, strong) NSButton* scaleLockCheckbox;
 @property(nonatomic, strong) NSTextField* seedField;
@@ -338,6 +340,12 @@ NSString* controlSectionName(paperweight::WizardControlSection section)
     self.heightField.accessibilityLabel = @"Physical repeat height in metres";
     self.widthField.delegate = self;
     self.heightField.delegate = self;
+    self.reliefDepthField = [NSTextField textFieldWithString:@"3"];
+    self.normalMultiplierField = [NSTextField textFieldWithString:@"1"];
+    self.reliefDepthField.delegate = self;
+    self.normalMultiplierField.delegate = self;
+    self.reliefDepthField.accessibilityLabel = @"Physical relief depth in millimetres";
+    self.normalMultiplierField.accessibilityLabel = @"Artistic normal strength multiplier";
     auto* widthRow = [NSStackView stackViewWithViews:@[
         wizardLabel(@"Width"), self.widthField, wizardLabel(@"metres"),
     ]];
@@ -350,17 +358,29 @@ NSString* controlSectionName(paperweight::WizardControlSection section)
     heightRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
     heightRow.alignment = NSLayoutAttributeCenterY;
     heightRow.spacing = 8.0;
+    auto* reliefRow = [NSStackView stackViewWithViews:@[
+        wizardLabel(@"Relief depth"), self.reliefDepthField, wizardLabel(@"millimetres"),
+    ]];
+    reliefRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    reliefRow.alignment = NSLayoutAttributeCenterY;
+    reliefRow.spacing = 8.0;
+    auto* normalRow = [NSStackView stackViewWithViews:@[
+        wizardLabel(@"Normal multiplier"), self.normalMultiplierField,
+    ]];
+    normalRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    normalRow.alignment = NSLayoutAttributeCenterY;
+    normalRow.spacing = 8.0;
     self.scaleLockCheckbox = [NSButton checkboxWithTitle:@"Keep this physical size in alternatives"
                                                    target:self action:@selector(lockChanged:)];
     self.scaleLockCheckbox.state = NSControlStateValueOn;
     self.scaleSummary = wizardLabel(@"");
     self.scaleSummary.textColor = NSColor.secondaryLabelColor;
     auto* note = wizardLabel(
-        @"This describes the real-world area covered by one seamless repeat. It is not the number of pixels.");
+        @"The repeat size and relief depth describe real dimensions. Normals remain consistent when texture resolution changes; the optional multiplier is purely artistic.");
     note.textColor = NSColor.secondaryLabelColor;
     auto* page = [self pageWithViews:@[
         wizardHeading(@"How large is one repeat?"), note,
-        self.scalePresetPopup, widthRow, heightRow,
+        self.scalePresetPopup, widthRow, heightRow, reliefRow, normalRow,
         self.scaleLockCheckbox, self.scaleSummary,
     ]];
     self.pages = [self.pages arrayByAddingObject:page];
@@ -525,7 +545,7 @@ NSString* controlSectionName(paperweight::WizardControlSection section)
     static_cast<void>(sender);
     const NSInteger target = self.stepControl.selectedSegment;
     if (target > currentStep_ && currentStep_ <= 1 && target > 1 &&
-        ![self applyScaleFields]) {
+        (![self applyScaleFields] || ![self applySurfaceFields])) {
         self.stepControl.selectedSegment = currentStep_;
         return;
     }
@@ -570,7 +590,8 @@ NSString* controlSectionName(paperweight::WizardControlSection section)
 - (void)goNext:(id)sender
 {
     static_cast<void>(sender);
-    if (currentStep_ == 1 && ![self applyScaleFields]) {
+    if (currentStep_ == 1 &&
+        (![self applyScaleFields] || ![self applySurfaceFields])) {
         return;
     }
     if (currentStep_ == 2 && ![self applySeedField]) {
@@ -643,6 +664,13 @@ NSString* controlSectionName(paperweight::WizardControlSection section)
     if (!session_ || activeDescriptor_ == nullptr) return;
     self.widthField.stringValue = [NSString stringWithFormat:@"%.6g", session_->physicalSize.widthMetres];
     self.heightField.stringValue = [NSString stringWithFormat:@"%.6g", session_->physicalSize.heightMetres];
+    if (!session_->recipe.reliefDepthMetres) {
+        session_->recipe.reliefDepthMetres = 0.003;
+    }
+    self.reliefDepthField.stringValue = [NSString stringWithFormat:
+        @"%.6g", *session_->recipe.reliefDepthMetres * 1000.0];
+    self.normalMultiplierField.stringValue = [NSString stringWithFormat:
+        @"%.6g", session_->recipe.normalStrength];
     [self.scalePresetPopup selectItemAtIndex:0];
     self.scaleLockCheckbox.state = session_->physicalSizeLocked
         ? NSControlStateValueOn : NSControlStateValueOff;
@@ -759,6 +787,25 @@ NSString* controlSectionName(paperweight::WizardControlSection section)
     return YES;
 }
 
+- (BOOL)applySurfaceFields
+{
+    if (!session_) return NO;
+    const double reliefMillimetres = self.reliefDepthField.doubleValue;
+    const double normalMultiplier = self.normalMultiplierField.doubleValue;
+    if (!std::isfinite(reliefMillimetres) || reliefMillimetres < 0.0 ||
+        reliefMillimetres > paperweight::MaterialLimits::maximumReliefDepthMetres * 1000.0 ||
+        !std::isfinite(normalMultiplier) ||
+        normalMultiplier < paperweight::MaterialLimits::minimumNormalStrength ||
+        normalMultiplier > paperweight::MaterialLimits::maximumNormalStrength) {
+        [self showError:@"Relief depth must be non-negative, and the normal multiplier must be between 0 and 16."];
+        return NO;
+    }
+    session_->recipe.reliefDepthMetres = reliefMillimetres / 1000.0;
+    session_->recipe.normalStrength = normalMultiplier;
+    [self invalidateAlternativesAndPreview];
+    return YES;
+}
+
 - (void)updateScaleSummary
 {
     if (!session_) return;
@@ -789,6 +836,9 @@ NSString* controlSectionName(paperweight::WizardControlSection section)
 {
     if (notification.object == self.widthField || notification.object == self.heightField) {
         [self applyScaleFields];
+    } else if (notification.object == self.reliefDepthField ||
+               notification.object == self.normalMultiplierField) {
+        [self applySurfaceFields];
     } else if (notification.object == self.seedField) {
         [self applySeedField];
     }
@@ -892,7 +942,8 @@ NSString* controlSectionName(paperweight::WizardControlSection section)
 {
     static_cast<void>(sender);
     if (!session_ || activeDescriptor_ == nullptr) return;
-    if (![self applyScaleFields] || ![self applySeedField]) return;
+    if (![self applyScaleFields] || ![self applySurfaceFields] ||
+        ![self applySeedField]) return;
     const auto result = paperweight::generateMaterialWizardAlternatives(
         *session_, *activeDescriptor_, 4);
     if (const auto* error = std::get_if<paperweight::MaterialWizardError>(&result)) {

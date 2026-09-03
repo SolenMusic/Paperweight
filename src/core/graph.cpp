@@ -2,6 +2,7 @@
 
 #include <paperweight/material.hpp>
 
+#include <algorithm>
 #include <array>
 #include <functional>
 #include <type_traits>
@@ -506,20 +507,10 @@ GraphCompilationResult compileMaterialGraph(const Material& material)
         return id;
     };
 
-    GraphNodeId accumulated = invalidGraphNodeId;
-    if (material.layers.empty()) {
-        accumulated = addGenerator(NoiseOperation{}, {}, std::nullopt);
-    } else {
-        accumulated = addGenerator(
-            SolidColourOperation{Rgba8{0, 0, 0, 0}},
-            {},
-            std::nullopt);
-        for (std::size_t layerIndex = 0; layerIndex < material.layers.size(); ++layerIndex) {
-            const auto& layer = material.layers[layerIndex];
-            if (!layer.enabled) {
-                continue;
-            }
-
+    using LayerCompilation = std::variant<GraphNodeId, GraphError>;
+    const auto compileLayer = [&](GraphNodeId accumulated,
+                                  const MaterialLayer& layer,
+                                  std::size_t layerIndex) -> LayerCompilation {
             GraphNodeId source = invalidGraphNodeId;
             if (const auto* levels = std::get_if<LevelsOperation>(&layer.operation)) {
                 source = addProcessing(
@@ -598,7 +589,7 @@ GraphCompilationResult compileMaterialGraph(const Material& material)
                 });
                 mask = maskId;
             }
-            accumulated = addProcessing(
+            return addProcessing(
                 CompositeProcessing{
                     accumulated,
                     source,
@@ -607,12 +598,83 @@ GraphCompilationResult compileMaterialGraph(const Material& material)
                     layer.opacity,
                 },
                 layerIndex);
+    };
+
+    GraphNodeId colourInput = invalidGraphNodeId;
+    GraphNodeId heightInput = invalidGraphNodeId;
+    GraphNodeId roughnessInput = invalidGraphNodeId;
+    if (material.layers.empty()) {
+        const auto noise = addGenerator(NoiseOperation{}, {}, std::nullopt);
+        colourInput = noise;
+        heightInput = noise;
+        roughnessInput = noise;
+    } else {
+        const auto base = addGenerator(
+            SolidColourOperation{Rgba8{0, 0, 0, 0}},
+            {},
+            std::nullopt);
+        const bool useLegacySharedGraph = std::all_of(
+            material.layers.begin(),
+            material.layers.end(),
+            [](const MaterialLayer& layer) {
+                return !layer.enabled || layer.outputs.isLegacyAll();
+            });
+        if (useLegacySharedGraph) {
+            GraphNodeId accumulated = base;
+            for (std::size_t layerIndex = 0;
+                 layerIndex < material.layers.size();
+                 ++layerIndex) {
+                const auto& layer = material.layers[layerIndex];
+                if (!layer.enabled) {
+                    continue;
+                }
+                auto compiled = compileLayer(accumulated, layer, layerIndex);
+                if (const auto* error = std::get_if<GraphError>(&compiled)) {
+                    return *error;
+                }
+                accumulated = std::get<GraphNodeId>(compiled);
+            }
+            colourInput = accumulated;
+            heightInput = accumulated;
+            roughnessInput = accumulated;
+        } else {
+            std::array<GraphNodeId, 3> accumulated{base, base, base};
+            constexpr std::array routedOutputs{
+                MaterialOutput::colour,
+                MaterialOutput::height,
+                MaterialOutput::roughness,
+            };
+            for (std::size_t layerIndex = 0;
+                 layerIndex < material.layers.size();
+                 ++layerIndex) {
+                const auto& layer = material.layers[layerIndex];
+                if (!layer.enabled) {
+                    continue;
+                }
+                for (std::size_t route = 0; route < routedOutputs.size(); ++route) {
+                    if (!layer.outputs.includes(routedOutputs[route])) {
+                        continue;
+                    }
+                    auto compiled = compileLayer(
+                        accumulated[route],
+                        layer,
+                        layerIndex);
+                    if (const auto* error = std::get_if<GraphError>(&compiled)) {
+                        return *error;
+                    }
+                    accumulated[route] = std::get<GraphNodeId>(compiled);
+                }
+            }
+            colourInput = accumulated[0];
+            heightInput = accumulated[1];
+            roughnessInput = accumulated[2];
         }
     }
 
-    for (const auto output : materialOutputs) {
-        graph.nodes.emplace_back(OutputNode{nextId++, output, accumulated});
-    }
+    graph.nodes.emplace_back(OutputNode{nextId++, MaterialOutput::colour, colourInput});
+    graph.nodes.emplace_back(OutputNode{nextId++, MaterialOutput::height, heightInput});
+    graph.nodes.emplace_back(OutputNode{nextId++, MaterialOutput::normal, heightInput});
+    graph.nodes.emplace_back(OutputNode{nextId++, MaterialOutput::roughness, roughnessInput});
     if (const auto error = validateMaterialGraph(graph)) {
         return *error;
     }

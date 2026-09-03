@@ -171,6 +171,9 @@
 @property(nonatomic, strong) NSColorWell* highColourWell;
 @property(nonatomic, strong) NSSlider* normalStrengthSlider;
 @property(nonatomic, strong) NSTextField* normalStrengthValue;
+@property(nonatomic, strong) NSButton* physicalReliefCheckbox;
+@property(nonatomic, strong) NSStackView* reliefDepthRow;
+@property(nonatomic, strong) NSTextField* reliefDepthField;
 @property(nonatomic, strong) NSSlider* roughnessLowSlider;
 @property(nonatomic, strong) NSTextField* roughnessLowValue;
 @property(nonatomic, strong) NSSlider* roughnessHighSlider;
@@ -245,12 +248,16 @@
 @property(nonatomic, strong) NSMutableArray<NSTextField*>* templateControlValues;
 @property(nonatomic, strong) NSButton* layerEnabledCheckbox;
 @property(nonatomic, strong) NSSegmentedControl* layerCompositeControl;
+@property(nonatomic, strong) NSSegmentedControl* layerOutputControl;
 @property(nonatomic, strong) NSSlider* layerOpacitySlider;
 @property(nonatomic, strong) NSTextField* layerOpacityValue;
 @property(nonatomic, strong) NSStackView* noiseSeedRow;
 @property(nonatomic, strong) NSTextField* noiseSeedOffsetField;
 @property(nonatomic, strong) NSStackView* solidColourRow;
 @property(nonatomic, strong) NSColorWell* solidColourWell;
+@property(nonatomic, strong) NSStackView* surfaceValueRow;
+@property(nonatomic, strong) NSSlider* surfaceValueSlider;
+@property(nonatomic, strong) NSTextField* surfaceValueValue;
 @property(nonatomic, strong) NSStackView* levelsLowRow;
 @property(nonatomic, strong) NSSlider* levelsLowSlider;
 @property(nonatomic, strong) NSTextField* levelsLowValue;
@@ -709,6 +716,8 @@ NSString* operationDisplayName(const paperweight::LayerOperation& operation)
         return @"Leaf Clusters";
     case 27:
         return @"Organic Accumulation";
+    case 28:
+        return @"Surface Value";
     default:
         return @"Unknown";
     }
@@ -779,6 +788,12 @@ bool materialUsesDerivedRepeat(const paperweight::Material& material)
 
 double recommendedPreviewDisplacement(const paperweight::Material& material)
 {
+    if (material.reliefDepthMetres) {
+        const double materialExtent = std::min(
+            material.physicalSize.widthMetres,
+            material.physicalSize.heightMetres);
+        return std::clamp(*material.reliefDepthMetres / materialExtent, 0.0, 0.12);
+    }
     // Normal strength is the existing authored indication of intended surface relief.
     // Keep the display-only displacement bounded so high-detail materials remain legible.
     return std::clamp(material.normalStrength * 0.04, 0.0, 0.12);
@@ -855,6 +870,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     selectedOutput_ = paperweight::MaterialOutput::colour;
     bakedPresentationSelected_ = false;
     activeTemplate_ = nullptr;
+    material_.reliefDepthMetres = 0.003;
     material_.layers.push_back(paperweight::makeNoiseLayer());
     previewCoverage_ = material_.physicalSize;
     const NSInteger savedPreviewResolution =
@@ -1139,6 +1155,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @[ @"Toon Dungeon", @"toon-dungeon" ],
         @[ @"Painted Metal", @"painted-metal" ],
         @[ @"Graphic Marble", @"graphic-marble" ],
+        @[ @"Polished Marble", @"polished-marble" ],
+        @[ @"Wet Mortar", @"wet-mortar" ],
+        @[ @"Engraved Metal", @"engraved-metal" ],
+        @[ @"Varnished Wood", @"varnished-wood" ],
         @[ @"Region Stones", @"region-stones" ],
         @[ @"Castle Flagstone", @"castle-flagstone" ],
         @[ @"Castle Stone", @"castle-stone" ],
@@ -1805,7 +1825,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     const auto& roughnessHighMetadata =
         paperweight::metadataFor(paperweight::MaterialParameter::roughnessHigh);
     NSStackView* normalStrengthRow = makeSliderRow(
-        @"Normal",
+        @"Normal multiplier",
         normalStrengthMetadata.minimumValue,
         normalStrengthMetadata.maximumValue,
         material_.normalStrength,
@@ -1813,6 +1833,26 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self);
     self.normalStrengthSlider = static_cast<NSSlider*>(normalStrengthRow.views[1]);
     self.normalStrengthValue = static_cast<NSTextField*>(normalStrengthRow.views[2]);
+    self.normalStrengthSlider.toolTip =
+        @"Optional artistic multiplier applied after the physically scaled normal calculation.";
+    self.physicalReliefCheckbox = [NSButton
+        checkboxWithTitle:@"Use physical relief depth"
+                   target:self
+                   action:@selector(parameterChanged:)];
+    self.physicalReliefCheckbox.state = material_.reliefDepthMetres
+        ? NSControlStateValueOn
+        : NSControlStateValueOff;
+    self.physicalReliefCheckbox.toolTip =
+        @"Make normal-map slopes depend on the material's real dimensions and relief depth.";
+    self.reliefDepthRow = makeMetreFieldRow(
+        @"Relief depth",
+        material_.reliefDepthMetres.value_or(0.003),
+        self,
+        @selector(parameterChanged:));
+    self.reliefDepthField = static_cast<NSTextField*>(self.reliefDepthRow.views[1]);
+    self.reliefDepthField.enabled = material_.reliefDepthMetres.has_value();
+    self.reliefDepthField.toolTip =
+        @"The real-world distance between black and white in the height map; 0.003m is 3mm.";
     NSStackView* roughnessLowRow = makeSliderRow(
         @"Rough low",
         roughnessLowMetadata.minimumValue,
@@ -2128,6 +2168,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         gainRow,
         lowColourRow,
         highColourRow,
+        self.physicalReliefCheckbox,
+        self.reliefDepthRow,
         normalStrengthRow,
         roughnessLowRow,
         roughnessHighRow,
@@ -2262,6 +2304,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @"Organic Cracks",
         @"Leaf Clusters",
         @"Organic Accumulation",
+        @"Surface Value",
     ]];
     auto* addLayerButton = [NSButton buttonWithTitle:@"Add"
                                               target:self
@@ -2299,12 +2342,29 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 
     auto* compositeLabel = makeLabel(@"Composite");
     self.layerCompositeControl = [[NSSegmentedControl alloc] initWithFrame:NSZeroRect];
-    self.layerCompositeControl.segmentCount = 3;
+    self.layerCompositeControl.segmentCount = 6;
     [self.layerCompositeControl setLabel:@"Blend" forSegment:0];
     [self.layerCompositeControl setLabel:@"Add" forSegment:1];
-    [self.layerCompositeControl setLabel:@"Multiply" forSegment:2];
+    [self.layerCompositeControl setLabel:@"Mul" forSegment:2];
+    [self.layerCompositeControl setLabel:@"Min" forSegment:3];
+    [self.layerCompositeControl setLabel:@"Max" forSegment:4];
+    [self.layerCompositeControl setLabel:@"Detail" forSegment:5];
     self.layerCompositeControl.target = self;
     self.layerCompositeControl.action = @selector(layerParameterChanged:);
+    self.layerCompositeControl.toolTip =
+        @"Blend, add, multiply, select the lower or higher value, or add centred fine detail.";
+
+    auto* outputsLabel = makeLabel(@"Affect outputs");
+    self.layerOutputControl = [[NSSegmentedControl alloc] initWithFrame:NSZeroRect];
+    self.layerOutputControl.segmentCount = 3;
+    [self.layerOutputControl setLabel:@"Colour" forSegment:0];
+    [self.layerOutputControl setLabel:@"Height + Normal" forSegment:1];
+    [self.layerOutputControl setLabel:@"Roughness" forSegment:2];
+    self.layerOutputControl.trackingMode = NSSegmentSwitchTrackingSelectAny;
+    self.layerOutputControl.target = self;
+    self.layerOutputControl.action = @selector(layerParameterChanged:);
+    self.layerOutputControl.toolTip =
+        @"Choose independently which material maps this layer changes. Normal is derived from height.";
 
     auto* opacityRow = makeLayerSliderRow(@"Opacity", 0.0, 1.0, 1.0, self);
     self.layerOpacitySlider = static_cast<NSSlider*>(opacityRow.views[1]);
@@ -2327,6 +2387,12 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @"Colour", paperweight::Rgba8{128, 128, 128, 255}, self);
     self.solidColourWell = static_cast<NSColorWell*>(self.solidColourRow.views[1]);
     self.solidColourWell.action = @selector(layerColourChanged:);
+
+    self.surfaceValueRow = makeLayerSliderRow(@"Value", 0.0, 1.0, 0.5, self);
+    self.surfaceValueSlider = static_cast<NSSlider*>(self.surfaceValueRow.views[1]);
+    self.surfaceValueValue = static_cast<NSTextField*>(self.surfaceValueRow.views[2]);
+    self.surfaceValueRow.toolTip =
+        @"A constant surface value, useful as a height or roughness baseline.";
 
     self.levelsLowRow = makeLayerSliderRow(@"Input low", 0.0, 1.0, 0.0, self);
     self.levelsLowSlider = static_cast<NSSlider*>(self.levelsLowRow.views[1]);
@@ -2658,11 +2724,14 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 
     self.layerSettingsGroup = [NSStackView stackViewWithViews:@[
         self.layerEnabledCheckbox,
+        outputsLabel,
+        self.layerOutputControl,
         compositeLabel,
         self.layerCompositeControl,
         opacityRow,
         self.noiseSeedRow,
         self.solidColourRow,
+        self.surfaceValueRow,
         self.levelsLowRow,
         self.levelsHighRow,
         self.levelsGammaRow,
@@ -2872,6 +2941,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         [self.transformSettingsGroup.widthAnchor constraintEqualToAnchor:layerStack.widthAnchor],
         [self.maskSettingsGroup.widthAnchor constraintEqualToAnchor:layerStack.widthAnchor],
         [self.layerCompositeControl.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.layerOutputControl.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.physicalBrickWidthRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.physicalBrickHeightRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.physicalBrickMortarRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
@@ -3038,12 +3108,14 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         static_cast<std::size_t>(selectedLayer_ + 1) < material_.layers.size();
     self.layerEnabledCheckbox.enabled = hasLayer;
     self.layerCompositeControl.enabled = hasLayer;
+    self.layerOutputControl.enabled = hasLayer;
     self.layerOpacitySlider.enabled = hasLayer;
     self.layerInspectorTabs.enabled = hasLayer;
     if (!hasLayer) {
         self.layerTypeLabel.stringValue = @"No layer selected";
         self.noiseSeedRow.hidden = YES;
         self.solidColourRow.hidden = YES;
+        self.surfaceValueRow.hidden = YES;
         self.levelsLowRow.hidden = YES;
         self.levelsHighRow.hidden = YES;
         self.levelsGammaRow.hidden = YES;
@@ -3089,6 +3161,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.layerEnabledCheckbox.state = layer->enabled
         ? NSControlStateValueOn
         : NSControlStateValueOff;
+    [self.layerOutputControl setSelected:layer->outputs.colour forSegment:0];
+    [self.layerOutputControl setSelected:layer->outputs.height forSegment:1];
+    [self.layerOutputControl setSelected:layer->outputs.roughness forSegment:2];
     switch (layer->compositeMode) {
     case paperweight::CompositeMode::blend:
         self.layerCompositeControl.selectedSegment = 0;
@@ -3099,12 +3174,23 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     case paperweight::CompositeMode::multiply:
         self.layerCompositeControl.selectedSegment = 2;
         break;
+    case paperweight::CompositeMode::minimum:
+        self.layerCompositeControl.selectedSegment = 3;
+        break;
+    case paperweight::CompositeMode::maximum:
+        self.layerCompositeControl.selectedSegment = 4;
+        break;
+    case paperweight::CompositeMode::detail:
+        self.layerCompositeControl.selectedSegment = 5;
+        break;
     }
     self.layerOpacitySlider.doubleValue = layer->opacity;
     self.layerOpacityValue.stringValue = [NSString stringWithFormat:@"%.2f", layer->opacity];
 
     const auto* noise = std::get_if<paperweight::NoiseOperation>(&layer->operation);
     const auto* solid = std::get_if<paperweight::SolidColourOperation>(&layer->operation);
+    const auto* surfaceValue =
+        std::get_if<paperweight::SurfaceValueOperation>(&layer->operation);
     const auto* levels = std::get_if<paperweight::LevelsOperation>(&layer->operation);
     const auto* threshold = std::get_if<paperweight::ThresholdOperation>(&layer->operation);
     const auto* brick = std::get_if<paperweight::BrickGridOperation>(&layer->operation);
@@ -3137,6 +3223,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         std::get_if<paperweight::OrganicAccumulationOperation>(&layer->operation);
     self.noiseSeedRow.hidden = noise == nullptr;
     self.solidColourRow.hidden = solid == nullptr;
+    self.surfaceValueRow.hidden = surfaceValue == nullptr;
     self.levelsLowRow.hidden = levels == nullptr;
     self.levelsHighRow.hidden = levels == nullptr;
     self.levelsGammaRow.hidden = levels == nullptr;
@@ -3191,6 +3278,11 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     }
     if (solid != nullptr) {
         self.solidColourWell.color = colourFromRgba8(solid->colour);
+    }
+    if (surfaceValue != nullptr) {
+        self.surfaceValueSlider.doubleValue = surfaceValue->value;
+        self.surfaceValueValue.stringValue = [NSString
+            stringWithFormat:@"%.2f", surfaceValue->value];
     }
     if (levels != nullptr) {
         static_cast<NSTextField*>(self.levelsLowRow.views[0]).stringValue = @"Input low";
@@ -4494,6 +4586,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     case 31:
         material_.layers.push_back(paperweight::makeOrganicAccumulationLayer());
         break;
+    case 32:
+        material_.layers.push_back(paperweight::makeSurfaceValueLayer());
+        break;
     default:
         return;
     }
@@ -4929,11 +5024,39 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     case 2:
         layer->compositeMode = paperweight::CompositeMode::multiply;
         break;
+    case 3:
+        layer->compositeMode = paperweight::CompositeMode::minimum;
+        break;
+    case 4:
+        layer->compositeMode = paperweight::CompositeMode::maximum;
+        break;
+    case 5:
+        layer->compositeMode = paperweight::CompositeMode::detail;
+        break;
     default:
         layer->compositeMode = paperweight::CompositeMode::blend;
         break;
     }
     layer->opacity = self.layerOpacitySlider.doubleValue;
+    if (sender == self.layerOutputControl) {
+        layer->outputs = {
+            [self.layerOutputControl isSelectedForSegment:0] == YES,
+            [self.layerOutputControl isSelectedForSegment:1] == YES,
+            [self.layerOutputControl isSelectedForSegment:2] == YES,
+        };
+        if (!layer->outputs.colour && !layer->outputs.height && !layer->outputs.roughness) {
+            layer->outputs.colour = true;
+            [self.layerOutputControl setSelected:YES forSegment:0];
+            self.statusLabel.stringValue = @"A layer must affect at least one output.";
+            self.statusLabel.textColor = NSColor.systemOrangeColor;
+        }
+    }
+
+    if (auto* value = std::get_if<paperweight::SurfaceValueOperation>(&layer->operation)) {
+        value->value = self.surfaceValueSlider.doubleValue;
+        self.surfaceValueValue.stringValue = [NSString
+            stringWithFormat:@"%.2f", value->value];
+    }
 
     if (sender == self.noiseSeedOffsetField) {
         const std::string text = self.noiseSeedOffsetField.stringValue.UTF8String;
@@ -5744,6 +5867,23 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         material_.seed = parsed;
     }
 
+    const BOOL usePhysicalRelief =
+        self.physicalReliefCheckbox.state == NSControlStateValueOn;
+    self.reliefDepthField.enabled = usePhysicalRelief;
+    if (usePhysicalRelief) {
+        const auto relief = nonNegativeDecimal(self.reliefDepthField);
+        if (!relief ||
+            *relief > paperweight::MaterialLimits::maximumReliefDepthMetres) {
+            self.statusLabel.stringValue =
+                @"Relief depth must be a non-negative value in metres.";
+            self.statusLabel.textColor = NSColor.systemRedColor;
+            return;
+        }
+        material_.reliefDepthMetres = *relief;
+    } else {
+        material_.reliefDepthMetres.reset();
+    }
+
     material_.frequency = static_cast<std::uint32_t>(std::llround(self.frequencySlider.doubleValue));
     material_.octaves = static_cast<std::uint32_t>(std::llround(self.octavesSlider.doubleValue));
     material_.lacunarity = static_cast<std::uint32_t>(std::llround(self.lacunaritySlider.doubleValue));
@@ -5751,6 +5891,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     material_.normalStrength = self.normalStrengthSlider.doubleValue;
     material_.roughnessLow = self.roughnessLowSlider.doubleValue;
     material_.roughnessHigh = self.roughnessHighSlider.doubleValue;
+    self.displacementSlider.doubleValue = recommendedPreviewDisplacement(material_);
+    self.material3DPreviewView.displacementStrength = self.displacementSlider.doubleValue;
     [self updateControlLabels];
     [self regeneratePreview];
     [self markDirty];
@@ -5770,6 +5912,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     static_cast<void>(sender);
     [self setActiveReferenceTemplate:nullptr];
     material_ = paperweight::Material{};
+    material_.reliefDepthMetres = 0.003;
     material_.layers.push_back(paperweight::makeNoiseLayer());
     previewCoverage_ = material_.physicalSize;
     selectedLayer_ = 0;
@@ -5789,6 +5932,12 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.lowColourWell.color = colourFromRgba8(material_.lowColour);
     self.highColourWell.color = colourFromRgba8(material_.highColour);
     self.normalStrengthSlider.doubleValue = material_.normalStrength;
+    self.physicalReliefCheckbox.state = material_.reliefDepthMetres
+        ? NSControlStateValueOn
+        : NSControlStateValueOff;
+    self.reliefDepthField.stringValue = [NSString stringWithFormat:
+        @"%.6g", material_.reliefDepthMetres.value_or(0.003)];
+    self.reliefDepthField.enabled = material_.reliefDepthMetres.has_value();
     self.roughnessLowSlider.doubleValue = material_.roughnessLow;
     self.roughnessHighSlider.doubleValue = material_.roughnessHigh;
     self.displacementSlider.doubleValue = recommendedPreviewDisplacement(material_);
@@ -6151,6 +6300,12 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         ? [NSString stringWithFormat:@"%.0f", sender.doubleValue]
         : [NSString stringWithFormat:@"%.3g", sender.doubleValue];
     self.normalStrengthSlider.doubleValue = material_.normalStrength;
+    self.physicalReliefCheckbox.state = material_.reliefDepthMetres
+        ? NSControlStateValueOn
+        : NSControlStateValueOff;
+    self.reliefDepthField.stringValue = [NSString stringWithFormat:
+        @"%.6g", material_.reliefDepthMetres.value_or(0.003)];
+    self.reliefDepthField.enabled = material_.reliefDepthMetres.has_value();
     [self rebuildLayerList];
     [self refreshLayerInspector];
     [self updateControlLabels];
@@ -6184,6 +6339,12 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.lowColourWell.color = colourFromRgba8(material_.lowColour);
     self.highColourWell.color = colourFromRgba8(material_.highColour);
     self.normalStrengthSlider.doubleValue = material_.normalStrength;
+    self.physicalReliefCheckbox.state = material_.reliefDepthMetres
+        ? NSControlStateValueOn
+        : NSControlStateValueOff;
+    self.reliefDepthField.stringValue = [NSString stringWithFormat:
+        @"%.6g", material_.reliefDepthMetres.value_or(0.003)];
+    self.reliefDepthField.enabled = material_.reliefDepthMetres.has_value();
     self.roughnessLowSlider.doubleValue = material_.roughnessLow;
     self.roughnessHighSlider.doubleValue = material_.roughnessHigh;
     self.displacementSlider.doubleValue = recommendedPreviewDisplacement(material_);

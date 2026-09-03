@@ -306,6 +306,15 @@ double compositeChannel(double background, double source, CompositeMode mode, do
         return std::clamp(background + source * opacity, 0.0, 1.0);
     case CompositeMode::multiply:
         return background * (1.0 + (source - 1.0) * opacity);
+    case CompositeMode::minimum:
+        return background + (std::min(background, source) - background) * opacity;
+    case CompositeMode::maximum:
+        return background + (std::max(background, source) - background) * opacity;
+    case CompositeMode::detail:
+        return std::clamp(
+            background + (source - 0.5) * 2.0 * opacity,
+            0.0,
+            1.0);
     }
     throw std::invalid_argument("unknown layer composite mode");
 }
@@ -522,6 +531,9 @@ EvaluatedSample evaluateOperation(
             },
             [](const SolidColourOperation& solid) {
                 return sampleFromColour(solid.colour);
+            },
+            [&context](const SurfaceValueOperation& value) {
+                return sampleFromScalar(context.material, value.value);
             },
             [&input](const LevelsOperation& levels) {
                 return levelsSample(input, levels);

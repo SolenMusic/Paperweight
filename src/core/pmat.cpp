@@ -28,6 +28,7 @@ enum class Field : std::size_t {
     tags,
     physicalWidth,
     physicalHeight,
+    reliefDepth,
     lowColour,
     highColour,
     frequency,
@@ -52,6 +53,7 @@ constexpr std::array<std::string_view, static_cast<std::size_t>(Field::count)> f
     "material.tags",
     "material.width",
     "material.height",
+    "surface.relief_depth",
     "colour.low",
     "colour.high",
     "noise.frequency",
@@ -93,6 +95,7 @@ enum class OperationKind {
     organicCracks,
     leafCluster,
     organicAccumulation,
+    surfaceValue,
 };
 
 enum class BrickSizing {
@@ -137,8 +140,10 @@ struct LayerBuilder {
     ParsedValue<double> opacity;
     ParsedValue<CompositeMode> compositeMode;
     ParsedValue<OperationKind> operation;
+    ParsedValue<LayerOutputRouting> outputs;
     ParsedValue<std::uint64_t> seedOffset;
     ParsedValue<Rgba8> solidColour;
+    ParsedValue<double> surfaceValue;
     ParsedValue<double> levelsLow;
     ParsedValue<double> levelsHigh;
     ParsedValue<double> levelsGamma;
@@ -531,6 +536,21 @@ std::string formatColour(const Rgba8& colour)
     return output;
 }
 
+std::string formatLayerOutputs(const LayerOutputRouting& outputs)
+{
+    std::string value;
+    const auto append = [&value](std::string_view name) {
+        if (!value.empty()) {
+            value += ", ";
+        }
+        value += name;
+    };
+    if (outputs.colour) append("colour");
+    if (outputs.height) append("height");
+    if (outputs.roughness) append("roughness");
+    return value;
+}
+
 std::optional<CompositeMode> parseCompositeMode(std::string_view value)
 {
     if (value == "blend") {
@@ -542,7 +562,49 @@ std::optional<CompositeMode> parseCompositeMode(std::string_view value)
     if (value == "multiply") {
         return CompositeMode::multiply;
     }
+    if (value == "minimum") {
+        return CompositeMode::minimum;
+    }
+    if (value == "maximum") {
+        return CompositeMode::maximum;
+    }
+    if (value == "detail") {
+        return CompositeMode::detail;
+    }
     return std::nullopt;
+}
+
+std::optional<LayerOutputRouting> parseLayerOutputs(std::string_view value)
+{
+    LayerOutputRouting outputs{false, false, false};
+    std::size_t offset = 0;
+    while (offset <= value.size()) {
+        const auto comma = value.find(',', offset);
+        const auto end = comma == std::string_view::npos ? value.size() : comma;
+        const auto output = trim(value.substr(offset, end - offset));
+        bool* destination = nullptr;
+        if (output == "colour") {
+            destination = &outputs.colour;
+        } else if (output == "height") {
+            destination = &outputs.height;
+        } else if (output == "roughness") {
+            destination = &outputs.roughness;
+        } else {
+            return std::nullopt;
+        }
+        if (*destination) {
+            return std::nullopt;
+        }
+        *destination = true;
+        if (comma == std::string_view::npos) {
+            break;
+        }
+        offset = comma + 1;
+    }
+    if (!outputs.colour && !outputs.height && !outputs.roughness) {
+        return std::nullopt;
+    }
+    return outputs;
 }
 
 std::optional<OperationKind> parseOperationKind(std::string_view value)
@@ -630,6 +692,9 @@ std::optional<OperationKind> parseOperationKind(std::string_view value)
     }
     if (value == "organic_accumulation") {
         return OperationKind::organicAccumulation;
+    }
+    if (value == "surface_value") {
+        return OperationKind::surfaceValue;
     }
     return std::nullopt;
 }
@@ -1439,6 +1504,17 @@ ParseResult parsePmat(std::string_view text)
                             "material.height must be a decimal metre value such as 0.6m");
                     }
                     break;
+                case Field::reliefDepth: {
+                    double parsed = 0.0;
+                    if (!parseMetres(value, parsed)) {
+                        return diagnostic(
+                            lineNumber,
+                            valueColumn,
+                            "surface.relief_depth must be a decimal metre value such as 0.003m");
+                    }
+                    material.reliefDepthMetres = parsed;
+                    break;
+                }
                 case Field::lowColour:
                     if (!parseColour(value, material.lowColour)) {
                         return diagnostic(
@@ -1543,7 +1619,7 @@ ParseResult parsePmat(std::string_view text)
                         return diagnostic(
                             lineNumber,
                             valueColumn,
-                            "layer composite must be 'blend', 'add', or 'multiply'");
+                            "layer composite must be 'blend', 'add', 'multiply', 'minimum', 'maximum', or 'detail'");
                     }
                     if (!storeValue(builder.compositeMode, *parsed, lineNumber, valueColumn)) {
                         return duplicate();
@@ -1557,6 +1633,17 @@ ParseResult parsePmat(std::string_view text)
                             "layer operation is not supported");
                     }
                     if (!storeValue(builder.operation, *parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "outputs") {
+                    const auto parsed = parseLayerOutputs(value);
+                    if (!parsed) {
+                        return diagnostic(
+                            lineNumber,
+                            valueColumn,
+                            "layer outputs must list one or more of 'colour', 'height', and 'roughness' without duplicates");
+                    }
+                    if (!storeValue(builder.outputs, *parsed, lineNumber, valueColumn)) {
                         return duplicate();
                     }
                 } else if (property == "noise.seed_offset") {
@@ -1579,6 +1666,17 @@ ParseResult parsePmat(std::string_view text)
                             "solid colour must use 0xRRGGBBAA hexadecimal notation");
                     }
                     if (!storeValue(builder.solidColour, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "surface.value") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(
+                            lineNumber,
+                            valueColumn,
+                            "surface value must be a decimal number");
+                    }
+                    if (!storeValue(builder.surfaceValue, parsed, lineNumber, valueColumn)) {
                         return duplicate();
                     }
                 } else if (property == "levels.input_low") {
@@ -3158,8 +3256,10 @@ ParseResult parsePmat(std::string_view text)
             field == Field::physicalWidth || field == Field::physicalHeight;
         const bool optionalMetadata = field == Field::uid || field == Field::name ||
             field == Field::description || field == Field::category || field == Field::tags;
+        const bool optionalSurfaceAuthoring = field == Field::reliefDepth;
         if (!seen[index] && !optionalInVersionOne &&
-            !optionalMetadata && !(formatVersion < 6 && introducedInVersionSix)) {
+            !optionalMetadata && !optionalSurfaceAuthoring &&
+            !(formatVersion < 6 && introducedInVersionSix)) {
             return diagnostic(
                 lineNumber + 1,
                 1,
@@ -3188,6 +3288,13 @@ ParseResult parsePmat(std::string_view text)
             "material identity and library metadata require .pmat version 15");
     }
 
+    if (formatVersion < 16 && seen[static_cast<std::size_t>(Field::reliefDepth)]) {
+        return diagnostic(
+            valueLines[static_cast<std::size_t>(Field::reliefDepth)],
+            valueColumns[static_cast<std::size_t>(Field::reliefDepth)],
+            "physical surface relief requires .pmat version 16");
+    }
+
     if (formatVersion == 1) {
         if (seen[static_cast<std::size_t>(Field::layerCount)] || !layerBuilders.empty()) {
             return diagnostic(lineNumber + 1, 1, "layer stacks require .pmat version 2");
@@ -3213,6 +3320,20 @@ ParseResult parsePmat(std::string_view text)
             }
             if (!builder.operation.value) {
                 return missingLayerField(lineNumber + 1, index, "operation");
+            }
+            if (formatVersion >= 16 && !builder.outputs.value) {
+                return missingLayerField(lineNumber + 1, index, "outputs");
+            }
+            if (formatVersion < 16 &&
+                ((builder.outputs.value && !builder.outputs.value->isLegacyAll()) ||
+                 *builder.operation.value == OperationKind::surfaceValue ||
+                 *builder.compositeMode.value == CompositeMode::minimum ||
+                 *builder.compositeMode.value == CompositeMode::maximum ||
+                 *builder.compositeMode.value == CompositeMode::detail)) {
+                return diagnostic(
+                    lineNumber + 1,
+                    1,
+                    "surface channel routing and authoring tools require .pmat version 16");
             }
             if (!std::isfinite(*builder.opacity.value) ||
                 *builder.opacity.value < LayerLimits::minimumOpacity ||
@@ -3441,6 +3562,7 @@ ParseResult parsePmat(std::string_view text)
                 NoiseOperation{},
                 {},
                 {},
+                builder.outputs.value.value_or(LayerOutputRouting{}),
             };
             if (formatVersion >= 3) {
                 layer.transform = CoordinateTransform{
@@ -3529,7 +3651,8 @@ ParseResult parsePmat(std::string_view text)
 
             const bool hasClassicFields = builder.seedOffset.value || builder.solidColour.value ||
                 builder.levelsLow.value || builder.levelsHigh.value ||
-                builder.levelsGamma.value || builder.threshold.value;
+                builder.levelsGamma.value || builder.threshold.value ||
+                builder.surfaceValue.value;
             const auto invalidCount = [](std::uint32_t value) {
                 return value < LayerLimits::minimumPatternCount ||
                     value > LayerLimits::maximumPatternCount;
@@ -3555,6 +3678,7 @@ ParseResult parsePmat(std::string_view text)
                 }
                 if (builder.levelsLow.value || builder.levelsHigh.value ||
                     builder.levelsGamma.value || builder.threshold.value ||
+                    builder.surfaceValue.value ||
                     hasStructuralFields(builder)) {
                     return diagnostic(lineNumber + 1, 1, "noise layer contains parameters for another operation");
                 }
@@ -3566,6 +3690,7 @@ ParseResult parsePmat(std::string_view text)
                 }
                 if (builder.seedOffset.value || builder.levelsLow.value || builder.levelsHigh.value ||
                     builder.levelsGamma.value || builder.threshold.value ||
+                    builder.surfaceValue.value ||
                     hasStructuralFields(builder)) {
                     return diagnostic(
                         lineNumber + 1,
@@ -3573,6 +3698,27 @@ ParseResult parsePmat(std::string_view text)
                         "solid-colour layer contains parameters for another operation");
                 }
                 layer.operation = SolidColourOperation{*builder.solidColour.value};
+                break;
+            case OperationKind::surfaceValue:
+                if (!builder.surfaceValue.value) {
+                    return missingLayerField(lineNumber + 1, index, "surface.value");
+                }
+                if (builder.seedOffset.value || builder.solidColour.value ||
+                    builder.levelsLow.value || builder.levelsHigh.value ||
+                    builder.levelsGamma.value || builder.threshold.value ||
+                    hasStructuralFields(builder)) {
+                    return crossOperationError();
+                }
+                if (outside(
+                        *builder.surfaceValue.value,
+                        LayerLimits::minimumLevel,
+                        LayerLimits::maximumLevel)) {
+                    return diagnostic(
+                        builder.surfaceValue.line,
+                        builder.surfaceValue.column,
+                        "surface value must be finite and between 0 and 1");
+                }
+                layer.operation = SurfaceValueOperation{*builder.surfaceValue.value};
                 break;
             case OperationKind::levels:
                 if (!builder.levelsLow.value) {
@@ -3585,7 +3731,8 @@ ParseResult parsePmat(std::string_view text)
                     return missingLayerField(lineNumber + 1, index, "levels.gamma");
                 }
                 if (builder.seedOffset.value || builder.solidColour.value ||
-                    builder.threshold.value || hasStructuralFields(builder)) {
+                    builder.threshold.value || builder.surfaceValue.value ||
+                    hasStructuralFields(builder)) {
                     return diagnostic(lineNumber + 1, 1, "levels layer contains parameters for another operation");
                 }
                 if (!std::isfinite(*builder.levelsLow.value) ||
@@ -3630,6 +3777,7 @@ ParseResult parsePmat(std::string_view text)
                 }
                 if (builder.seedOffset.value || builder.solidColour.value || builder.levelsLow.value ||
                     builder.levelsHigh.value || builder.levelsGamma.value ||
+                    builder.surfaceValue.value ||
                     hasStructuralFields(builder)) {
                     return diagnostic(lineNumber + 1, 1, "threshold layer contains parameters for another operation");
                 }
@@ -5004,6 +5152,9 @@ ParseResult parsePmat(std::string_view text)
         } else if (error->find("tag") != std::string::npos &&
                    seen[static_cast<std::size_t>(Field::tags)]) {
             relevantField = Field::tags;
+        } else if (error->find("relief") != std::string::npos &&
+                   seen[static_cast<std::size_t>(Field::reliefDepth)]) {
+            relevantField = Field::reliefDepth;
         } else if (error->find("physical") != std::string::npos && formatVersion >= 6) {
             relevantField = Field::physicalWidth;
         } else if (material.frequency >= MaterialLimits::minimumFrequency &&
@@ -5049,6 +5200,9 @@ SerialisationResult serialisePmat(const Material& material)
     const auto roughnessHigh = formatDouble(material.roughnessHigh);
     const auto physicalWidth = formatMetres(material.physicalSize.widthMetres);
     const auto physicalHeight = formatMetres(material.physicalSize.heightMetres);
+    const auto reliefDepth = material.reliefDepthMetres
+        ? formatMetres(*material.reliefDepthMetres)
+        : std::string{};
     if (gain.empty() || normalStrength.empty() || roughnessLow.empty() || roughnessHigh.empty() ||
         physicalWidth.empty() || physicalHeight.empty()) {
         return SerialisationError{"could not format a decimal material parameter"};
@@ -5087,6 +5241,12 @@ SerialisationResult serialisePmat(const Material& material)
     }
     output += "material.width = " + physicalWidth + "\n";
     output += "material.height = " + physicalHeight + "\n";
+    if (material.reliefDepthMetres) {
+        if (reliefDepth.empty()) {
+            return SerialisationError{"could not format physical relief depth"};
+        }
+        output += "surface.relief_depth = " + reliefDepth + "\n";
+    }
     output += "colour.low = " + formatColour(material.lowColour) + "\n";
     output += "colour.high = " + formatColour(material.highColour) + "\n";
     output += "noise.frequency = " + std::to_string(material.frequency) + "\n";
@@ -5107,6 +5267,7 @@ SerialisationResult serialisePmat(const Material& material)
         }
         output += prefix + "enabled = " + (layer.enabled ? "true\n" : "false\n");
         output += prefix + "operation = " + std::string(operationName(layer.operation)) + "\n";
+        output += prefix + "outputs = " + formatLayerOutputs(layer.outputs) + "\n";
         output += prefix + "composite = " + std::string(compositeModeName(layer.compositeMode)) + "\n";
         output += prefix + "opacity = " + opacity + "\n";
         const auto appendShape = [&](const ShapePrimitiveOperation& shape)
@@ -5165,6 +5326,12 @@ SerialisationResult serialisePmat(const Material& material)
             output += prefix + "noise.seed_offset = " + std::to_string(noise->seedOffset) + "\n";
         } else if (const auto* solid = std::get_if<SolidColourOperation>(&layer.operation)) {
             output += prefix + "solid.colour = " + formatColour(solid->colour) + "\n";
+        } else if (const auto* value = std::get_if<SurfaceValueOperation>(&layer.operation)) {
+            const auto formatted = formatDouble(value->value);
+            if (formatted.empty()) {
+                return SerialisationError{"could not format surface value"};
+            }
+            output += prefix + "surface.value = " + formatted + "\n";
         } else if (const auto* levels = std::get_if<LevelsOperation>(&layer.operation)) {
             const auto low = formatDouble(levels->inputLow);
             const auto high = formatDouble(levels->inputHigh);

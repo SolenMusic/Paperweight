@@ -80,7 +80,7 @@ material.
 
 All friendly UTF-8 names follow the complete entry table in entry order, with
 no terminators or gaps. Stored payloads then follow in the same order. A payload
-is the canonical version-15 PMAT serialisation produced by `serialisePmat`, not
+is the canonical version-16 PMAT serialisation produced by `serialisePmat`, not
 the source file's incidental whitespace. Equivalent parsed materials therefore
 produce identical pack entries.
 

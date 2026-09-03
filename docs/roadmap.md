@@ -293,6 +293,25 @@ reusable operation vocabulary, texture caches, asynchronous generation,
 runtime resolution policy, Git assistance, and GPU generation. The pack format
 is expressly provisional until a Blastard integration has exercised it.
 
+## v0.0.23 - Surface Channel Authoring
+
+Implemented: route every layer independently to colour, height/normal, and
+roughness while preserving the historical shared graph for legacy materials.
+Add optional physical relief depth in metres and derive resolution-independent
+normals from relief divided by material-space distance; retain normal strength
+as a deliberate artistic multiplier.
+
+Levels, threshold, inversion, smoothing, posterisation/terracing, masks, and
+existing wear sources can now be applied to the chosen surface branch. Constant
+Surface Value layers establish height or roughness baselines, while minimum,
+maximum, and centred detail composites provide deterministic surface blending.
+The editor and wizard expose these choices directly. Polished Marble, Wet
+Mortar, Engraved Metal, and Varnished Wood are the acceptance recipes. PMAT
+format 16 stores the new authoring state readably; checked-in version-15 golden
+images remain byte-identical.
+
+Tracked by [roadmap issue #246](https://github.com/SolenMusic/Paperweight/issues/246).
+
 ## v0.1.0 - Game Library
 
 Stabilise the embedding API and add material-definition versioning, generator

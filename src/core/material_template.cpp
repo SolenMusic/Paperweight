@@ -31,6 +31,13 @@ std::optional<std::string> applyBinding(
             MaterialLimits::maximumNormalStrength);
         return std::nullopt;
     }
+    if (binding.property == TemplateProperty::reliefDepthMetres) {
+        material.reliefDepthMetres = std::clamp(
+            value,
+            MaterialLimits::minimumReliefDepthMetres,
+            MaterialLimits::maximumReliefDepthMetres);
+        return std::nullopt;
+    }
     if (binding.layerIndex >= material.layers.size()) {
         return "template control refers to a missing layer";
     }
@@ -41,6 +48,13 @@ std::optional<std::string> applyBinding(
     };
     switch (binding.property) {
     case TemplateProperty::normalStrength:
+    case TemplateProperty::reliefDepthMetres:
+        break;
+    case TemplateProperty::surfaceValue:
+        if (auto* operation = std::get_if<SurfaceValueOperation>(&layer.operation)) {
+            operation->value = std::clamp(value, 0.0, 1.0);
+            return std::nullopt;
+        }
         break;
     case TemplateProperty::layerOpacity:
         layer.opacity = std::clamp(value, 0.0, 1.0);
@@ -223,6 +237,7 @@ MaterialRecipe makeMaterialRecipe(const Material& material)
         material.roughnessHigh,
         material.layers,
         material.physicalSize,
+        material.reliefDepthMetres,
     };
 }
 
@@ -242,6 +257,7 @@ Material instantiateMaterial(const MaterialRecipe& recipe, std::uint64_t seed)
         recipe.layers,
         recipe.physicalSize,
         std::nullopt,
+        recipe.reliefDepthMetres,
     };
 }
 
@@ -277,7 +293,8 @@ const std::vector<ReferenceMaterialTemplate>& referenceMaterialTemplates()
          "Diamond lead lattice set into a recessed frame.",
          {control("lead-width", "Lead width", 0.025, 0.16, 0.085, 0.005, {{P::latticeWidth, 0, 0.025, 0.16}}),
           control("frame-width", "Frame width", 0.02, 0.12, 0.055, 0.005, {{P::shapeBorderWidth, 1, 0.02, 0.12}}),
-          control("relief", "Surface relief", 0, 8, 2.2, 0.1, {{P::normalStrength, 0, 0, 8}})}},
+          control("relief", "Relief depth (mm)", 0, 8, 2.2, 0.1,
+              {{P::reliefDepthMetres, 0, 0, 0.008}})}},
         {"cel-castle-stone", "Cel Castle Stone", "cel-castle-stone", "cel_castle_stone.bmp",
          "Graphic rounded masonry with restrained surface detail.",
          {control("block-count", "Block count", 3, 11, 6, 1, {{P::courseBlocks, 0, 3, 11}}),

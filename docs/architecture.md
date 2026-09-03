@@ -313,7 +313,7 @@ hit rate and bounded memory without altering the cancellation contract.
 `.pmat` is a human-readable, versioned text format. Parsing and serialisation live in the portable core. Round trips should be stable and errors should identify useful source locations.
 
 The format version is deliberately independent of the application version.
-Paperweight v0.0.20 reads `.pmat` format versions 1 through 15 and writes version 15.
+Paperweight v0.0.23 reads `.pmat` format versions 1 through 16 and writes version 16.
 Unknown keys and unsupported format versions fail explicitly instead of being
 silently ignored. Version 1 maps to the original implicit FBM source; adding an
 explicit base noise layer produces byte-identical output. Version-2 layers map
@@ -350,8 +350,13 @@ library index accepts source path/text pairs rather than filesystem APIs,
 keeping folder discovery, file coordination, thumbnails, and user defaults in
 the AppKit frontend. Index ordering and duplicate-UID diagnostics are stable
 regardless of filesystem enumeration order.
+Format version 16 adds per-layer colour, height/normal, and roughness routing,
+physical relief depth, constant surface values, and minimum, maximum, and detail
+composition. Legacy all-output materials keep the original shared compiled
+graph, and absent relief retains the historical normal calculation, so version-15
+pixel output remains byte-identical.
 Paperweight v0.0.21 adds a separate derived `.pwlib` format around canonical
-version-15 PMAT payloads. Its encoder and memory-backed reader remain in the
+version-16 PMAT payloads. Its encoder and memory-backed reader remain in the
 portable core; filesystem discovery and save panels remain outside it. A strict
 little-endian directory exposes UID and friendly-name lookup without evaluating
 or parsing pixels. Raw and bounded RLE storage feed the same PMAT parser and
