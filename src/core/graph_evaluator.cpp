@@ -148,6 +148,11 @@ using EvaluationPlan = std::variant<
     MaskPlan,
     OutputPlan>;
 
+struct PreparedEvaluation {
+    std::vector<EvaluationPlan> plans;
+    std::array<std::size_t, materialOutputs.size()> outputSources{};
+};
+
 bool affectsColour(ProcessingTarget target)
 {
     return target == ProcessingTarget::colour ||
@@ -174,8 +179,7 @@ double smoothStep(double edge0, double edge1, double value)
 class GraphEvaluator::Impl {
 public:
     Impl(const Material& material, const MaterialGraph& graph)
-        : material_(material), samples_(graph.nodes.size()),
-          sampleStamps_(graph.nodes.size())
+        : material_(material)
     {
         if (const auto error = validateMaterialGraph(graph)) {
             throw std::invalid_argument(error->message);
@@ -190,9 +194,10 @@ public:
             return nodeIndices.at(id);
         };
 
-        plans_.reserve(graph.nodes.size());
+        auto prepared = std::make_shared<PreparedEvaluation>();
+        prepared->plans.reserve(graph.nodes.size());
         for (const auto& node : graph.nodes) {
-            plans_.push_back(std::visit(
+            prepared->plans.push_back(std::visit(
                 Overloaded{
                     [this](const GeneratorNode& generator) -> EvaluationPlan {
                         if (const auto* scatter =
@@ -313,14 +318,30 @@ public:
                     [](const MaskNode& mask) -> EvaluationPlan {
                         return MaskPlan{mask.transform, mask.mask};
                     },
-                    [&indexOf, this](const OutputNode& output) -> EvaluationPlan {
+                    [&indexOf, &prepared](const OutputNode& output) -> EvaluationPlan {
                         const auto input = indexOf(output.input);
-                        outputSources_[materialOutputIndex(output.output)] = input;
+                        prepared->outputSources[materialOutputIndex(output.output)] = input;
                         return OutputPlan{input};
                     },
                 },
                 node));
         }
+        prepared_ = std::move(prepared);
+        samples_.resize(prepared_->plans.size());
+        sampleStamps_.resize(prepared_->plans.size());
+    }
+
+    Impl(
+        const Material& material,
+        std::shared_ptr<const PreparedEvaluation> prepared)
+        : material_(material), prepared_(std::move(prepared)),
+          samples_(prepared_->plans.size()), sampleStamps_(prepared_->plans.size())
+    {
+    }
+
+    [[nodiscard]] std::unique_ptr<Impl> cloneWorker() const
+    {
+        return std::make_unique<Impl>(material_, prepared_);
     }
 
     EvaluatedSample evaluate(MaterialOutput output, double u, double v)
@@ -328,7 +349,7 @@ public:
         if (!std::isfinite(u) || !std::isfinite(v)) {
             throw std::invalid_argument("evaluation coordinates must be finite");
         }
-        if (materialOutputIndex(output) >= outputSources_.size()) {
+        if (materialOutputIndex(output) >= prepared_->outputSources.size()) {
             throw std::invalid_argument("material output is not supported");
         }
         if (currentStamp_ == std::numeric_limits<std::uint64_t>::max()) {
@@ -338,12 +359,13 @@ public:
             ++currentStamp_;
         }
         const EvaluationContext context{material_, u, v, output};
-        return evaluateNode(outputSources_[materialOutputIndex(output)], context, true);
+        return evaluateNode(
+            prepared_->outputSources[materialOutputIndex(output)], context, true);
     }
 
     std::size_t nodeCount() const noexcept
     {
-        return plans_.size();
+        return prepared_->plans.size();
     }
 
 private:
@@ -629,7 +651,7 @@ private:
                     return evaluateNode(output.input, context, cacheResult);
                 },
             },
-            plans_[index]);
+            prepared_->plans[index]);
         if (cacheResult) {
             samples_[index] = result;
             sampleStamps_[index] = currentStamp_;
@@ -638,8 +660,7 @@ private:
     }
 
     const Material& material_;
-    std::vector<EvaluationPlan> plans_;
-    std::array<std::size_t, materialOutputs.size()> outputSources_{};
+    std::shared_ptr<const PreparedEvaluation> prepared_;
     std::vector<EvaluatedSample> samples_;
     std::vector<std::uint64_t> sampleStamps_;
     std::uint64_t currentStamp_{};
@@ -650,9 +671,19 @@ GraphEvaluator::GraphEvaluator(const Material& material, const MaterialGraph& gr
 {
 }
 
+GraphEvaluator::GraphEvaluator(std::unique_ptr<Impl> impl)
+    : impl_(std::move(impl))
+{
+}
+
 GraphEvaluator::~GraphEvaluator() = default;
 GraphEvaluator::GraphEvaluator(GraphEvaluator&&) noexcept = default;
 GraphEvaluator& GraphEvaluator::operator=(GraphEvaluator&&) noexcept = default;
+
+GraphEvaluator GraphEvaluator::cloneWorker() const
+{
+    return GraphEvaluator(impl_->cloneWorker());
+}
 
 EvaluatedSample GraphEvaluator::evaluate(MaterialOutput output, double u, double v)
 {

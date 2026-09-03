@@ -26,7 +26,7 @@ namespace {
 
 using Clock = std::chrono::steady_clock;
 
-constexpr std::array<std::string_view, 31> materialNames{
+constexpr std::array<std::string_view, 46> materialNames{
     "default",
     "brick-wall",
     "cobblestone",
@@ -58,14 +58,24 @@ constexpr std::array<std::string_view, 31> materialNames{
     "foliage-foundation",
     "cel-forest-bark",
     "castle-foliage",
+    "polished-marble",
+    "wet-mortar",
+    "engraved-metal",
+    "varnished-wood",
+    "chrome",
+    "steel",
+    "copper",
+    "brass",
+    "painted-steel",
+    "corroded-metal",
+    "glazed-ceramic",
+    "lacquered-wood",
+    "wet-stone",
+    "machinery-panels",
+    "illuminated-scifi",
 };
 
-constexpr std::array<paperweight::MaterialOutput, 4> materialOutputs{
-    paperweight::MaterialOutput::colour,
-    paperweight::MaterialOutput::height,
-    paperweight::MaterialOutput::normal,
-    paperweight::MaterialOutput::roughness,
-};
+constexpr auto materialOutputs = paperweight::materialOutputs;
 
 struct Configuration {
     std::uint32_t resolution{256};
@@ -90,7 +100,7 @@ void printUsage(const char* executable)
     std::cerr
         << "Usage: " << executable
         << " [--resolution N] [--iterations N] [--material NAME|all]"
-           " [--output colour|height|normal|roughness|all] [--workers N|auto]\n";
+           " [--output NAME|all|set] [--workers N|auto]\n";
 }
 
 Configuration parseArguments(int argc, char** argv)
@@ -165,17 +175,7 @@ std::uint64_t checksum(std::span<const paperweight::Rgba8> pixels)
 
 std::string_view outputName(paperweight::MaterialOutput output)
 {
-    switch (output) {
-    case paperweight::MaterialOutput::colour:
-        return "colour";
-    case paperweight::MaterialOutput::height:
-        return "height";
-    case paperweight::MaterialOutput::normal:
-        return "normal";
-    case paperweight::MaterialOutput::roughness:
-        return "roughness";
-    }
-    return "unknown";
+    return paperweight::materialOutputName(output);
 }
 
 bool includesMaterial(const Configuration& configuration, std::string_view name)
@@ -271,12 +271,122 @@ void benchmarkGeneration(
               << megapixelsPerSecond << ',' << resultChecksum << '\n';
 }
 
+void benchmarkSequentialMaterialSet(
+    const Configuration& configuration,
+    std::string_view name,
+    const paperweight::Material& material,
+    const paperweight::MaterialGraph& graph)
+{
+    std::vector<double> timings;
+    timings.reserve(configuration.iterations);
+    std::uint64_t resultChecksum = 0;
+    for (std::uint32_t iteration = 0; iteration < configuration.iterations; ++iteration) {
+        const auto start = Clock::now();
+        std::uint64_t combinedChecksum = 1469598103934665603ULL;
+        for (const auto output : materialOutputs) {
+            const paperweight::GenerationRequest request{
+                material,
+                configuration.resolution,
+                configuration.resolution,
+                output,
+                graph,
+                std::nullopt,
+                configuration.workers,
+            };
+            auto result = paperweight::generate(request);
+            const auto* image = std::get_if<paperweight::Image>(&result);
+            if (image == nullptr) {
+                throw std::runtime_error("material-set generation failed for " + std::string(name));
+            }
+            const auto imageChecksum = checksum(image->pixels());
+            combinedChecksum ^= imageChecksum;
+            combinedChecksum *= 1099511628211ULL;
+        }
+        const auto finish = Clock::now();
+        if (iteration != 0 && combinedChecksum != resultChecksum) {
+            throw std::runtime_error("repeated material-set generation changed bytes for " +
+                                     std::string(name));
+        }
+        resultChecksum = combinedChecksum;
+        timings.push_back(std::chrono::duration<double, std::milli>(finish - start).count());
+    }
+
+    const double medianMilliseconds = median(timings);
+    const double megapixels = static_cast<double>(configuration.resolution) *
+        configuration.resolution * materialOutputs.size() / 1'000'000.0;
+    const double megapixelsPerSecond = megapixels / (medianMilliseconds / 1000.0);
+    std::cout << "generate_set_legacy," << name << ",set,"
+              << configuration.resolution << ',' << configuration.resolution << ','
+              << configuration.iterations << ',' << configuration.workers << ','
+              << std::fixed << std::setprecision(3)
+              << medianMilliseconds << ','
+              << *std::min_element(timings.begin(), timings.end()) << ','
+              << megapixelsPerSecond << ',' << resultChecksum << '\n';
+}
+
+void benchmarkMaterialSet(
+    const Configuration& configuration,
+    std::string_view name,
+    const paperweight::Material& material,
+    const paperweight::MaterialGraph& graph)
+{
+    std::vector<double> timings;
+    timings.reserve(configuration.iterations);
+    std::uint64_t resultChecksum = 0;
+    for (std::uint32_t iteration = 0; iteration < configuration.iterations; ++iteration) {
+        const paperweight::MaterialSetRequest request{
+            material,
+            configuration.resolution,
+            configuration.resolution,
+            paperweight::allMaterialOutputsSelected,
+            graph,
+            std::nullopt,
+            configuration.workers,
+        };
+        const auto start = Clock::now();
+        auto result = paperweight::generateMaterialSet(request);
+        const auto finish = Clock::now();
+        const auto* imageSet = std::get_if<paperweight::MaterialImageSet>(&result);
+        if (imageSet == nullptr) {
+            throw std::runtime_error("multi-output generation failed for " + std::string(name));
+        }
+        std::uint64_t combinedChecksum = 1469598103934665603ULL;
+        for (const auto output : materialOutputs) {
+            const auto* image = imageSet->image(output);
+            if (image == nullptr) {
+                throw std::runtime_error("multi-output result is incomplete for " +
+                                         std::string(name));
+            }
+            combinedChecksum ^= checksum(image->pixels());
+            combinedChecksum *= 1099511628211ULL;
+        }
+        if (iteration != 0 && combinedChecksum != resultChecksum) {
+            throw std::runtime_error("repeated multi-output generation changed bytes for " +
+                                     std::string(name));
+        }
+        resultChecksum = combinedChecksum;
+        timings.push_back(std::chrono::duration<double, std::milli>(finish - start).count());
+    }
+
+    const double medianMilliseconds = median(timings);
+    const double megapixels = static_cast<double>(configuration.resolution) *
+        configuration.resolution * materialOutputs.size() / 1'000'000.0;
+    const double megapixelsPerSecond = megapixels / (medianMilliseconds / 1000.0);
+    std::cout << "generate_set," << name << ",set,"
+              << configuration.resolution << ',' << configuration.resolution << ','
+              << configuration.iterations << ',' << configuration.workers << ','
+              << std::fixed << std::setprecision(3)
+              << medianMilliseconds << ','
+              << *std::min_element(timings.begin(), timings.end()) << ','
+              << megapixelsPerSecond << ',' << resultChecksum << '\n';
+}
+
 int run(const Configuration& configuration)
 {
     const bool knownMaterial = configuration.material == "all" ||
         std::find(materialNames.begin(), materialNames.end(), configuration.material) !=
             materialNames.end();
-    const bool knownOutput = configuration.output == "all" ||
+    const bool knownOutput = configuration.output == "all" || configuration.output == "set" ||
         std::any_of(materialOutputs.begin(), materialOutputs.end(), [&](const auto output) {
             return outputName(output) == configuration.output;
         });
@@ -300,9 +410,14 @@ int run(const Configuration& configuration)
         if (graph == nullptr) {
             throw std::runtime_error("graph compilation failed for " + std::string(name));
         }
-        for (const auto output : materialOutputs) {
-            if (includesOutput(configuration, output)) {
-                benchmarkGeneration(configuration, name, material, *graph, output);
+        if (configuration.output == "set") {
+            benchmarkSequentialMaterialSet(configuration, name, material, *graph);
+            benchmarkMaterialSet(configuration, name, material, *graph);
+        } else {
+            for (const auto output : materialOutputs) {
+                if (includesOutput(configuration, output)) {
+                    benchmarkGeneration(configuration, name, material, *graph, output);
+                }
             }
         }
     }

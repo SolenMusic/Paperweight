@@ -6,7 +6,7 @@ if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" AND
         "Minimum macOS version supported by Paperweight")
 endif()
 
-project(Paperweight VERSION 0.0.25 LANGUAGES CXX)
+project(Paperweight VERSION 0.0.26 LANGUAGES CXX)
 
 option(PAPERWEIGHT_BUILD_TESTS "Build the Paperweight test suite" ON)
 option(PAPERWEIGHT_BUILD_MACOS_APP "Build the native macOS application" ${APPLE})

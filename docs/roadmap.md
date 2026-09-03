@@ -355,6 +355,31 @@ template round-trips, pack generation, seamless repetition, and ARM64/x86-64
 builds remain exact acceptance gates. Tracked by
 [roadmap issue #262](https://github.com/SolenMusic/Paperweight/issues/262).
 
+## v0.0.26 - Incremental and Multi-Output Performance
+
+Implemented: add a source-compatible portable multi-output generation path.
+`MaterialSetRequest` selects any subset of the ten outputs, while
+`generateMaterialSet` validates and prepares the material once, constructs one
+coordinated worker pool, skips constant channels, and reuses a compatible
+unquantised height field for height plus normal encoding. The established
+single-output API delegates to the shared implementation and retains its exact
+bytes.
+
+Evaluator workers now share immutable resolved plans and deterministic scatter,
+crack, and leaf layouts. Their memoisation state and output rows remain private,
+so scheduling cannot enter the result. The editor and wizard retain their last
+complete 3D map set and use conservative dependency tracking to regenerate only
+affected outputs. Height invalidation includes normals; renderer-only IOR and
+anisotropy changes require no CPU map work. Cancelled or stale partial results
+are never published, while the prior valid preview remains visible.
+
+The native benchmark covers all 46 bundled materials, all ten individual
+outputs, and complete material sets from 64 x 64 through 1024 x 1024. The CLI
+reports coordinated and legacy-sequential set timings together. Catalogue-wide
+source-versus-set checks, one/multiple-worker checks, historical golden hashes,
+and ARM64/x86-64 conformance remain release gates. Tracked by
+[roadmap issue #270](https://github.com/SolenMusic/Paperweight/issues/270).
+
 ## v0.1.0 - Game Library
 
 Stabilise the embedding API and add material-definition versioning, generator

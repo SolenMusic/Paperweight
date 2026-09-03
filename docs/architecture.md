@@ -229,8 +229,10 @@ low height, or an authored mask without introducing a bark- or foliage-specific
 evaluation path.
 
 The prepared graph evaluator resolves identifiers once per generation request
-and memoises shared nodes once per sample. It walks only the branch selected by
-`GenerationRequest::output`. An optional `GenerationRequest::graph` lets a
+and memoises shared nodes once per sample. Immutable plans, including
+deterministic scatter, crack, and leaf layouts, are shared by the request's
+worker evaluators; mutable sample caches remain private. It walks only the branch
+selected by `GenerationRequest::output`. An optional `GenerationRequest::graph` lets a
 portable caller bypass layer compilation and provide a validated branched graph
 directly. The layer model remains a stable, compact frontend rather than a
 second evaluator.
@@ -241,6 +243,14 @@ greyscale encodings, and the normal map encodes a normalised tangent-space XYZ
 vector. This is an output contract, not a claim of a complete PBR material
 model. Higher precision and additional pixel formats remain possible behind
 the image abstraction.
+
+In v0.0.26, `MaterialSetRequest` selects any subset of the ten outputs and
+`generateMaterialSet` returns them in one coordinated `MaterialImageSet`.
+Validation, graph preparation, deterministic layouts, worker startup, and
+material-space X coordinates are shared. Constant remapped channels skip graph
+evaluation. Height and normal share one unquantised scalar field only when their
+graph source and normal treatment are provably equivalent. `GenerationRequest`
+remains compatible and delegates to this path with one selected output.
 
 ### macOS frontend
 
@@ -300,10 +310,14 @@ editor presentation state. This preserves a sharp boundary between unlit source
 maps suitable for runtime shaders and deliberately illustrated exports.
 
 Live previews use a serial background queue and a snapshot of the current
-material. Continuous UI changes are briefly coalesced and cooperatively cancel
+material. The editor and wizard retain completed 3D map sets and use
+`affectedMaterialOutputs` to invalidate only conservatively dependent channels;
+the old complete presentation remains visible until replacements are ready.
+Continuous UI changes are briefly coalesced and cooperatively cancel
 the active core generation between scanlines. For sufficiently large images,
 the synchronous core call divides rows among a bounded native worker pool; each
-worker owns its graph evaluator and writes disjoint rows. Seeds and coordinates
+worker owns its mutable graph-evaluator cache and writes disjoint rows while
+sharing the request's immutable plan. Seeds and coordinates
 remain independent of scheduling. A monotonically increasing revision allows
 only the newest complete result onto the main thread. AppKit updates, including
 the loading indicator and image conversion, remain on the main thread. Callers
@@ -428,7 +442,7 @@ core. No workspace or window state is added to `.pmat` or `.pwlib`.
 Visual node-canvas authoring, graph-specific text persistence, WebAssembly
 bindings, game-engine adapters, arbitrary global texture
 rotation, bitmap-backed botanical stamps, and procedural GPU backends remain
-outside v0.0.25. MetalKit presents CPU-generated images with metallic/roughness,
+outside v0.0.26. MetalKit presents CPU-generated images with metallic/roughness,
 coating, occlusion, clear-coat, emissive, and anisotropic shading, or with the
 optional cel-lighting mode; it is not a
 generator backend and its lighting choices are never serialised into `.pmat`.

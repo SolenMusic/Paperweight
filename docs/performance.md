@@ -7,9 +7,9 @@ generator algorithm, output, dimensions, physical coverage, and pixel format.
 ## Running the benchmark in the app
 
 Choose **Tools > Performance Benchmark** (Command-Option-B) in the native app.
-The separate window runs all 29 bundled material recipes at 64 x 64, 128 x 128,
-256 x 256, 512 x 512, and 1024 x 1024. A run measures one selected output map,
-defaulting to colour, so a useful sweep does not become four times longer.
+The separate window runs all 46 bundled material recipes at 64 x 64, 128 x 128,
+256 x 256, 512 x 512, and 1024 x 1024. It defaults to the coordinated complete
+ten-map material set, or can isolate any one of the ten outputs.
 
 Every material and resolution is generated once with one worker and once with
 the machine's bounded worker pool. The window reports both times, speed-up, both
@@ -42,9 +42,11 @@ cmake --build build-profile
   --resolution 128 --iterations 3 --output colour --workers 1
 ```
 
-The executable writes CSV to standard output. It covers the same 29 bundled
+The executable writes CSV to standard output. It covers the same 46 bundled
 materials and can select one material or
-output with `--material` and `--output`; `--workers 1` selects the reference
+output with `--material` and `--output`; use `--output set` to report both ten
+sequential single-output calls and one coordinated material-set call.
+`--workers 1` selects the reference
 serial path while `--workers auto` measures normal automatic scheduling. Every measured generation is hashed;
 repeated iterations fail if the bytes change. Graph compilation is measured
 separately from pixel evaluation.
@@ -126,6 +128,46 @@ showcase at 64 x 64, this reduced representative map generation from roughly
 360-520 ms to 78-81 ms on the development machine while preserving every
 checksum. The optimisation changes neither layout nor occlusion; it rejects only
 cells whose leaves cannot geometrically reach the sample.
+
+## v0.0.26 coordinated-output results
+
+`generateMaterialSet` prepares and validates a material once, constructs one
+immutable evaluator plan, and schedules all selected outputs through one worker
+pool. Worker evaluators share resolved graph connections and deterministic
+scatter, crack, and leaf layouts while retaining private memoisation state.
+Constant scalar channels bypass graph evaluation. When height and normal use the
+same non-faceted source, the unquantised height field is sampled once and encoded
+into both outputs; faceted normals deliberately retain their independent path.
+
+The following representative figures use a 64 x 64 complete ten-map set, ten
+workers, an Apple M5 MacBook Air, an ARM64 AppleClang 21 release build, and the
+median of three runs. "Sequential" means ten calls through the compatible
+single-output API; "Coordinated" means one `generateMaterialSet` call.
+
+| Material | Sequential | Coordinated | Speed-up |
+|---|---:|---:|---:|
+| Default | 2.413 ms | 1.385 ms | 1.74x |
+| Marble veins | 145.652 ms | 113.393 ms | 1.28x |
+| Eroded terrain | 170.808 ms | 138.435 ms | 1.23x |
+| Castle flagstone | 33.620 ms | 27.020 ms | 1.24x |
+| Cel courtyard gravel | 6.197 ms | 5.184 ms | 1.20x |
+| Castle foliage | 24.061 ms | 17.897 ms | 1.34x |
+| Polished chrome | 1.900 ms | 1.133 ms | 1.68x |
+| Wet stone | 2.924 ms | 2.052 ms | 1.42x |
+| Machinery panels | 4.186 ms | 2.609 ms | 1.60x |
+| Illuminated science fiction | 1.872 ms | 0.840 ms | 2.23x |
+
+A one-iteration sweep of all 46 bundled materials reported a mean 1.47x
+complete-set speed-up, a 1.02x minimum, and a 2.32x maximum. Every coordinated
+checksum matched its sequential counterpart. Timings remain machine-load
+sensitive; checksum identity does not.
+
+The editor adds a second, often larger practical saving by retaining completed
+3D maps and regenerating only conservatively affected outputs. A roughness-only
+change does one map's work instead of ten; a height edit rebuilds height and the
+dependent normal; IOR and anisotropy changes are presentation-only and do no CPU
+generation. A revision and cancellation token still prevent stale partial work
+from being published.
 
 ## Exact-output gate
 
