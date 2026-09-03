@@ -26,6 +26,9 @@ struct MaterialRecipe {
     std::vector<MaterialLayer> layers;
     PhysicalSize physicalSize;
     std::optional<double> reliefDepthMetres;
+    double metalnessLow{0.0};
+    double metalnessHigh{0.0};
+    double dielectricIor{1.5};
 
     friend bool operator==(const MaterialRecipe&, const MaterialRecipe&) = default;
 };
@@ -69,6 +72,11 @@ enum class TemplateProperty : std::uint8_t {
     worleyEdgeWidth,
     reliefDepthMetres,
     surfaceValue,
+    roughnessLow,
+    roughnessHigh,
+    metalnessLow,
+    metalnessHigh,
+    dielectricIor,
 };
 
 struct TemplateControlBinding {

@@ -34,6 +34,8 @@ struct PreviewUniforms {
     simd_float4 settings;
     simd_float4 mapSettings;
     simd_float4 toonSettings;
+    simd_float4 opticalSettings;
+    simd_float4 environmentSettings;
 };
 
 struct MeshData {
@@ -273,6 +275,7 @@ MeshData makeMesh(PWPreviewShape shape)
     id<MTLTexture> heightTexture_;
     id<MTLTexture> normalTexture_;
     id<MTLTexture> roughnessTexture_;
+    id<MTLTexture> metalnessTexture_;
     BOOL rendererAvailable_;
     float cameraYaw_;
     float cameraPitch_;
@@ -291,6 +294,10 @@ MeshData makeMesh(PWPreviewShape shape)
         _lightElevationDegrees = 38.0;
         _lightIntensity = 1.0;
         _ambientIntensity = 0.18;
+        _environmentPreset = PWPreviewEnvironmentChromeStudio;
+        _environmentIntensity = 1.0;
+        _environmentRotationDegrees = 0.0;
+        _dielectricIor = 1.5;
         _displacementStrength = 0.04;
         _previewNormalStrength = 1.0;
         _toonBandCount = 3.0;
@@ -301,6 +308,7 @@ MeshData makeMesh(PWPreviewShape shape)
         _heightEnabled = YES;
         _normalEnabled = YES;
         _roughnessEnabled = YES;
+        _metalnessEnabled = YES;
         cameraYaw_ = 0.7F;
         cameraPitch_ = 0.38F;
         cameraDistance_ = 2.7F;
@@ -408,6 +416,7 @@ MeshData makeMesh(PWPreviewShape shape)
     const std::array<std::uint8_t, 4> height{{128, 128, 128, 255}};
     const std::array<std::uint8_t, 4> normal{{128, 128, 255, 255}};
     const std::array<std::uint8_t, 4> roughness{{128, 128, 128, 255}};
+    const std::array<std::uint8_t, 4> metalness{{0, 0, 0, 255}};
     colourTexture_ = [self textureWithWidth:1 height:1
                                pixelFormat:MTLPixelFormatRGBA8Unorm_sRGB
                                      bytes:colour.data() bytesPerRow:4];
@@ -420,12 +429,16 @@ MeshData makeMesh(PWPreviewShape shape)
     roughnessTexture_ = [self textureWithWidth:1 height:1
                                   pixelFormat:MTLPixelFormatRGBA8Unorm
                                         bytes:roughness.data() bytesPerRow:4];
+    metalnessTexture_ = [self textureWithWidth:1 height:1
+                                  pixelFormat:MTLPixelFormatRGBA8Unorm
+                                        bytes:metalness.data() bytesPerRow:4];
 }
 
 - (void)setColourImage:(const paperweight::Image&)colour
             heightImage:(const paperweight::Image&)height
             normalImage:(const paperweight::Image&)normal
          roughnessImage:(const paperweight::Image&)roughness
+          metalnessImage:(const paperweight::Image&)metalness
 {
     if (!rendererAvailable_) {
         return;
@@ -450,6 +463,11 @@ MeshData makeMesh(PWPreviewShape shape)
                                     pixelFormat:MTLPixelFormatRGBA8Unorm
                                           bytes:roughness.pixels().data()
                                     bytesPerRow:roughness.bytesPerRow()];
+    metalnessTexture_ = [self textureWithWidth:metalness.width()
+                                         height:metalness.height()
+                                    pixelFormat:MTLPixelFormatRGBA8Unorm
+                                          bytes:metalness.pixels().data()
+                                    bytesPerRow:metalness.bytesPerRow()];
     [self requestDraw];
 }
 
@@ -508,6 +526,10 @@ MeshData makeMesh(PWPreviewShape shape)
 - (void)setLightElevationDegrees:(double)value { _lightElevationDegrees = value; [self requestDraw]; }
 - (void)setLightIntensity:(double)value { _lightIntensity = value; [self requestDraw]; }
 - (void)setAmbientIntensity:(double)value { _ambientIntensity = value; [self requestDraw]; }
+- (void)setEnvironmentPreset:(PWPreviewEnvironment)value { _environmentPreset = value; [self requestDraw]; }
+- (void)setEnvironmentIntensity:(double)value { _environmentIntensity = value; [self requestDraw]; }
+- (void)setEnvironmentRotationDegrees:(double)value { _environmentRotationDegrees = value; [self requestDraw]; }
+- (void)setDielectricIor:(double)value { _dielectricIor = value; [self requestDraw]; }
 - (void)setDisplacementStrength:(double)value { _displacementStrength = value; [self requestDraw]; }
 - (void)setPreviewNormalStrength:(double)value { _previewNormalStrength = value; [self requestDraw]; }
 - (void)setToonLightingEnabled:(BOOL)value { _toonLightingEnabled = value; [self requestDraw]; }
@@ -520,6 +542,7 @@ MeshData makeMesh(PWPreviewShape shape)
 - (void)setHeightEnabled:(BOOL)value { _heightEnabled = value; [self requestDraw]; }
 - (void)setNormalEnabled:(BOOL)value { _normalEnabled = value; [self requestDraw]; }
 - (void)setRoughnessEnabled:(BOOL)value { _roughnessEnabled = value; [self requestDraw]; }
+- (void)setMetalnessEnabled:(BOOL)value { _metalnessEnabled = value; [self requestDraw]; }
 
 - (void)resetCamera
 {
@@ -629,6 +652,20 @@ MeshData makeMesh(PWPreviewShape shape)
             static_cast<float>(self.toonSpecularThreshold),
             static_cast<float>(self.toonRimStrength),
         },
+        {
+            self.metalnessEnabled ? 1.0F : 0.0F,
+            static_cast<float>(self.dielectricIor),
+            static_cast<float>(self.environmentIntensity),
+            static_cast<float>(
+                (self.environmentRotationDegrees / 360.0) *
+                2.0 * std::numbers::pi),
+        },
+        {
+            static_cast<float>(self.environmentPreset),
+            0.0F,
+            0.0F,
+            0.0F,
+        },
     };
 
     id<MTLCommandBuffer> commandBuffer = [commandQueue_ commandBuffer];
@@ -645,6 +682,7 @@ MeshData makeMesh(PWPreviewShape shape)
     [encoder setFragmentTexture:colourTexture_ atIndex:0];
     [encoder setFragmentTexture:normalTexture_ atIndex:2];
     [encoder setFragmentTexture:roughnessTexture_ atIndex:3];
+    [encoder setFragmentTexture:metalnessTexture_ atIndex:4];
     [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
                         indexCount:indexCount_
                          indexType:MTLIndexTypeUInt32

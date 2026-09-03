@@ -13,12 +13,7 @@ int main()
         paperweight::GenerationRequest request;
         request.width = 19;
         request.height = 11;
-        for (const auto output : std::array{
-                 paperweight::MaterialOutput::colour,
-                 paperweight::MaterialOutput::height,
-                 paperweight::MaterialOutput::normal,
-                 paperweight::MaterialOutput::roughness,
-             }) {
+        for (const auto output : paperweight::materialOutputs) {
             request.output = output;
             const auto result = paperweight::generate(request);
             const auto* image = std::get_if<paperweight::Image>(&result);

@@ -312,6 +312,27 @@ images remain byte-identical.
 
 Tracked by [roadmap issue #246](https://github.com/SolenMusic/Paperweight/issues/246).
 
+## v0.0.24 - Metals and Reflections
+
+Implemented: add a fifth deterministic metalness output with independent layer
+routing and normalised low/high remapping. PMAT format 17 stores metalness and
+dielectric IOR readably while migrating older files to zero metalness and IOR
+1.5 without changing their existing colour, height, normal, or roughness bytes.
+Metalness, packing, 1x1/3x3 repetition, and one/multiple-worker generation are
+covered by exact CPU tests.
+
+Replace the preview's generic white highlight with a metallic/roughness lighting
+model. Dielectric reflectance comes from IOR; metallic reflection uses base
+colour as its tint; and roughness broadens and dims reflection from a procedural
+studio environment. Chrome Studio, Brushed Metal, Ceramic, Wet Surface, and
+Neutral presets plus environment intensity and rotation are presentation state
+only. The GPU never generates or alters authoritative maps.
+
+Polished Chrome, Brushed Steel, Polished Copper, Polished Brass, Painted Steel,
+and Corroded Metal are ordinary editable PMAT templates, wizard starting points,
+and benchmark inputs. Tracked by
+[roadmap issue #254](https://github.com/SolenMusic/Paperweight/issues/254).
+
 ## v0.1.0 - Game Library
 
 Stabilise the embedding API and add material-definition versioning, generator

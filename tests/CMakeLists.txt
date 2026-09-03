@@ -35,6 +35,12 @@ foreach(showcase IN ITEMS
     polished-marble
     wet-mortar
     engraved-metal
+    chrome
+    steel
+    copper
+    brass
+    painted-steel
+    corroded-metal
     varnished-wood
     region-stones
     castle-flagstone

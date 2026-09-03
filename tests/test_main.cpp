@@ -104,6 +104,38 @@ void expectChecksum(
     expect(actual == expected, description);
 }
 
+std::string downgradeCurrentPmat(std::string text, std::uint32_t version)
+{
+    const std::string current =
+        "pmat.version = " + std::to_string(paperweight::currentPmatVersion);
+    const auto versionPosition = text.find(current);
+    if (versionPosition != std::string::npos) {
+        text.replace(
+            versionPosition,
+            current.size(),
+            "pmat.version = " + std::to_string(version));
+    }
+    for (const std::string_view prefix : {
+             "metalness.low = ",
+             "metalness.high = ",
+             "surface.ior = ",
+         }) {
+        const auto position = text.find(prefix);
+        if (position != std::string::npos) {
+            const auto end = text.find('\n', position);
+            text.erase(position, end == std::string::npos
+                    ? text.size() - position
+                    : end - position + 1);
+        }
+    }
+    constexpr std::string_view suffix = ", metalness";
+    std::size_t position = 0;
+    while ((position = text.find(suffix, position)) != std::string::npos) {
+        text.erase(position, suffix.size());
+    }
+    return text;
+}
+
 paperweight::Material materialWithNoiseParameters(
     std::uint64_t seed,
     std::uint32_t frequency,
@@ -122,9 +154,9 @@ paperweight::Material materialWithNoiseParameters(
 
 void testVersion()
 {
-    constexpr paperweight::Version expected{0, 0, 23};
+    constexpr paperweight::Version expected{0, 0, 24};
     static_assert(paperweight::currentVersion == expected);
-    expect(paperweight::versionString() == "0.0.23", "version string is 0.0.23");
+    expect(paperweight::versionString() == "0.0.24", "version string is 0.0.24");
 }
 
 void testImage()
@@ -864,6 +896,7 @@ void testRegionAttributes()
         paperweight::OutputNode{6, paperweight::MaterialOutput::height, 2},
         paperweight::OutputNode{7, paperweight::MaterialOutput::normal, 2},
         paperweight::OutputNode{8, paperweight::MaterialOutput::roughness, 2},
+        paperweight::OutputNode{9, paperweight::MaterialOutput::metalness, 2},
     };
     expect(!paperweight::validateMaterialGraph(maskGraph).has_value(),
            "value-producing region processors are accepted as graph masks");
@@ -888,6 +921,7 @@ void testRegionAttributes()
         paperweight::OutputNode{6, paperweight::MaterialOutput::height, 3},
         paperweight::OutputNode{7, paperweight::MaterialOutput::normal, 3},
         paperweight::OutputNode{8, paperweight::MaterialOutput::roughness, 4},
+        paperweight::OutputNode{9, paperweight::MaterialOutput::metalness, 4},
     };
     expect(!paperweight::validateMaterialGraph(routedGraph).has_value(),
            "independent region channels can route to colour, surface, and roughness outputs");
@@ -926,7 +960,7 @@ void testRegionAttributes()
 
     const auto serialised = paperweight::serialisePmat(layered);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 16") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 17") != std::string::npos &&
                text->find("operation = region_field") != std::string::npos,
            "region fields introduced in version 9 serialise canonically as current .pmat");
     if (text != nullptr) {
@@ -935,9 +969,7 @@ void testRegionAttributes()
                    std::get<paperweight::Material>(reparsed) == layered,
                "region-field materials round-trip exactly through canonical .pmat");
         auto premature = *text;
-        const auto marker = premature.find("pmat.version = 16");
-        premature.replace(marker, std::string("pmat.version = 16").size(),
-                          "pmat.version = 8");
+        premature = downgradeCurrentPmat(std::move(premature), 8);
         const auto result = paperweight::parsePmat(premature);
         expect(std::holds_alternative<paperweight::ParseDiagnostic>(result) &&
                    std::get<paperweight::ParseDiagnostic>(result).message.find(
@@ -1111,7 +1143,7 @@ void testCourseLayouts()
 
     const auto serialised = paperweight::serialisePmat(physicalMaterial);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 16") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 17") != std::string::npos &&
                text->find("operation = course_layout") != std::string::npos &&
                text->find("course.sizing = physical") != std::string::npos,
            "physical course layouts serialise explicitly in .pmat version 10");
@@ -1121,9 +1153,7 @@ void testCourseLayouts()
                    std::get<paperweight::Material>(reparsed) == physicalMaterial,
                "course layouts round-trip exactly through .pmat version 10");
         auto premature = *text;
-        const auto marker = premature.find("pmat.version = 16");
-        premature.replace(marker, std::string("pmat.version = 16").size(),
-                          "pmat.version = 9");
+        premature = downgradeCurrentPmat(std::move(premature), 9);
         const auto rejected = paperweight::parsePmat(premature);
         expect(std::holds_alternative<paperweight::ParseDiagnostic>(rejected) &&
                    std::get<paperweight::ParseDiagnostic>(rejected).message.find(
@@ -1338,7 +1368,7 @@ void testRegionSurfaceSculpting()
 
     const auto serialised = paperweight::serialisePmat(material);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 16") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 17") != std::string::npos &&
                text->find("operation = region_surface") != std::string::npos &&
                text->find("sculpt.faceted_normals = true") != std::string::npos,
            "region sculpture serialises explicitly in .pmat version 11");
@@ -1348,9 +1378,7 @@ void testRegionSurfaceSculpting()
                    std::get<paperweight::Material>(reparsed) == material,
                "region sculpture round-trips exactly through .pmat version 11");
         auto premature = *text;
-        const auto marker = premature.find("pmat.version = 16");
-        premature.replace(marker, std::string("pmat.version = 16").size(),
-                          "pmat.version = 10");
+        premature = downgradeCurrentPmat(std::move(premature), 10);
         const auto rejected = paperweight::parsePmat(premature);
         expect(std::holds_alternative<paperweight::ParseDiagnostic>(rejected) &&
                    std::get<paperweight::ParseDiagnostic>(rejected).message.find(
@@ -1580,7 +1608,7 @@ void testShapePrimitivesAndLattices()
 
     const auto serialised = paperweight::serialisePmat(graphMaterial);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 16") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 17") != std::string::npos &&
                text->find("operation = shape_boolean") != std::string::npos &&
                text->find("shape.vertex.5.y") != std::string::npos &&
                text->find("lattice.winding_x = 5") != std::string::npos,
@@ -1591,9 +1619,7 @@ void testShapePrimitivesAndLattices()
                    std::get<paperweight::Material>(reparsed) == graphMaterial,
                "shape and lattice materials round-trip exactly through .pmat version 12");
         auto premature = *text;
-        const auto marker = premature.find("pmat.version = 16");
-        premature.replace(marker, std::string("pmat.version = 16").size(),
-                          "pmat.version = 11");
+        premature = downgradeCurrentPmat(std::move(premature), 11);
         const auto rejected = paperweight::parsePmat(premature);
         expect(std::holds_alternative<paperweight::ParseDiagnostic>(rejected) &&
                    std::get<paperweight::ParseDiagnostic>(rejected).message.find(
@@ -1815,7 +1841,7 @@ void testDeterministicScatter()
     const auto serialised = paperweight::serialisePmat(material);
     const auto* scatterText = std::get_if<std::string>(&serialised);
     expect(scatterText != nullptr &&
-               scatterText->find("pmat.version = 16") != std::string::npos &&
+               scatterText->find("pmat.version = 17") != std::string::npos &&
                scatterText->find("scatter.population.1.colour_high") != std::string::npos &&
                scatterText->find("scatter.exclusion_mask.enabled") != std::string::npos,
            "scatter populations, attributes, and masks serialise explicitly in .pmat version 13");
@@ -1825,9 +1851,7 @@ void testDeterministicScatter()
         expect(reparsed != nullptr && *reparsed == material,
                "deterministic scatter materials round-trip exactly through .pmat version 13");
         auto premature = *scatterText;
-        const auto marker = premature.find("pmat.version = 16");
-        premature.replace(marker, std::string("pmat.version = 16").size(),
-                          "pmat.version = 12");
+        premature = downgradeCurrentPmat(std::move(premature), 12);
         const auto rejected = paperweight::parsePmat(premature);
         const auto* diagnostic = std::get_if<paperweight::ParseDiagnostic>(&rejected);
         expect(diagnostic != nullptr &&
@@ -2071,7 +2095,7 @@ void testOrganicStructures()
     const auto serialised = paperweight::serialisePmat(material);
     const auto* organicText = std::get_if<std::string>(&serialised);
     expect(organicText != nullptr &&
-               organicText->find("pmat.version = 16") != std::string::npos &&
+               organicText->find("pmat.version = 17") != std::string::npos &&
                organicText->find("leaf.vein_pairs") != std::string::npos &&
                organicText->find("organic.accumulation.kind") != std::string::npos,
            "organic structures serialise explicitly in .pmat version 14");
@@ -2081,9 +2105,7 @@ void testOrganicStructures()
                    std::get<paperweight::Material>(reparsed) == material,
                "organic materials round-trip exactly through .pmat version 14");
         auto premature = *organicText;
-        const auto marker = premature.find("pmat.version = 16");
-        premature.replace(marker, std::string("pmat.version = 16").size(),
-                          "pmat.version = 13");
+        premature = downgradeCurrentPmat(std::move(premature), 13);
         const auto rejected = paperweight::parsePmat(premature);
         const auto* diagnostic = std::get_if<paperweight::ParseDiagnostic>(&rejected);
         expect(diagnostic != nullptr && diagnostic->message.find(
@@ -2286,10 +2308,9 @@ void testAdvancedSurfaceOperations()
                    std::get<paperweight::Material>(reparsed) == material,
                "advanced surface recipes round-trip through .pmat version 8 exactly");
         auto premature = *text;
-        const auto marker = premature.find("pmat.version = 16");
+        const auto marker = premature.find("pmat.version = 17");
         if (marker != std::string::npos) {
-            premature.replace(marker, std::string("pmat.version = 16").size(),
-                              "pmat.version = 7");
+            premature = downgradeCurrentPmat(std::move(premature), 7);
         }
         const auto prematureResult = paperweight::parsePmat(premature);
         expect(std::holds_alternative<paperweight::ParseDiagnostic>(prematureResult) &&
@@ -2457,7 +2478,7 @@ void testStylisedOperations()
 
     const auto serialised = paperweight::serialisePmat(stylised);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 16") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 17") != std::string::npos &&
                text->find("operation = colour_ramp") != std::string::npos &&
                text->find("operation = ink_contour") != std::string::npos,
            "stylisation serialises in the human-readable .pmat v9 format");
@@ -2502,11 +2523,11 @@ void testMaterialGraph()
     }
     expect(!paperweight::validateMaterialGraph(*graph),
            "compiled layer graphs satisfy graph validation");
-    expect(graph->nodes.size() == 12,
+    expect(graph->nodes.size() == 13,
            "layer compilation emits explicit source, processing, mask, and output nodes");
 
     std::array<std::size_t, 4> categoryCounts{};
-    std::array<std::size_t, 4> outputCounts{};
+    std::array<std::size_t, paperweight::materialOutputs.size()> outputCounts{};
     std::size_t mappedNodes = 0;
     for (const auto& node : graph->nodes) {
         ++categoryCounts[static_cast<std::size_t>(paperweight::graphNodeCategory(node))];
@@ -2534,7 +2555,7 @@ void testMaterialGraph()
                categoryCounts[static_cast<std::size_t>(
                    paperweight::GraphNodeCategory::mask)] == 1 &&
                categoryCounts[static_cast<std::size_t>(
-                   paperweight::GraphNodeCategory::output)] == 4,
+                   paperweight::GraphNodeCategory::output)] == 5,
            "compiled graphs use all four explicit node categories");
     expect(std::all_of(outputCounts.begin(), outputCounts.end(), [](auto count) {
                return count == 1;
@@ -2603,6 +2624,7 @@ void testMaterialGraph()
         paperweight::OutputNode{61, paperweight::MaterialOutput::height, 20},
         paperweight::OutputNode{62, paperweight::MaterialOutput::normal, 20},
         paperweight::OutputNode{63, paperweight::MaterialOutput::roughness, 50},
+        paperweight::OutputNode{64, paperweight::MaterialOutput::metalness, 50},
     };
     expect(!paperweight::validateMaterialGraph(routedGraph),
            "direct branched graphs validate independently of layer stacks");
@@ -2717,6 +2739,7 @@ void testMaterialGraph()
         paperweight::OutputNode{5, paperweight::MaterialOutput::height, 2},
         paperweight::OutputNode{6, paperweight::MaterialOutput::normal, 2},
         paperweight::OutputNode{7, paperweight::MaterialOutput::roughness, 2},
+        paperweight::OutputNode{8, paperweight::MaterialOutput::metalness, 2},
     };
     expectGraphError(
         cyclicGraph,
@@ -3261,7 +3284,7 @@ void testReferenceTemplatesAndStylisedLighting()
                    "every friendly control changes authored properties without changing the seed");
         }
 
-        std::array<std::optional<paperweight::Image>, 4> outputs;
+        std::array<std::optional<paperweight::Image>, paperweight::materialOutputs.size()> outputs;
         for (std::size_t outputIndex = 0;
              outputIndex < paperweight::materialOutputs.size();
              ++outputIndex) {
@@ -3359,7 +3382,7 @@ void testPmat()
 {
     constexpr std::string_view canonical =
         "# Paperweight procedural material\n"
-        "pmat.version = 16\n"
+        "pmat.version = 17\n"
         "material.type = fbm\n"
         "material.seed = 18431\n"
         "material.width = 1m\n"
@@ -3373,6 +3396,9 @@ void testPmat()
         "normal.strength = 1\n"
         "roughness.low = 0.25\n"
         "roughness.high = 0.85\n"
+        "metalness.low = 0\n"
+        "metalness.high = 0\n"
+        "surface.ior = 1.5\n"
         "layers.count = 0\n";
 
     const auto parsed = paperweight::parsePmat(canonical);
@@ -3625,14 +3651,11 @@ void testPmat()
         legacyBrickMaterial.layers = {paperweight::makeBrickGridLayer()};
         auto versionFourBrick = std::get<std::string>(
             paperweight::serialisePmat(legacyBrickMaterial));
-        const auto versionMarkerPosition = versionFourBrick.find("pmat.version = 16");
+        const auto versionMarkerPosition = versionFourBrick.find("pmat.version = 17");
         expect(versionMarkerPosition != std::string::npos,
                "current brick fixture declares format version 12");
         if (versionMarkerPosition != std::string::npos) {
-            versionFourBrick.replace(
-                versionMarkerPosition,
-                std::string("pmat.version = 16").size(),
-                "pmat.version = 4");
+            versionFourBrick = downgradeCurrentPmat(std::move(versionFourBrick), 4);
         }
         for (const auto& field : {
                  std::string("material.width = 1m\n"),
@@ -3959,7 +3982,7 @@ void testPmat()
         }
     };
 
-    expectDiagnostic("pmat.version = 17\n", 1, "unsupported");
+    expectDiagnostic("pmat.version = 18\n", 1, "unsupported");
     expectDiagnostic("unknown.key = 1\n", 1, "unknown key");
     expectDiagnostic("pmat.version = 1\npmat.version = 1\n", 2, "duplicate");
     expectDiagnostic("pmat.version = nope\n", 1, "integer");
@@ -3978,7 +4001,7 @@ void testPmat()
         "frequency");
     expectDiagnostic(
         std::string(canonical) + "layer.0.enabled = true\n",
-        19,
+        22,
         "exceeds layers.count");
     expectDiagnostic(
         std::string(versionTwo) + "layer.0.transform.scale_x = 2\n",
@@ -4071,11 +4094,11 @@ void testSurfaceChannelAuthoring()
     material.roughnessLow = 0.0;
     material.roughnessHigh = 1.0;
     auto colour = paperweight::makeSolidColourLayer({200, 80, 40, 255});
-    colour.outputs = {true, false, false};
+    colour.outputs = {true, false, false, false};
     auto height = paperweight::makeSurfaceValueLayer(0.75);
-    height.outputs = {false, true, false};
+    height.outputs = {false, true, false, false};
     auto roughness = paperweight::makeSurfaceValueLayer(0.25);
-    roughness.outputs = {false, false, true};
+    roughness.outputs = {false, false, true, false};
     material.layers = {colour, height, roughness};
 
     const auto colourResult = paperweight::generate({
@@ -4181,22 +4204,20 @@ void testSurfaceChannelAuthoring()
     material.layers[1].compositeMode = paperweight::CompositeMode::maximum;
     const auto serialised = paperweight::serialisePmat(material);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 16") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 17") != std::string::npos &&
                text->find("surface.relief_depth = 0.003m") != std::string::npos &&
                text->find("outputs = height") != std::string::npos &&
                text->find("operation = surface_value") != std::string::npos &&
                text->find("composite = maximum") != std::string::npos,
-           "PMAT 16 writes physical relief, output routes, values, and surface composites readably");
+           "PMAT 17 writes physical relief, output routes, values, and surface composites readably");
     if (text != nullptr) {
         const auto reparsed = paperweight::parsePmat(*text);
         expect(std::holds_alternative<paperweight::Material>(reparsed) &&
                    std::get<paperweight::Material>(reparsed) == material,
-               "PMAT 16 surface authoring fields round-trip exactly");
+               "PMAT 17 surface authoring fields round-trip exactly");
 
         auto premature = *text;
-        const auto version = premature.find("pmat.version = 16");
-        premature.replace(version, std::string("pmat.version = 16").size(),
-                           "pmat.version = 15");
+        premature = downgradeCurrentPmat(std::move(premature), 15);
         const auto relief = premature.find("surface.relief_depth = 0.003m\n");
         premature.erase(relief, std::string("surface.relief_depth = 0.003m\n").size());
         const auto prematureResult = paperweight::parsePmat(premature);
@@ -4207,7 +4228,7 @@ void testSurfaceChannelAuthoring()
     }
 
     auto invalid = material;
-    invalid.layers.front().outputs = {false, false, false};
+    invalid.layers.front().outputs = {false, false, false, false};
     expect(paperweight::validateMaterial(invalid).has_value(),
            "a layer with no output route is rejected explicitly");
 
@@ -4250,6 +4271,214 @@ void testSurfaceChannelAuthoring()
     }
 }
 
+void testMetalnessAndOptics()
+{
+    expectNear(paperweight::dielectricF0FromIor(1.0), 0.0, 0.0,
+               "an IOR of one has no dielectric surface reflection");
+    expectNear(paperweight::dielectricF0FromIor(1.5), 0.04, 1.0e-12,
+               "the default dielectric IOR produces four-percent F0");
+
+    paperweight::Material material;
+    material.metalnessLow = 0.0;
+    material.metalnessHigh = 1.0;
+    material.dielectricIor = 1.52;
+    auto colour = paperweight::makeSolidColourLayer({124, 86, 42, 255});
+    colour.outputs = {true, false, false, false};
+    auto metalness = paperweight::makeSurfaceValueLayer(0.75);
+    metalness.outputs = {false, false, false, true};
+    material.layers = {colour, metalness};
+
+    paperweight::GenerationRequest request{
+        material, 31, 23, paperweight::MaterialOutput::metalness,
+        std::nullopt, std::nullopt, 1};
+    const auto serial = paperweight::generate(request);
+    request.workerCount = 4;
+    const auto parallel = paperweight::generate(request);
+    const auto* serialImage = std::get_if<paperweight::Image>(&serial);
+    const auto* parallelImage = std::get_if<paperweight::Image>(&parallel);
+    expect(serialImage != nullptr && serialImage->pixels().front().red >= 190 &&
+               serialImage->pixels().front().red <= 192,
+           "a metalness-only Surface Value layer generates deterministic UNORM8 metalness");
+    expect(serialImage != nullptr && parallelImage != nullptr &&
+               std::equal(serialImage->pixels().begin(), serialImage->pixels().end(),
+                          parallelImage->pixels().begin()),
+           "metalness is byte-identical with one or four workers");
+
+    const auto colourBefore = paperweight::generate({
+        material, 31, 23, paperweight::MaterialOutput::colour,
+        std::nullopt, std::nullopt, 1});
+    auto changedOptics = material;
+    changedOptics.dielectricIor = 2.4;
+    changedOptics.metalnessLow = 0.2;
+    changedOptics.metalnessHigh = 0.9;
+    const auto colourAfter = paperweight::generate({
+        changedOptics, 31, 23, paperweight::MaterialOutput::colour,
+        std::nullopt, std::nullopt, 4});
+    const auto* beforeImage = std::get_if<paperweight::Image>(&colourBefore);
+    const auto* afterImage = std::get_if<paperweight::Image>(&colourAfter);
+    expect(beforeImage != nullptr && afterImage != nullptr &&
+               checksum(beforeImage->pixels()) == checksum(afterImage->pixels()),
+           "metalness and IOR never reinterpret or perturb authored colour-map bytes");
+
+    const auto serialised = paperweight::serialisePmat(material);
+    const auto* text = std::get_if<std::string>(&serialised);
+    expect(text != nullptr && text->find("pmat.version = 17") != std::string::npos &&
+               text->find("metalness.low = 0") != std::string::npos &&
+               text->find("metalness.high = 1") != std::string::npos &&
+               text->find("surface.ior = 1.52") != std::string::npos &&
+               text->find("outputs = metalness") != std::string::npos,
+           "PMAT 17 stores metalness routing and dielectric optics readably");
+    if (text != nullptr) {
+        const auto reparsed = paperweight::parsePmat(*text);
+        expect(std::holds_alternative<paperweight::Material>(reparsed) &&
+                   std::get<paperweight::Material>(reparsed) == material,
+               "PMAT 17 metalness and optical state round-trip exactly");
+
+        auto falselyVersioned = *text;
+        const auto marker = falselyVersioned.find("pmat.version = 17");
+        falselyVersioned.replace(
+            marker,
+            std::string("pmat.version = 17").size(),
+            "pmat.version = 16");
+        const auto rejected = paperweight::parsePmat(falselyVersioned);
+        expect(std::holds_alternative<paperweight::ParseDiagnostic>(rejected) &&
+                   std::get<paperweight::ParseDiagnostic>(rejected).message.find(
+                       "require .pmat version 17") != std::string::npos,
+               "PMAT 16 rejects version-17-only metalness and optics fields");
+    }
+
+    constexpr std::string_view legacy =
+        "pmat.version = 16\n"
+        "material.type = fbm\n"
+        "material.seed = 18431\n"
+        "material.width = 1m\n"
+        "material.height = 1m\n"
+        "colour.low = 0x000000FF\n"
+        "colour.high = 0xFFFFFFFF\n"
+        "noise.frequency = 4\n"
+        "noise.octaves = 5\n"
+        "noise.lacunarity = 2\n"
+        "noise.gain = 0.5\n"
+        "normal.strength = 1\n"
+        "roughness.low = 0.25\n"
+        "roughness.high = 0.85\n"
+        "layers.count = 0\n";
+    const auto migrated = paperweight::parsePmat(legacy);
+    const auto* legacyMaterial = std::get_if<paperweight::Material>(&migrated);
+    expect(legacyMaterial != nullptr && legacyMaterial->metalnessLow == 0.0 &&
+               legacyMaterial->metalnessHigh == 0.0 &&
+               legacyMaterial->dielectricIor == 1.5,
+           "PMAT 16 migrates to an explicit ordinary-dielectric optical default");
+
+    auto invalid = material;
+    invalid.dielectricIor = 0.9;
+    expect(paperweight::validateMaterial(invalid).has_value(),
+           "out-of-range dielectric IOR is rejected");
+    invalid = material;
+    invalid.metalnessHigh = 1.1;
+    expect(paperweight::validateMaterial(invalid).has_value(),
+           "out-of-range metalness is rejected");
+}
+
+void testMetalTemplates()
+{
+    constexpr std::array templateFiles{
+        "chrome.pmat",
+        "steel.pmat",
+        "copper.pmat",
+        "brass.pmat",
+        "painted-steel.pmat",
+        "corroded-metal.pmat",
+    };
+    for (std::size_t templateIndex = 0; templateIndex < templateFiles.size(); ++templateIndex) {
+        std::ifstream file(templateFiles[templateIndex], std::ios::binary);
+        const std::string source(
+            std::istreambuf_iterator<char>{file},
+            std::istreambuf_iterator<char>{});
+        const auto parsed = paperweight::parsePmat(source);
+        const auto* material = std::get_if<paperweight::Material>(&parsed);
+        expect(material != nullptr && material->metadata.has_value() &&
+                   material->metadata->category == "Metal" &&
+                   material->metalnessHigh > 0.9,
+               "each v0.0.24 metal template has identity and optical material state");
+        if (material == nullptr) {
+            continue;
+        }
+
+        const auto canonical = paperweight::serialisePmat(*material);
+        const auto* canonicalText = std::get_if<std::string>(&canonical);
+        bool roundTrips = false;
+        if (canonicalText != nullptr) {
+            const auto roundTrip = paperweight::parsePmat(*canonicalText);
+            roundTrips = std::holds_alternative<paperweight::Material>(roundTrip) &&
+                std::get<paperweight::Material>(roundTrip) == *material;
+        }
+        expect(roundTrips,
+               "v0.0.24 metal templates round-trip through PMAT 17 exactly");
+
+        for (const auto output : paperweight::materialOutputs) {
+            paperweight::GenerationRequest request{
+                *material, 20, 20, output, std::nullopt, material->physicalSize, 1};
+            const auto serial = paperweight::generate(request);
+            request.workerCount = 4;
+            const auto parallel = paperweight::generate(request);
+            const auto* oneTile = std::get_if<paperweight::Image>(&serial);
+            const auto* parallelTile = std::get_if<paperweight::Image>(&parallel);
+            expect(oneTile != nullptr && parallelTile != nullptr &&
+                       std::equal(oneTile->pixels().begin(), oneTile->pixels().end(),
+                                  parallelTile->pixels().begin()),
+                   "metal-template maps are byte-identical across worker counts");
+            if (oneTile == nullptr) {
+                continue;
+            }
+
+            request.width = 60;
+            request.height = 60;
+            request.physicalCoverage = paperweight::PhysicalSize{
+                material->physicalSize.widthMetres * 3.0,
+                material->physicalSize.heightMetres * 3.0,
+            };
+            const auto triple = paperweight::generate(request);
+            const auto* tripleTile = std::get_if<paperweight::Image>(&triple);
+            bool repeatsExactly = tripleTile != nullptr;
+            for (std::uint32_t tileY = 0; tileY < 3 && repeatsExactly; ++tileY) {
+                for (std::uint32_t tileX = 0; tileX < 3 && repeatsExactly; ++tileX) {
+                    for (std::uint32_t y = 0; y < 20 && repeatsExactly; ++y) {
+                        for (std::uint32_t x = 0; x < 20; ++x) {
+                            if (oneTile->row(y)[x] !=
+                                tripleTile->row(tileY * 20 + y)[tileX * 20 + x]) {
+                                repeatsExactly = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            expect(repeatsExactly,
+                   "every metal-template output repeats exactly in a 3 by 3 coverage");
+        }
+
+        const auto metalness = paperweight::generate({
+            *material, 32, 32, paperweight::MaterialOutput::metalness,
+            std::nullopt, material->physicalSize, 1});
+        const auto* metalnessImage = std::get_if<paperweight::Image>(&metalness);
+        if (metalnessImage != nullptr && templateIndex < 4) {
+            expect(std::all_of(
+                       metalnessImage->pixels().begin(), metalnessImage->pixels().end(),
+                       [](paperweight::Rgba8 pixel) { return pixel.red == 255; }),
+                   "clean elemental metal templates remain fully metallic");
+        } else if (metalnessImage != nullptr) {
+            const auto [minimum, maximum] = std::minmax_element(
+                metalnessImage->pixels().begin(), metalnessImage->pixels().end(),
+                [](paperweight::Rgba8 left, paperweight::Rgba8 right) {
+                    return left.red < right.red;
+                });
+            expect(minimum->red + 16 < maximum->red,
+                   "painted and corroded templates contain meaningful metalness variation");
+        }
+    }
+}
+
 void testMaterialWizard()
 {
     expect(paperweight::wizardMaterialFamilies.size() == 8,
@@ -4288,11 +4517,13 @@ void testMaterialWizard()
     }
     const auto metalTemplates = paperweight::wizardTemplatesForFamily(
         paperweight::WizardMaterialFamily::metal);
-    expect(metalTemplates.size() == 3 &&
+    expect(metalTemplates.size() == 9 &&
                metalTemplates[0]->identifier == "painted-metal" &&
                metalTemplates[1]->identifier == "weathered-metal" &&
-               metalTemplates[2]->identifier == "engraved-metal",
-           "metal offers painted, weathered, and engraved starting points");
+               metalTemplates[2]->identifier == "engraved-metal" &&
+               metalTemplates[3]->identifier == "chrome" &&
+               metalTemplates[8]->identifier == "corroded-metal",
+           "metal offers legacy and v0.0.24 optical starting points");
     expect(paperweight::findWizardMaterialTemplate("not-a-wizard-template") == nullptr,
            "unknown wizard templates are rejected");
 
@@ -4513,7 +4744,7 @@ void testMaterialIdentityAndLibrary()
 
     const auto serialised = paperweight::serialisePmat(identified);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 16") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 17") != std::string::npos &&
                text->find("material.uid = 01234567-89ab-cdef-0123-456789abcdef") !=
                    std::string::npos &&
                text->find("material.name = Dungeon Flagstone") != std::string::npos &&
@@ -4526,9 +4757,7 @@ void testMaterialIdentityAndLibrary()
                "material identity and metadata round-trip exactly");
 
         auto oldVersion = *text;
-        const auto version = oldVersion.find("pmat.version = 16");
-        oldVersion.replace(version, std::string("pmat.version = 16").size(),
-                           "pmat.version = 14");
+        oldVersion = downgradeCurrentPmat(std::move(oldVersion), 14);
         const auto rejected = paperweight::parsePmat(oldVersion);
         const auto* diagnostic = std::get_if<paperweight::ParseDiagnostic>(&rejected);
         expect(diagnostic != nullptr &&
@@ -4645,7 +4874,11 @@ void testPackedMaterialLibrary()
     if (library == nullptr) {
         return;
     }
-    expect(library->checksum() == 5548320913655248998ULL,
+    if (library->checksum() != 5580876374716731304ULL) {
+        std::cerr << "Expected packed-library checksum 5580876374716731304, got "
+                  << library->checksum() << '\n';
+    }
+    expect(library->checksum() == 5580876374716731304ULL,
            "packed library matches its cross-architecture golden checksum");
     expect(library->entries()[0].uid == noise.metadata->uid &&
                library->entries()[0].name == noise.metadata->name &&
@@ -4819,6 +5052,8 @@ int main()
     testMaterialWizard();
     testPmat();
     testSurfaceChannelAuthoring();
+    testMetalnessAndOptics();
+    testMetalTemplates();
     testMaterialIdentityAndLibrary();
     testPackedMaterialLibrary();
 

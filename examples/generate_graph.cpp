@@ -55,6 +55,7 @@ int main()
         paperweight::OutputNode{5, paperweight::MaterialOutput::height, 1},
         paperweight::OutputNode{6, paperweight::MaterialOutput::normal, 2},
         paperweight::OutputNode{7, paperweight::MaterialOutput::roughness, 3},
+        paperweight::OutputNode{8, paperweight::MaterialOutput::metalness, 3},
     };
 
     if (const auto error = paperweight::validateMaterialGraph(graph)) {

@@ -11,6 +11,14 @@ typedef NS_ENUM(NSInteger, PWPreviewShape) {
     PWPreviewShapeCylinder = 3,
 };
 
+typedef NS_ENUM(NSInteger, PWPreviewEnvironment) {
+    PWPreviewEnvironmentChromeStudio = 0,
+    PWPreviewEnvironmentBrushedMetal = 1,
+    PWPreviewEnvironmentCeramic = 2,
+    PWPreviewEnvironmentWetSurface = 3,
+    PWPreviewEnvironmentNeutral = 4,
+};
+
 @interface Material3DPreviewView : MTKView
 
 @property(nonatomic, readonly, getter=isRendererAvailable) BOOL rendererAvailable;
@@ -19,6 +27,10 @@ typedef NS_ENUM(NSInteger, PWPreviewShape) {
 @property(nonatomic) double lightElevationDegrees;
 @property(nonatomic) double lightIntensity;
 @property(nonatomic) double ambientIntensity;
+@property(nonatomic) PWPreviewEnvironment environmentPreset;
+@property(nonatomic) double environmentIntensity;
+@property(nonatomic) double environmentRotationDegrees;
+@property(nonatomic) double dielectricIor;
 @property(nonatomic) double displacementStrength;
 @property(nonatomic) double previewNormalStrength;
 @property(nonatomic) BOOL toonLightingEnabled;
@@ -32,11 +44,13 @@ typedef NS_ENUM(NSInteger, PWPreviewShape) {
 @property(nonatomic) BOOL heightEnabled;
 @property(nonatomic) BOOL normalEnabled;
 @property(nonatomic) BOOL roughnessEnabled;
+@property(nonatomic) BOOL metalnessEnabled;
 
 - (void)setColourImage:(const paperweight::Image&)colour
             heightImage:(const paperweight::Image&)height
             normalImage:(const paperweight::Image&)normal
-         roughnessImage:(const paperweight::Image&)roughness;
+         roughnessImage:(const paperweight::Image&)roughness
+          metalnessImage:(const paperweight::Image&)metalness;
 - (void)clearMaterialImages;
 - (void)resetCamera;
 

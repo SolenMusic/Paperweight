@@ -38,6 +38,9 @@ enum class Field : std::size_t {
     normalStrength,
     roughnessLow,
     roughnessHigh,
+    metalnessLow,
+    metalnessHigh,
+    dielectricIor,
     layerCount,
     count,
 };
@@ -63,6 +66,9 @@ constexpr std::array<std::string_view, static_cast<std::size_t>(Field::count)> f
     "normal.strength",
     "roughness.low",
     "roughness.high",
+    "metalness.low",
+    "metalness.high",
+    "surface.ior",
     "layers.count",
 };
 
@@ -548,6 +554,7 @@ std::string formatLayerOutputs(const LayerOutputRouting& outputs)
     if (outputs.colour) append("colour");
     if (outputs.height) append("height");
     if (outputs.roughness) append("roughness");
+    if (outputs.metalness) append("metalness");
     return value;
 }
 
@@ -576,7 +583,7 @@ std::optional<CompositeMode> parseCompositeMode(std::string_view value)
 
 std::optional<LayerOutputRouting> parseLayerOutputs(std::string_view value)
 {
-    LayerOutputRouting outputs{false, false, false};
+    LayerOutputRouting outputs{false, false, false, false};
     std::size_t offset = 0;
     while (offset <= value.size()) {
         const auto comma = value.find(',', offset);
@@ -589,6 +596,8 @@ std::optional<LayerOutputRouting> parseLayerOutputs(std::string_view value)
             destination = &outputs.height;
         } else if (output == "roughness") {
             destination = &outputs.roughness;
+        } else if (output == "metalness") {
+            destination = &outputs.metalness;
         } else {
             return std::nullopt;
         }
@@ -601,7 +610,7 @@ std::optional<LayerOutputRouting> parseLayerOutputs(std::string_view value)
         }
         offset = comma + 1;
     }
-    if (!outputs.colour && !outputs.height && !outputs.roughness) {
+    if (!outputs.colour && !outputs.height && !outputs.roughness && !outputs.metalness) {
         return std::nullopt;
     }
     return outputs;
@@ -1569,6 +1578,21 @@ ParseResult parsePmat(std::string_view text)
                         return diagnostic(lineNumber, valueColumn, "roughness.high must be a decimal number");
                     }
                     break;
+                case Field::metalnessLow:
+                    if (!parseDouble(value, material.metalnessLow)) {
+                        return diagnostic(lineNumber, valueColumn, "metalness.low must be a decimal number");
+                    }
+                    break;
+                case Field::metalnessHigh:
+                    if (!parseDouble(value, material.metalnessHigh)) {
+                        return diagnostic(lineNumber, valueColumn, "metalness.high must be a decimal number");
+                    }
+                    break;
+                case Field::dielectricIor:
+                    if (!parseDouble(value, material.dielectricIor)) {
+                        return diagnostic(lineNumber, valueColumn, "surface.ior must be a decimal number");
+                    }
+                    break;
                 case Field::layerCount:
                     if (!parseInteger(value, layerCount)) {
                         return diagnostic(lineNumber, valueColumn, "layers.count must be an integer");
@@ -1641,7 +1665,7 @@ ParseResult parsePmat(std::string_view text)
                         return diagnostic(
                             lineNumber,
                             valueColumn,
-                            "layer outputs must list one or more of 'colour', 'height', and 'roughness' without duplicates");
+                            "layer outputs must list one or more of 'colour', 'height', 'roughness', and 'metalness' without duplicates");
                     }
                     if (!storeValue(builder.outputs, *parsed, lineNumber, valueColumn)) {
                         return duplicate();
@@ -3257,8 +3281,12 @@ ParseResult parsePmat(std::string_view text)
         const bool optionalMetadata = field == Field::uid || field == Field::name ||
             field == Field::description || field == Field::category || field == Field::tags;
         const bool optionalSurfaceAuthoring = field == Field::reliefDepth;
+        const bool introducedInVersionSeventeen =
+            field == Field::metalnessLow || field == Field::metalnessHigh ||
+            field == Field::dielectricIor;
         if (!seen[index] && !optionalInVersionOne &&
             !optionalMetadata && !optionalSurfaceAuthoring &&
+            !(formatVersion < 17 && introducedInVersionSeventeen) &&
             !(formatVersion < 6 && introducedInVersionSix)) {
             return diagnostic(
                 lineNumber + 1,
@@ -3295,6 +3323,16 @@ ParseResult parsePmat(std::string_view text)
             "physical surface relief requires .pmat version 16");
     }
 
+    if (formatVersion < 17 &&
+        (seen[static_cast<std::size_t>(Field::metalnessLow)] ||
+         seen[static_cast<std::size_t>(Field::metalnessHigh)] ||
+         seen[static_cast<std::size_t>(Field::dielectricIor)])) {
+        return diagnostic(
+            lineNumber + 1,
+            1,
+            "metalness and dielectric optics require .pmat version 17");
+    }
+
     if (formatVersion == 1) {
         if (seen[static_cast<std::size_t>(Field::layerCount)] || !layerBuilders.empty()) {
             return diagnostic(lineNumber + 1, 1, "layer stacks require .pmat version 2");
@@ -3324,8 +3362,17 @@ ParseResult parsePmat(std::string_view text)
             if (formatVersion >= 16 && !builder.outputs.value) {
                 return missingLayerField(lineNumber + 1, index, "outputs");
             }
+            if (formatVersion < 17 && builder.outputs.value &&
+                builder.outputs.value->metalness) {
+                return diagnostic(
+                    builder.outputs.line,
+                    builder.outputs.column,
+                    "metalness output routing requires .pmat version 17");
+            }
             if (formatVersion < 16 &&
-                ((builder.outputs.value && !builder.outputs.value->isLegacyAll()) ||
+                ((builder.outputs.value &&
+                     (!builder.outputs.value->colour || !builder.outputs.value->height ||
+                      !builder.outputs.value->roughness)) ||
                  *builder.operation.value == OperationKind::surfaceValue ||
                  *builder.compositeMode.value == CompositeMode::minimum ||
                  *builder.compositeMode.value == CompositeMode::maximum ||
@@ -3564,6 +3611,11 @@ ParseResult parsePmat(std::string_view text)
                 {},
                 builder.outputs.value.value_or(LayerOutputRouting{}),
             };
+            if (formatVersion < 17) {
+                // Metalness did not exist yet. Preserve the legacy meaning of an
+                // all-channel layer now that a fifth deterministic map exists.
+                layer.outputs.metalness = true;
+            }
             if (formatVersion >= 3) {
                 layer.transform = CoordinateTransform{
                     *builder.scaleX.value,
@@ -5181,6 +5233,18 @@ ParseResult parsePmat(std::string_view text)
                        material.roughnessHigh < MaterialLimits::minimumRoughness ||
                        material.roughnessHigh > MaterialLimits::maximumRoughness) {
                 relevantField = Field::roughnessHigh;
+            } else if (!std::isfinite(material.metalnessLow) ||
+                       material.metalnessLow < MaterialLimits::minimumMetalness ||
+                       material.metalnessLow > MaterialLimits::maximumMetalness) {
+                relevantField = Field::metalnessLow;
+            } else if (!std::isfinite(material.metalnessHigh) ||
+                       material.metalnessHigh < MaterialLimits::minimumMetalness ||
+                       material.metalnessHigh > MaterialLimits::maximumMetalness) {
+                relevantField = Field::metalnessHigh;
+            } else if (!std::isfinite(material.dielectricIor) ||
+                       material.dielectricIor < MaterialLimits::minimumDielectricIor ||
+                       material.dielectricIor > MaterialLimits::maximumDielectricIor) {
+                relevantField = Field::dielectricIor;
             }
         }
         const auto index = static_cast<std::size_t>(relevantField);
@@ -5198,12 +5262,16 @@ SerialisationResult serialisePmat(const Material& material)
     const auto normalStrength = formatDouble(material.normalStrength);
     const auto roughnessLow = formatDouble(material.roughnessLow);
     const auto roughnessHigh = formatDouble(material.roughnessHigh);
+    const auto metalnessLow = formatDouble(material.metalnessLow);
+    const auto metalnessHigh = formatDouble(material.metalnessHigh);
+    const auto dielectricIor = formatDouble(material.dielectricIor);
     const auto physicalWidth = formatMetres(material.physicalSize.widthMetres);
     const auto physicalHeight = formatMetres(material.physicalSize.heightMetres);
     const auto reliefDepth = material.reliefDepthMetres
         ? formatMetres(*material.reliefDepthMetres)
         : std::string{};
     if (gain.empty() || normalStrength.empty() || roughnessLow.empty() || roughnessHigh.empty() ||
+        metalnessLow.empty() || metalnessHigh.empty() || dielectricIor.empty() ||
         physicalWidth.empty() || physicalHeight.empty()) {
         return SerialisationError{"could not format a decimal material parameter"};
     }
@@ -5256,6 +5324,9 @@ SerialisationResult serialisePmat(const Material& material)
     output += "normal.strength = " + normalStrength + "\n";
     output += "roughness.low = " + roughnessLow + "\n";
     output += "roughness.high = " + roughnessHigh + "\n";
+    output += "metalness.low = " + metalnessLow + "\n";
+    output += "metalness.high = " + metalnessHigh + "\n";
+    output += "surface.ior = " + dielectricIor + "\n";
     output += "layers.count = " + std::to_string(material.layers.size()) + "\n";
 
     for (std::size_t index = 0; index < material.layers.size(); ++index) {

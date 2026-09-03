@@ -178,6 +178,12 @@
 @property(nonatomic, strong) NSTextField* roughnessLowValue;
 @property(nonatomic, strong) NSSlider* roughnessHighSlider;
 @property(nonatomic, strong) NSTextField* roughnessHighValue;
+@property(nonatomic, strong) NSSlider* metalnessLowSlider;
+@property(nonatomic, strong) NSTextField* metalnessLowValue;
+@property(nonatomic, strong) NSSlider* metalnessHighSlider;
+@property(nonatomic, strong) NSTextField* metalnessHighValue;
+@property(nonatomic, strong) NSSlider* dielectricIorSlider;
+@property(nonatomic, strong) NSTextField* dielectricIorValue;
 @property(nonatomic, strong) NSSegmentedControl* outputControl;
 @property(nonatomic, strong) NSButton* bakedPresentationCheckbox;
 @property(nonatomic, strong) NSStackView* bakeControls;
@@ -206,6 +212,10 @@
 @property(nonatomic, strong) NSTextField* lightIntensityValue;
 @property(nonatomic, strong) NSSlider* ambientIntensitySlider;
 @property(nonatomic, strong) NSTextField* ambientIntensityValue;
+@property(nonatomic, strong) NSSlider* environmentIntensitySlider;
+@property(nonatomic, strong) NSTextField* environmentIntensityValue;
+@property(nonatomic, strong) NSSlider* environmentRotationSlider;
+@property(nonatomic, strong) NSTextField* environmentRotationValue;
 @property(nonatomic, strong) NSSlider* displacementSlider;
 @property(nonatomic, strong) NSTextField* displacementValue;
 @property(nonatomic, strong) NSSlider* previewNormalSlider;
@@ -226,6 +236,7 @@
 @property(nonatomic, strong) NSButton* heightMapCheckbox;
 @property(nonatomic, strong) NSButton* normalMapCheckbox;
 @property(nonatomic, strong) NSButton* roughnessMapCheckbox;
+@property(nonatomic, strong) NSButton* metalnessMapCheckbox;
 @property(nonatomic, strong) NSTimer* animationUiTimer;
 @property(nonatomic, strong) NSTextField* statusLabel;
 @property(nonatomic, strong) NSURL* currentFileURL;
@@ -596,6 +607,8 @@ NSString* outputName(paperweight::MaterialOutput output)
         return @"Normal";
     case paperweight::MaterialOutput::roughness:
         return @"Roughness";
+    case paperweight::MaterialOutput::metalness:
+        return @"Metalness";
     }
     return @"Unknown";
 }
@@ -605,6 +618,7 @@ struct PreviewMapSet {
     paperweight::Image height;
     paperweight::Image normal;
     paperweight::Image roughness;
+    paperweight::Image metalness;
 };
 
 NSString* operationDisplayName(const paperweight::LayerOperation& operation)
@@ -1158,6 +1172,12 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @[ @"Polished Marble", @"polished-marble" ],
         @[ @"Wet Mortar", @"wet-mortar" ],
         @[ @"Engraved Metal", @"engraved-metal" ],
+        @[ @"Polished Chrome", @"chrome" ],
+        @[ @"Brushed Steel", @"steel" ],
+        @[ @"Polished Copper", @"copper" ],
+        @[ @"Polished Brass", @"brass" ],
+        @[ @"Painted Steel", @"painted-steel" ],
+        @[ @"Corroded Metal", @"corroded-metal" ],
         @[ @"Varnished Wood", @"varnished-wood" ],
         @[ @"Region Stones", @"region-stones" ],
         @[ @"Castle Flagstone", @"castle-flagstone" ],
@@ -1824,6 +1844,12 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         paperweight::metadataFor(paperweight::MaterialParameter::roughnessLow);
     const auto& roughnessHighMetadata =
         paperweight::metadataFor(paperweight::MaterialParameter::roughnessHigh);
+    const auto& metalnessLowMetadata =
+        paperweight::metadataFor(paperweight::MaterialParameter::metalnessLow);
+    const auto& metalnessHighMetadata =
+        paperweight::metadataFor(paperweight::MaterialParameter::metalnessHigh);
+    const auto& dielectricIorMetadata =
+        paperweight::metadataFor(paperweight::MaterialParameter::dielectricIor);
     NSStackView* normalStrengthRow = makeSliderRow(
         @"Normal multiplier",
         normalStrengthMetadata.minimumValue,
@@ -1871,6 +1897,35 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self);
     self.roughnessHighSlider = static_cast<NSSlider*>(roughnessHighRow.views[1]);
     self.roughnessHighValue = static_cast<NSTextField*>(roughnessHighRow.views[2]);
+    NSStackView* metalnessLowRow = makeSliderRow(
+        @"Metal low",
+        metalnessLowMetadata.minimumValue,
+        metalnessLowMetadata.maximumValue,
+        material_.metalnessLow,
+        metalnessLowMetadata.integral,
+        self);
+    self.metalnessLowSlider = static_cast<NSSlider*>(metalnessLowRow.views[1]);
+    self.metalnessLowValue = static_cast<NSTextField*>(metalnessLowRow.views[2]);
+    NSStackView* metalnessHighRow = makeSliderRow(
+        @"Metal high",
+        metalnessHighMetadata.minimumValue,
+        metalnessHighMetadata.maximumValue,
+        material_.metalnessHigh,
+        metalnessHighMetadata.integral,
+        self);
+    self.metalnessHighSlider = static_cast<NSSlider*>(metalnessHighRow.views[1]);
+    self.metalnessHighValue = static_cast<NSTextField*>(metalnessHighRow.views[2]);
+    NSStackView* dielectricIorRow = makeSliderRow(
+        @"Dielectric IOR",
+        dielectricIorMetadata.minimumValue,
+        dielectricIorMetadata.maximumValue,
+        material_.dielectricIor,
+        dielectricIorMetadata.integral,
+        self);
+    self.dielectricIorSlider = static_cast<NSSlider*>(dielectricIorRow.views[1]);
+    self.dielectricIorValue = static_cast<NSTextField*>(dielectricIorRow.views[2]);
+    self.dielectricIorSlider.toolTip =
+        @"Controls neutral surface reflection for non-metal areas; common materials are roughly 1.3 to 1.7.";
 
     auto* previewModeLabel = makeLabel(@"Preview mode");
     self.previewModeControl = [[NSSegmentedControl alloc] initWithFrame:NSZeroRect];
@@ -1901,11 +1956,12 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 
     auto* outputLabel = makeLabel(@"Material output");
     self.outputControl = [[NSSegmentedControl alloc] initWithFrame:NSZeroRect];
-    self.outputControl.segmentCount = 4;
+    self.outputControl.segmentCount = 5;
     [self.outputControl setLabel:@"Colour" forSegment:0];
     [self.outputControl setLabel:@"Height" forSegment:1];
     [self.outputControl setLabel:@"Normal" forSegment:2];
     [self.outputControl setLabel:@"Roughness" forSegment:3];
+    [self.outputControl setLabel:@"Metalness" forSegment:4];
     self.outputControl.selectedSegment = 0;
     self.outputControl.target = self;
     self.outputControl.action = @selector(outputChanged:);
@@ -2008,7 +2064,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     auto* lightingLabel = makeLabel(@"Lighting");
     [lightingLabel.widthAnchor constraintEqualToConstant:72.0].active = YES;
     self.lightPresetPopup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
-    [self.lightPresetPopup addItemsWithTitles:@[@"Studio", @"Raking", @"Top", @"Backlight", @"Custom"]];
+    [self.lightPresetPopup addItemsWithTitles:@[
+        @"Chrome Studio", @"Brushed Metal", @"Ceramic", @"Wet Surface", @"Neutral", @"Custom",
+    ]];
     self.lightPresetPopup.target = self;
     self.lightPresetPopup.action = @selector(lightPresetChanged:);
     auto* lightingRow = [NSStackView stackViewWithViews:@[lightingLabel, self.lightPresetPopup]];
@@ -2028,6 +2086,12 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     auto* ambientRow = makePreviewSliderRow(@"Ambient", 0.0, 0.8, 0.18, self);
     self.ambientIntensitySlider = static_cast<NSSlider*>(ambientRow.views[1]);
     self.ambientIntensityValue = static_cast<NSTextField*>(ambientRow.views[2]);
+    auto* environmentIntensityRow = makePreviewSliderRow(@"Environment", 0.0, 2.5, 1.0, self);
+    self.environmentIntensitySlider = static_cast<NSSlider*>(environmentIntensityRow.views[1]);
+    self.environmentIntensityValue = static_cast<NSTextField*>(environmentIntensityRow.views[2]);
+    auto* environmentRotationRow = makePreviewSliderRow(@"Env rotation", 0.0, 360.0, 0.0, self);
+    self.environmentRotationSlider = static_cast<NSSlider*>(environmentRotationRow.views[1]);
+    self.environmentRotationValue = static_cast<NSTextField*>(environmentRotationRow.views[2]);
     auto* displacementRow = makePreviewSliderRow(@"Height", 0.0, 0.4, 0.04, self);
     self.displacementSlider = static_cast<NSSlider*>(displacementRow.views[1]);
     self.displacementValue = static_cast<NSTextField*>(displacementRow.views[2]);
@@ -2064,11 +2128,15 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.roughnessMapCheckbox = [NSButton checkboxWithTitle:@"Roughness"
                                                       target:self
                                                       action:@selector(previewMapToggled:)];
+    self.metalnessMapCheckbox = [NSButton checkboxWithTitle:@"Metalness"
+                                                      target:self
+                                                      action:@selector(previewMapToggled:)];
     for (NSButton* checkbox in @[
              self.colourMapCheckbox,
              self.heightMapCheckbox,
              self.normalMapCheckbox,
              self.roughnessMapCheckbox,
+             self.metalnessMapCheckbox,
          ]) {
         checkbox.state = NSControlStateValueOn;
     }
@@ -2082,6 +2150,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     ]];
     mapsSecondRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
     mapsSecondRow.distribution = NSStackViewDistributionFillEqually;
+    auto* mapsThirdRow = [NSStackView stackViewWithViews:@[
+        self.metalnessMapCheckbox,
+    ]];
+    mapsThirdRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
 
     auto* animationPhaseRow = makePreviewSliderRow(@"Light phase", 0.0, 1.0, 0.0, self);
     self.animationPhaseSlider = static_cast<NSSlider*>(animationPhaseRow.views[1]);
@@ -2109,9 +2181,12 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         lightElevationRow,
         lightIntensityRow,
         ambientRow,
+        environmentIntensityRow,
+        environmentRotationRow,
         makeLabel(@"Material maps"),
         mapsFirstRow,
         mapsSecondRow,
+        mapsThirdRow,
         displacementRow,
         previewNormalRow,
         makeLabel(@"Stylised lighting"),
@@ -2173,6 +2248,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         normalStrengthRow,
         roughnessLowRow,
         roughnessHighRow,
+        metalnessLowRow,
+        metalnessHighRow,
+        dielectricIorRow,
         makeSeparator(),
         previewModeLabel,
         self.previewModeControl,
@@ -2356,10 +2434,11 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 
     auto* outputsLabel = makeLabel(@"Affect outputs");
     self.layerOutputControl = [[NSSegmentedControl alloc] initWithFrame:NSZeroRect];
-    self.layerOutputControl.segmentCount = 3;
+    self.layerOutputControl.segmentCount = 4;
     [self.layerOutputControl setLabel:@"Colour" forSegment:0];
-    [self.layerOutputControl setLabel:@"Height + Normal" forSegment:1];
+    [self.layerOutputControl setLabel:@"Height/Normal" forSegment:1];
     [self.layerOutputControl setLabel:@"Roughness" forSegment:2];
+    [self.layerOutputControl setLabel:@"Metalness" forSegment:3];
     self.layerOutputControl.trackingMode = NSSegmentSwitchTrackingSelectAny;
     self.layerOutputControl.target = self;
     self.layerOutputControl.action = @selector(layerParameterChanged:);
@@ -3164,6 +3243,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     [self.layerOutputControl setSelected:layer->outputs.colour forSegment:0];
     [self.layerOutputControl setSelected:layer->outputs.height forSegment:1];
     [self.layerOutputControl setSelected:layer->outputs.roughness forSegment:2];
+    [self.layerOutputControl setSelected:layer->outputs.metalness forSegment:3];
     switch (layer->compositeMode) {
     case paperweight::CompositeMode::blend:
         self.layerCompositeControl.selectedSegment = 0;
@@ -5043,8 +5123,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
             [self.layerOutputControl isSelectedForSegment:0] == YES,
             [self.layerOutputControl isSelectedForSegment:1] == YES,
             [self.layerOutputControl isSelectedForSegment:2] == YES,
+            [self.layerOutputControl isSelectedForSegment:3] == YES,
         };
-        if (!layer->outputs.colour && !layer->outputs.height && !layer->outputs.roughness) {
+        if (!layer->outputs.colour && !layer->outputs.height &&
+            !layer->outputs.roughness && !layer->outputs.metalness) {
             layer->outputs.colour = true;
             [self.layerOutputControl setSelected:YES forSegment:0];
             self.statusLabel.stringValue = @"A layer must affect at least one output.";
@@ -5891,6 +5973,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     material_.normalStrength = self.normalStrengthSlider.doubleValue;
     material_.roughnessLow = self.roughnessLowSlider.doubleValue;
     material_.roughnessHigh = self.roughnessHighSlider.doubleValue;
+    material_.metalnessLow = self.metalnessLowSlider.doubleValue;
+    material_.metalnessHigh = self.metalnessHighSlider.doubleValue;
+    material_.dielectricIor = self.dielectricIorSlider.doubleValue;
+    self.material3DPreviewView.dielectricIor = material_.dielectricIor;
     self.displacementSlider.doubleValue = recommendedPreviewDisplacement(material_);
     self.material3DPreviewView.displacementStrength = self.displacementSlider.doubleValue;
     [self updateControlLabels];
@@ -5940,6 +6026,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.reliefDepthField.enabled = material_.reliefDepthMetres.has_value();
     self.roughnessLowSlider.doubleValue = material_.roughnessLow;
     self.roughnessHighSlider.doubleValue = material_.roughnessHigh;
+    self.metalnessLowSlider.doubleValue = material_.metalnessLow;
+    self.metalnessHighSlider.doubleValue = material_.metalnessHigh;
+    self.dielectricIorSlider.doubleValue = material_.dielectricIor;
+    self.material3DPreviewView.dielectricIor = material_.dielectricIor;
     self.displacementSlider.doubleValue = recommendedPreviewDisplacement(material_);
     self.material3DPreviewView.displacementStrength = self.displacementSlider.doubleValue;
     [self rebuildLayerList];
@@ -5981,6 +6071,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         break;
     case 3:
         selectedOutput_ = paperweight::MaterialOutput::roughness;
+        break;
+    case 4:
+        selectedOutput_ = paperweight::MaterialOutput::metalness;
         break;
     default:
         selectedOutput_ = paperweight::MaterialOutput::colour;
@@ -6093,24 +6186,40 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.lightElevationSlider.doubleValue = 38.0;
         self.lightIntensitySlider.doubleValue = 1.0;
         self.ambientIntensitySlider.doubleValue = 0.18;
+        self.environmentIntensitySlider.doubleValue = 1.0;
+        self.environmentRotationSlider.doubleValue = 0.0;
         break;
     case 1:
         self.lightAzimuthSlider.doubleValue = 110.0;
         self.lightElevationSlider.doubleValue = 12.0;
         self.lightIntensitySlider.doubleValue = 1.25;
         self.ambientIntensitySlider.doubleValue = 0.10;
+        self.environmentIntensitySlider.doubleValue = 1.15;
+        self.environmentRotationSlider.doubleValue = 25.0;
         break;
     case 2:
-        self.lightAzimuthSlider.doubleValue = 0.0;
-        self.lightElevationSlider.doubleValue = 82.0;
-        self.lightIntensitySlider.doubleValue = 0.92;
-        self.ambientIntensitySlider.doubleValue = 0.22;
+        self.lightAzimuthSlider.doubleValue = 320.0;
+        self.lightElevationSlider.doubleValue = 58.0;
+        self.lightIntensitySlider.doubleValue = 0.85;
+        self.ambientIntensitySlider.doubleValue = 0.20;
+        self.environmentIntensitySlider.doubleValue = 0.72;
+        self.environmentRotationSlider.doubleValue = 340.0;
         break;
     case 3:
         self.lightAzimuthSlider.doubleValue = 205.0;
         self.lightElevationSlider.doubleValue = 25.0;
         self.lightIntensitySlider.doubleValue = 1.15;
         self.ambientIntensitySlider.doubleValue = 0.12;
+        self.environmentIntensitySlider.doubleValue = 1.3;
+        self.environmentRotationSlider.doubleValue = 65.0;
+        break;
+    case 4:
+        self.lightAzimuthSlider.doubleValue = 35.0;
+        self.lightElevationSlider.doubleValue = 42.0;
+        self.lightIntensitySlider.doubleValue = 0.9;
+        self.ambientIntensitySlider.doubleValue = 0.18;
+        self.environmentIntensitySlider.doubleValue = 0.55;
+        self.environmentRotationSlider.doubleValue = 0.0;
         break;
     default:
         return;
@@ -6122,7 +6231,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 {
     if (sender == self.lightAzimuthSlider || sender == self.lightElevationSlider ||
         sender == self.lightIntensitySlider || sender == self.ambientIntensitySlider) {
-        [self.lightPresetPopup selectItemAtIndex:4];
+        [self.lightPresetPopup selectItemAtIndex:5];
     }
     [self applyPreview3DParameters];
 }
@@ -6133,6 +6242,13 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.material3DPreviewView.lightElevationDegrees = self.lightElevationSlider.doubleValue;
     self.material3DPreviewView.lightIntensity = self.lightIntensitySlider.doubleValue;
     self.material3DPreviewView.ambientIntensity = self.ambientIntensitySlider.doubleValue;
+    if (self.lightPresetPopup.indexOfSelectedItem < 5) {
+        self.material3DPreviewView.environmentPreset = static_cast<PWPreviewEnvironment>(
+            self.lightPresetPopup.indexOfSelectedItem);
+    }
+    self.material3DPreviewView.environmentIntensity = self.environmentIntensitySlider.doubleValue;
+    self.material3DPreviewView.environmentRotationDegrees = self.environmentRotationSlider.doubleValue;
+    self.material3DPreviewView.dielectricIor = self.dielectricIorSlider.doubleValue;
     self.material3DPreviewView.displacementStrength = self.displacementSlider.doubleValue;
     self.material3DPreviewView.previewNormalStrength = self.previewNormalSlider.doubleValue;
     self.material3DPreviewView.toonLightingEnabled =
@@ -6155,6 +6271,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         stringWithFormat:@"%.2f", self.lightIntensitySlider.doubleValue];
     self.ambientIntensityValue.stringValue = [NSString
         stringWithFormat:@"%.2f", self.ambientIntensitySlider.doubleValue];
+    self.environmentIntensityValue.stringValue = [NSString
+        stringWithFormat:@"%.2f", self.environmentIntensitySlider.doubleValue];
+    self.environmentRotationValue.stringValue = [NSString
+        stringWithFormat:@"%.0f°", self.environmentRotationSlider.doubleValue];
     self.displacementValue.stringValue = [NSString
         stringWithFormat:@"%.2f", self.displacementSlider.doubleValue];
     self.previewNormalValue.stringValue = [NSString
@@ -6186,6 +6306,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.normalMapCheckbox.state == NSControlStateValueOn;
     self.material3DPreviewView.roughnessEnabled =
         self.roughnessMapCheckbox.state == NSControlStateValueOn;
+    self.material3DPreviewView.metalnessEnabled =
+        self.metalnessMapCheckbox.state == NSControlStateValueOn;
 }
 
 - (void)togglePreviewAnimation:(id)sender
@@ -6231,6 +6353,12 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         [NSString stringWithFormat:@"%.2f", material_.roughnessLow];
     self.roughnessHighValue.stringValue =
         [NSString stringWithFormat:@"%.2f", material_.roughnessHigh];
+    self.metalnessLowValue.stringValue =
+        [NSString stringWithFormat:@"%.2f", material_.metalnessLow];
+    self.metalnessHighValue.stringValue =
+        [NSString stringWithFormat:@"%.2f", material_.metalnessHigh];
+    self.dielectricIorValue.stringValue =
+        [NSString stringWithFormat:@"%.2f", material_.dielectricIor];
 }
 
 - (void)setActiveReferenceTemplate:(const paperweight::ReferenceMaterialTemplate*)descriptor
@@ -6306,6 +6434,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.reliefDepthField.stringValue = [NSString stringWithFormat:
         @"%.6g", material_.reliefDepthMetres.value_or(0.003)];
     self.reliefDepthField.enabled = material_.reliefDepthMetres.has_value();
+    self.metalnessLowSlider.doubleValue = material_.metalnessLow;
+    self.metalnessHighSlider.doubleValue = material_.metalnessHigh;
+    self.dielectricIorSlider.doubleValue = material_.dielectricIor;
+    self.material3DPreviewView.dielectricIor = material_.dielectricIor;
     [self rebuildLayerList];
     [self refreshLayerInspector];
     [self updateControlLabels];
@@ -6347,6 +6479,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.reliefDepthField.enabled = material_.reliefDepthMetres.has_value();
     self.roughnessLowSlider.doubleValue = material_.roughnessLow;
     self.roughnessHighSlider.doubleValue = material_.roughnessHigh;
+    self.metalnessLowSlider.doubleValue = material_.metalnessLow;
+    self.metalnessHighSlider.doubleValue = material_.metalnessHigh;
+    self.dielectricIorSlider.doubleValue = material_.dielectricIor;
+    self.material3DPreviewView.dielectricIor = material_.dielectricIor;
     self.displacementSlider.doubleValue = recommendedPreviewDisplacement(material_);
     self.material3DPreviewView.displacementStrength = self.displacementSlider.doubleValue;
     [self rebuildLayerList];
@@ -6561,7 +6697,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
             };
         }
 
-        std::array<std::optional<paperweight::Image>, 4> images;
+        std::array<std::optional<paperweight::Image>, paperweight::materialOutputs.size()> images;
         if (!failure) {
             for (std::size_t outputIndex = 0; outputIndex < paperweight::materialOutputs.size(); ++outputIndex) {
                 if (cancellation->load(std::memory_order_relaxed)) {
@@ -6591,6 +6727,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
                 std::move(*images[paperweight::materialOutputIndex(paperweight::MaterialOutput::height)]),
                 std::move(*images[paperweight::materialOutputIndex(paperweight::MaterialOutput::normal)]),
                 std::move(*images[paperweight::materialOutputIndex(paperweight::MaterialOutput::roughness)]),
+                std::move(*images[paperweight::materialOutputIndex(paperweight::MaterialOutput::metalness)]),
             });
         }
 
@@ -6606,10 +6743,11 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
                 [strongSelf.material3DPreviewView setColourImage:maps->colour
                                                      heightImage:maps->height
                                                      normalImage:maps->normal
-                                                  roughnessImage:maps->roughness];
+                                                  roughnessImage:maps->roughness
+                                                   metalnessImage:maps->metalness];
                 strongSelf->generated3DMaps_ = maps;
                 strongSelf.statusLabel.stringValue = [NSString stringWithFormat:
-                    @"Four %u × %u maps — %.6g × %.6g m — %zu-node graph — drag to orbit, scroll to zoom",
+                    @"Five %u × %u maps — %.6g × %.6g m — %zu-node graph — drag to orbit, scroll to zoom",
                     strongSelf->previewResolution_,
                     strongSelf->previewResolution_,
                     strongSelf->previewCoverage_.widthMetres,
@@ -6646,7 +6784,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     if (self.previewModeControl.selectedSegment == 1) {
         [self.material3DPreviewView clearMaterialImages];
         self.statusLabel.stringValue = [NSString stringWithFormat:
-            @"Rendering four %u × %u material maps for 3D…",
+            @"Rendering five %u × %u material maps for 3D…",
             previewResolution_, previewResolution_];
         self.previewLoadingLabel.stringValue = @"Rendering 3D material maps…";
     } else if (bakedPresentationSelected_) {
