@@ -31,6 +31,8 @@ typedef NS_ENUM(NSInteger, PWPreviewEnvironment) {
 @property(nonatomic) double environmentIntensity;
 @property(nonatomic) double environmentRotationDegrees;
 @property(nonatomic) double dielectricIor;
+@property(nonatomic) double anisotropyStrength;
+@property(nonatomic) double anisotropyRotationDegrees;
 @property(nonatomic) double displacementStrength;
 @property(nonatomic) double previewNormalStrength;
 @property(nonatomic) BOOL toonLightingEnabled;
@@ -45,12 +47,26 @@ typedef NS_ENUM(NSInteger, PWPreviewEnvironment) {
 @property(nonatomic) BOOL normalEnabled;
 @property(nonatomic) BOOL roughnessEnabled;
 @property(nonatomic) BOOL metalnessEnabled;
+@property(nonatomic) BOOL occlusionEnabled;
+@property(nonatomic) BOOL clearCoatEnabled;
+@property(nonatomic) BOOL emissiveEnabled;
+@property(nonatomic) BOOL anisotropyEnabled;
 
 - (void)setColourImage:(const paperweight::Image&)colour
             heightImage:(const paperweight::Image&)height
             normalImage:(const paperweight::Image&)normal
          roughnessImage:(const paperweight::Image&)roughness
           metalnessImage:(const paperweight::Image&)metalness;
+- (void)setColourImage:(const paperweight::Image&)colour
+            heightImage:(const paperweight::Image&)height
+            normalImage:(const paperweight::Image&)normal
+         roughnessImage:(const paperweight::Image&)roughness
+          metalnessImage:(const paperweight::Image&)metalness
+            coatingImage:(const paperweight::Image&)coating
+          occlusionImage:(const paperweight::Image&)occlusion
+           clearCoatImage:(const paperweight::Image&)clearCoat
+  clearCoatRoughnessImage:(const paperweight::Image&)clearCoatRoughness
+           emissiveImage:(const paperweight::Image&)emissive;
 - (void)clearMaterialImages;
 - (void)resetCamera;
 

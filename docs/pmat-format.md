@@ -1,4 +1,4 @@
-# `.pmat` format version 17
+# `.pmat` format version 18
 
 Paperweight material files are UTF-8 text. They are intended to be readable,
 diffable, and small enough to embed alongside game assets.
@@ -7,7 +7,7 @@ diffable, and small enough to embed alongside game assets.
 
 ```text
 # Paperweight procedural material
-pmat.version = 17
+pmat.version = 18
 material.type = fbm
 material.seed = 18431
 material.width = 1m
@@ -24,11 +24,22 @@ roughness.low = 0.25
 roughness.high = 0.85
 metalness.low = 0
 metalness.high = 0
+coating.low = 0
+coating.high = 0
+occlusion.low = 1
+occlusion.high = 1
+clearcoat.low = 0
+clearcoat.high = 0
+clearcoat.roughness_low = 0.1
+clearcoat.roughness_high = 0.1
+emissive.intensity = 0
+anisotropy.strength = 0
+anisotropy.rotation = 0
 surface.ior = 1.5
 layers.count = 1
 layer.0.enabled = true
 layer.0.operation = noise
-layer.0.outputs = colour, height, roughness, metalness
+layer.0.outputs = colour, height, roughness, metalness, coating, occlusion, clearcoat, clearcoat_roughness, emissive
 layer.0.composite = blend
 layer.0.opacity = 1
 layer.0.noise.seed_offset = 0
@@ -73,7 +84,7 @@ no material; it never returns a partially accepted definition.
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
-| `pmat.version` | File-format version | `1` through `17`; the serialiser writes `17` |
+| `pmat.version` | File-format version | `1` through `18`; the serialiser writes `18` |
 | `material.type` | Generator model | `fbm` |
 | `material.seed` | Deterministic seed | Unsigned 64-bit integer |
 | `material.width` | Width of one seamless material repeat | Metre value from `0.000001m` to `1000000m` |
@@ -90,11 +101,22 @@ no material; it never returns a partially accepted definition.
 | `roughness.high` | Roughness at scalar value one | Decimal from 0 to 1 |
 | `metalness.low` | Metalness at scalar value zero | Decimal from 0 to 1 |
 | `metalness.high` | Metalness at scalar value one | Decimal from 0 to 1 |
+| `coating.low` | Paint or coating coverage at scalar value zero | Decimal from 0 to 1 |
+| `coating.high` | Paint or coating coverage at scalar value one | Decimal from 0 to 1 |
+| `occlusion.low` | Ambient-occlusion visibility at scalar value zero | Decimal from 0 to 1 |
+| `occlusion.high` | Ambient-occlusion visibility at scalar value one | Decimal from 0 to 1 |
+| `clearcoat.low` | Clear-coat amount at scalar value zero | Decimal from 0 to 1 |
+| `clearcoat.high` | Clear-coat amount at scalar value one | Decimal from 0 to 1 |
+| `clearcoat.roughness_low` | Clear-coat roughness at scalar value zero | Decimal from 0 to 1 |
+| `clearcoat.roughness_high` | Clear-coat roughness at scalar value one | Decimal from 0 to 1 |
+| `emissive.intensity` | Linear multiplier applied to the routed emissive colour | Decimal from 0 to 16 |
+| `anisotropy.strength` | Brushed-reflection stretch, zero being isotropic | Decimal from 0 to 1 |
+| `anisotropy.rotation` | Brushing direction in texture space | Decimal degrees from -360 to 360 |
 | `surface.ior` | Index of refraction for dielectric reflection | Decimal from 1 to 4 |
 | `layers.count` | Number of ordered layers | Integer from 0 to 32 |
 
 The combination of frequency, octaves, and lacunarity must keep every lattice
-period at or below 4096. Roughness and metalness endpoints may be reversed if an
+period at or below 4096. Any low/high output endpoints may be reversed if an
 inverse relationship is wanted. IOR 1.5 produces the common dielectric F0 value
 of 0.04; IOR affects reflective presentation but never rewrites colour-map bytes.
 
@@ -114,7 +136,7 @@ Every layer `N` has these common keys:
 | --- | --- | --- |
 | `layer.N.enabled` | Whether evaluation includes this layer | `true` or `false` |
 | `layer.N.operation` | Reusable evaluation operation | See operation table below |
-| `layer.N.outputs` | Output branches affected by the layer | One or more of `colour`, `height`, `roughness`, `metalness` |
+| `layer.N.outputs` | Output branches affected by the layer | One or more of `colour`, `height`, `roughness`, `metalness`, `coating`, `occlusion`, `clearcoat`, `clearcoat_roughness`, or `emissive` |
 | `layer.N.composite` | How the result combines with accumulated input | `blend`, `add`, `multiply`, `minimum`, `maximum`, or `detail` |
 | `layer.N.opacity` | Composite amount | Decimal from 0 to 1 |
 
@@ -492,7 +514,7 @@ formula is applied to scalar, red, green, blue, and alpha channels.
 
 ## Graph compilation
 
-Paperweight v0.0.24 retains the layer syntax, now at version 17, as the compact,
+Paperweight v0.0.25 retains the layer syntax, now at version 18, as the compact,
 human-editable authoring projection. Before generation, the portable core
 compiles it into a directed acyclic material graph:
 
@@ -502,12 +524,12 @@ compiles it into a directed acyclic material graph:
   processing nodes;
 - enabled procedural masks become mask nodes;
 - layer composition behaviour becomes composite processing nodes;
-- colour, height, normal, roughness, and metalness receive explicit output nodes.
+- all ten material outputs receive explicit output nodes.
 
 Disabled layers compile as exact no-ops. Node metadata records the source layer
-for future diagnostics and incremental evaluation. Version-17 layers compile
-into independent colour, height/normal, roughness, and metalness branches according to
-`layer.N.outputs`. Materials whose enabled layers target all branches retain
+for future diagnostics and incremental evaluation. Version-18 layers compile
+into nine independent routed branches according to `layer.N.outputs`; normal
+continues to derive from height. Materials whose enabled layers target all branches retain
 the historical shared graph exactly. Portable C++ callers may also provide a
 direct graph through `GenerationRequest::graph`.
 
@@ -557,6 +579,13 @@ Format version 17 adds `metalness.low`, `metalness.high`, `surface.ior`, and the
 remapping contract as roughness. Files from versions 1 through 16 acquire zero
 metalness, IOR 1.5, and legacy all-channel routing when read.
 
+Format version 18 adds the coating, occlusion, clear-coat, clear-coat roughness,
+and emissive branches plus global remaps, emissive intensity, and anisotropy
+controls. Version-17 and older files acquire zero coating, full ambient
+visibility, zero clear coat, clear-coat roughness 0.1, zero emission, and zero
+anisotropy. Their newly routed branches are therefore visually neutral while
+their five historical maps remain byte-identical.
+
 ## Material outputs
 
 Every output derives from its routed graph branch at the same pixel centre:
@@ -567,6 +596,15 @@ Every output derives from its routed graph branch at the same pixel centre:
   final scalar, then writes linear greyscale UNORM8 with alpha 255.
 - Metalness interpolates between `metalness.low` and `metalness.high` using its
   routed final scalar, then writes linear greyscale UNORM8 with alpha 255.
+- Coating interpolates between `coating.low` and `coating.high`; it is a
+  general paint, varnish, or exposed-substrate coverage mask.
+- Occlusion interpolates between `occlusion.low` and `occlusion.high`, where one
+  means fully visible to indirect light and zero means fully occluded.
+- Clear coat and clear-coat roughness independently remap their routed scalar
+  through the corresponding low/high endpoints.
+- Emissive preserves the routed RGB colour, multiplies it by
+  `emissive.intensity`, clamps each channel to the linear UNORM8 range, and
+  preserves routed alpha.
 - Normal uses wrapped central differences of the height branch. Derivatives are
   measured per metre of requested coverage and multiplied by
   `surface.relief_depth` when present. The tangent-space vector
@@ -579,7 +617,7 @@ generation wrap mathematically across both tile axes.
 ## Compatibility policy
 
 The `.pmat` format version and Paperweight application version are separate.
-Paperweight v0.0.24 reads versions 1 through 17 and writes version 17. A reader
+Paperweight v0.0.25 reads versions 1 through 18 and writes version 18. A reader
 rejects unsupported versions and unknown fields so that it cannot quietly
 reinterpret a future material.
 
@@ -612,7 +650,9 @@ so every version-15 material retains byte-identical output. Version 17 adds an
 opt-in metalness branch and dielectric IOR. Version-16 and older files default
 to zero metalness and IOR 1.5, preserving every historical colour, height,
 normal, and roughness byte. Saving any older format performs the explicit
-migration to version 17.
+migration to version 18. Version 18 adds opt-in special-surface branches and
+neutral migration defaults; version-17 colour, height, normal, roughness, and
+metalness bytes remain unchanged.
 
 The portable entry points are `paperweight::parsePmat` and
 `paperweight::serialisePmat` in `include/paperweight/pmat.hpp`.

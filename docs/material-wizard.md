@@ -20,8 +20,9 @@ library. The wizard preserves progress while moving through four steps:
 3. **Design** - choose a starting seed, two ordinary material colours, and the
    template's compact construction, surface, and wear controls.
 4. **Choose** - generate four deterministic alternatives, compare their
-   thumbnails, and inspect the selected result in the full-size 2D or five-map
-   3D preview.
+   thumbnails, and inspect the selected result in the full-size 2D or ten-map
+   3D preview. The 3D view can switch between a square plane, sphere, cube, and
+   cylinder without regenerating the maps.
 
 Locks are available for seed, physical size, the colour pair, and every friendly
 template control. Alternative generation changes only unlocked values. The same
@@ -37,7 +38,7 @@ collects a friendly name, category, and tags, chooses a collision-free filename,
 and writes directly into the remembered working folder.
 
 Both routes produce an ordinary `Material`. Saving serialises the same readable
-version-17 `.pmat` text used elsewhere in Paperweight. Wizard state, locks,
+version-18 `.pmat` text used elsewhere in Paperweight. Wizard state, locks,
 family selection, comparison thumbnails, and preview mode are not serialised.
 
 ## Architecture

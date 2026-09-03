@@ -13,11 +13,27 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-v0.0.24 is the current Metals and Reflections release. The portable CPU core now
-generates a fifth deterministic metalness map, and `.pmat` version 17 stores
-metalness endpoints, per-layer metalness routing, and dielectric index of
-refraction. Metalness and IOR do not reinterpret the authored colour image, so
-all exported maps remain deterministic across worker counts and architectures.
+v0.0.25 is the current Coatings and Special Surfaces release. The portable CPU
+core now generates ten deterministic maps: colour, height, normal, roughness,
+metalness, coating, ambient occlusion, clear coat, clear-coat roughness, and
+emissive colour. `.pmat` version 18 gives every non-derived channel independent
+layer routing and readable remap or intensity controls. Older files acquire
+neutral special-surface defaults and retain every historical output byte.
+
+The MetalKit preview combines those maps without taking ownership of material
+generation. Clear coat is a separate dielectric lobe, ambient occlusion affects
+indirect light, emissive colour remains visible without illumination, and
+brushed-metal direction drives optional anisotropic reflection. The Material
+Design Wizard now offers a square plane alongside its sphere, cube, and cylinder,
+so planar materials can be judged without wrapping a brick wall around a ball.
+Glazed Ceramic, Lacquered Wood, Wet Stone, Machinery Panels, and Illuminated
+Science-Fiction Surface are bundled editable templates and wizard starting points.
+
+The v0.0.24 Metals and Reflections work remains available. The portable CPU core
+generates a deterministic metalness map, and `.pmat` stores metalness endpoints,
+per-layer routing, and dielectric index of refraction. Metalness and IOR do not
+reinterpret the authored colour image, so all exported maps remain deterministic
+across worker counts and architectures.
 
 The presentation-only MetalKit preview now uses a metallic/roughness lighting
 model with dielectric F0 derived from IOR, coloured metallic reflections, and a
@@ -29,7 +45,8 @@ and Corroded Metal are bundled editable templates with Material Design Wizard
 controls.
 
 The v0.0.23 Surface Channel Authoring work remains available. Layers can target
-colour, height (and its derived normal), roughness, and now metalness
+colour, height (and its derived normal), roughness, metalness, and the five
+special-surface channels
 independently. A material
 may declare physical relief depth in metres, making normal-map slopes independent
 of export resolution while correctly accounting for real-world repeat size;
@@ -44,7 +61,7 @@ The editor and Material Design Wizard expose the new controls directly. Polished
 Marble, Wet Mortar, Engraved Metal, and Varnished Wood demonstrate independently
 authored polish, wet joints, cut relief, brushing, and clear coat. Existing
 version-15 materials retain their byte-exact output through a dedicated legacy
-graph path; older material files migrate explicitly to readable version-17 `.pmat`.
+graph path; older material files migrate explicitly to readable version-18 `.pmat`.
 
 The v0.0.22 Library Workspace remains intact. Paperweight opens on the
 full material library instead of manufacturing an unnamed editor document.
@@ -83,17 +100,18 @@ Material**. It opens a four-step native workflow for choosing a material family
 and seedless starting recipe, setting the real-world repeat size, adjusting friendly
 construction, surface, colour, and wear controls, and comparing deterministic
 seeded alternatives. Any choice can be locked before variation. The wizard has
-live 2D and five-map 3D preview and finishes either in the complete layer editor
+live 2D and ten-map 3D preview and finishes either in the complete layer editor
 or directly in the remembered working-folder library.
 
 Family choices describe the actual material rather than incidental details:
 Metal includes Painted Metal, Weathered Metal, Engraved Metal, chrome, steel,
 copper, brass, painted steel, and corroded metal, while proven wood, marble,
 pebble, debris, and abstract showcases supplement the ten v0.0.18 reference
-templates where appropriate.
+templates where appropriate. The v0.0.25 glazed, lacquered, wet, coated-metal,
+and emissive recipes use the same ordinary family workflow.
 
 Wizard results are normal editable `Material` values and human-readable
-version-17 `.pmat` files. The wizard adds no evaluator, hidden recipe state, or
+version-18 `.pmat` files. The wizard adds no evaluator, hidden recipe state, or
 new serialisation format. The v0.0.19 working-folder browser, metadata,
 diagnostics, safe file operations, and selectable 64x64 through 1024x1024
 preview resolution remain available.
@@ -119,6 +137,7 @@ Native macOS AppKit frontend
 ```
 
 See [docs/architecture.md](docs/architecture.md),
+[docs/coatings-and-special-surfaces.md](docs/coatings-and-special-surfaces.md),
 [docs/metals-and-reflections.md](docs/metals-and-reflections.md),
 [docs/organic-structures.md](docs/organic-structures.md),
 [docs/reference-materials.md](docs/reference-materials.md),
@@ -151,18 +170,22 @@ chamfered roof slate, a diamond castle window, a detailed crate, decorative
 fasteners, masonry corner variation, cel courtyard gravel, scattered debris,
 an initial foliage population, cel forest bark, and layered castle foliage.
 The metal collection adds polished chrome, brushed steel, copper, brass,
-scratched painted steel, and corroded metal.
+scratched painted steel, and corroded metal. The special-surface collection adds
+glazed ceramic, lacquered wood, wet stone, machinery panels, and an illuminated
+science-fiction surface.
 File > New from Reference Template exposes the ten Blastard targets as seedless,
 caller-instantiated recipes with compact material-specific controls. The older
 Showcase menu remains available for direct access to the wider example set.
 Region Stones demonstrates repeatable
 per-cell variation, while Course Random gives every row one stable value.
 
-Format-version-1 through version-17 `.pmat` files open. Versions 1 through 16
+Format-version-1 through version-18 `.pmat` files open. Versions 1 through 17
 retain their historical output intact; saving migrates them to canonical format
-version 17. Version 16 adds output routing and optional physical relief without
+version 18. Version 16 adds output routing and optional physical relief without
 changing the legacy default. Version 17 adds metalness routing and dielectric
-optics; older files migrate to zero metalness and IOR 1.5. Exact block
+optics. Version 18 adds coating, occlusion, clear-coat, clear-coat roughness, and
+emissive routing plus anisotropy controls; older files migrate to neutral values.
+Exact block
 and parent-course keys are evaluator metadata, not pixel channels, so they are
 never stored in lossy floating-point form.
 The editor does not invent a redundant graph syntax for the existing layer recipe:
@@ -264,10 +287,11 @@ highlight threshold, and ambient contribution are adjustable, and exporting
 while enabled writes the clearly named baked result. See
 [the reference-material guide](docs/reference-materials.md).
 
-Choose 3D under Preview mode to inspect all five material maps together. Select
-a plane, sphere, cube, or cylinder; drag the object to orbit and scroll to zoom.
+Choose 3D under Preview mode to inspect all ten material maps together. Select
+a square plane, sphere, cube, or cylinder; drag the object to orbit and scroll to zoom.
 The map switches isolate colour, displacement, normal detail, roughness, and
-metalness.
+metalness, while separate toggles expose ambient occlusion, clear coat, emissive
+light, and anisotropy.
 Height and Normal adjust their display strength without modifying the material
 definition or exported maps. Lighting presets, manual phase, and Play Light make
 surface response visible from several directions. Loading a material chooses a
@@ -284,8 +308,8 @@ studio environments, their rotation and intensity, direct-light controls, and
 all GPU arithmetic remain inspection state only.
 
 Use Tools > Performance Benchmark (Command-Option-B) to run a visible benchmark
-suite at 64, 128, 256, 512, and 1024 pixels. Choose Colour, Height, Normal,
-Roughness, or Metalness before starting. The separate window shows timings,
+suite at 64, 128, 256, 512, and 1024 pixels. Choose any of the ten outputs before
+starting. The separate window shows timings,
 throughput,
 speed-up, and byte-identity for each material and size as they finish; it also
 supports cancellation and copy/save CSV for comparisons between machines. A
@@ -311,7 +335,7 @@ option defaults off under Emscripten and on for native builds. A request's
 `workerCount` may force one or more workers; zero selects the automatic policy.
 
 `examples/generate_graph.cpp` demonstrates a direct branched graph in which the
-five material outputs deliberately select different sources. Layer-oriented
+material outputs deliberately select different sources. Layer-oriented
 callers can continue using `GenerationRequest` exactly as before; the core
 compiles their material once per request. Set `physicalCoverage` when a caller
 needs more than the material's single default repeat.

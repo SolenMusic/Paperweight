@@ -271,6 +271,11 @@ GenerationResult generate(
     case MaterialOutput::normal:
     case MaterialOutput::roughness:
     case MaterialOutput::metalness:
+    case MaterialOutput::coating:
+    case MaterialOutput::occlusion:
+    case MaterialOutput::clearCoat:
+    case MaterialOutput::clearCoatRoughness:
+    case MaterialOutput::emissive:
         break;
     default:
         return GenerationError{
@@ -415,6 +420,41 @@ GenerationResult generate(
                         (request.material.metalnessHigh - request.material.metalnessLow) *
                             sample.scalar);
                     break;
+                case MaterialOutput::coating:
+                    row[x] = encodeScalar(
+                        request.material.coatingLow +
+                        (request.material.coatingHigh - request.material.coatingLow) *
+                            sample.scalar);
+                    break;
+                case MaterialOutput::occlusion:
+                    row[x] = encodeScalar(
+                        request.material.occlusionLow +
+                        (request.material.occlusionHigh - request.material.occlusionLow) *
+                            sample.scalar);
+                    break;
+                case MaterialOutput::clearCoat:
+                    row[x] = encodeScalar(
+                        request.material.clearCoatLow +
+                        (request.material.clearCoatHigh - request.material.clearCoatLow) *
+                            sample.scalar);
+                    break;
+                case MaterialOutput::clearCoatRoughness:
+                    row[x] = encodeScalar(
+                        request.material.clearCoatRoughnessLow +
+                        (request.material.clearCoatRoughnessHigh -
+                         request.material.clearCoatRoughnessLow) * sample.scalar);
+                    break;
+                case MaterialOutput::emissive: {
+                    auto colour = encodeColour(sample);
+                    colour.red = toUnorm8(
+                        sample.red * request.material.emissiveIntensity);
+                    colour.green = toUnorm8(
+                        sample.green * request.material.emissiveIntensity);
+                    colour.blue = toUnorm8(
+                        sample.blue * request.material.emissiveIntensity);
+                    row[x] = colour;
+                    break;
+                }
                 case MaterialOutput::normal:
                     break;
                 }

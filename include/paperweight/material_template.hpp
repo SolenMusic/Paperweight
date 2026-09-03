@@ -29,6 +29,17 @@ struct MaterialRecipe {
     double metalnessLow{0.0};
     double metalnessHigh{0.0};
     double dielectricIor{1.5};
+    double coatingLow{0.0};
+    double coatingHigh{0.0};
+    double occlusionLow{1.0};
+    double occlusionHigh{1.0};
+    double clearCoatLow{0.0};
+    double clearCoatHigh{0.0};
+    double clearCoatRoughnessLow{0.1};
+    double clearCoatRoughnessHigh{0.1};
+    double emissiveIntensity{0.0};
+    double anisotropyStrength{0.0};
+    double anisotropyRotationDegrees{0.0};
 
     friend bool operator==(const MaterialRecipe&, const MaterialRecipe&) = default;
 };
@@ -77,6 +88,17 @@ enum class TemplateProperty : std::uint8_t {
     metalnessLow,
     metalnessHigh,
     dielectricIor,
+    coatingLow,
+    coatingHigh,
+    occlusionLow,
+    occlusionHigh,
+    clearCoatLow,
+    clearCoatHigh,
+    clearCoatRoughnessLow,
+    clearCoatRoughnessHigh,
+    emissiveIntensity,
+    anisotropyStrength,
+    anisotropyRotationDegrees,
 };
 
 struct TemplateControlBinding {

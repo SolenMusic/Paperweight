@@ -333,6 +333,28 @@ and Corroded Metal are ordinary editable PMAT templates, wizard starting points,
 and benchmark inputs. Tracked by
 [roadmap issue #254](https://github.com/SolenMusic/Paperweight/issues/254).
 
+## v0.0.25 - Coatings and Special Surfaces
+
+Implemented: expand the portable output model from five to ten deterministic
+maps. Coating provides an explicit paint or exposed-substrate mask; ambient
+occlusion records cavity visibility; clear coat and clear-coat roughness define
+an independent varnish/glaze lobe; and emissive preserves routed colour with a
+material intensity. Every new branch has independent per-layer routing. PMAT
+format 18 stores these controls and brushed-metal anisotropy readably while
+migrating older files to neutral values without changing any historical map.
+
+The presentation-only Metal renderer now evaluates ambient occlusion, clear
+coat, emission, and directional anisotropic reflection. The Material Design
+Wizard adds a square-plane inspection mesh alongside sphere, cube, and cylinder;
+changing shape reuses the completed ten-map preview. Glazed Ceramic, Lacquered
+Wood, Wet Stone, Machinery Panels, and Illuminated Science-Fiction Surface are
+ordinary editable templates with friendly wizard controls.
+
+All ten outputs are tested for one/multiple-worker identity. PMAT migration,
+template round-trips, pack generation, seamless repetition, and ARM64/x86-64
+builds remain exact acceptance gates. Tracked by
+[roadmap issue #262](https://github.com/SolenMusic/Paperweight/issues/262).
+
 ## v0.1.0 - Game Library
 
 Stabilise the embedding API and add material-definition versioning, generator

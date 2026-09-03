@@ -30,6 +30,11 @@ bool validMaterialOutput(MaterialOutput output)
     case MaterialOutput::normal:
     case MaterialOutput::roughness:
     case MaterialOutput::metalness:
+    case MaterialOutput::coating:
+    case MaterialOutput::occlusion:
+    case MaterialOutput::clearCoat:
+    case MaterialOutput::clearCoatRoughness:
+    case MaterialOutput::emissive:
         return true;
     }
     return false;
@@ -605,12 +610,22 @@ GraphCompilationResult compileMaterialGraph(const Material& material)
     GraphNodeId heightInput = invalidGraphNodeId;
     GraphNodeId roughnessInput = invalidGraphNodeId;
     GraphNodeId metalnessInput = invalidGraphNodeId;
+    GraphNodeId coatingInput = invalidGraphNodeId;
+    GraphNodeId occlusionInput = invalidGraphNodeId;
+    GraphNodeId clearCoatInput = invalidGraphNodeId;
+    GraphNodeId clearCoatRoughnessInput = invalidGraphNodeId;
+    GraphNodeId emissiveInput = invalidGraphNodeId;
     if (material.layers.empty()) {
         const auto noise = addGenerator(NoiseOperation{}, {}, std::nullopt);
         colourInput = noise;
         heightInput = noise;
         roughnessInput = noise;
         metalnessInput = noise;
+        coatingInput = noise;
+        occlusionInput = noise;
+        clearCoatInput = noise;
+        clearCoatRoughnessInput = noise;
+        emissiveInput = noise;
     } else {
         const auto base = addGenerator(
             SolidColourOperation{Rgba8{0, 0, 0, 0}},
@@ -641,13 +656,24 @@ GraphCompilationResult compileMaterialGraph(const Material& material)
             heightInput = accumulated;
             roughnessInput = accumulated;
             metalnessInput = accumulated;
+            coatingInput = accumulated;
+            occlusionInput = accumulated;
+            clearCoatInput = accumulated;
+            clearCoatRoughnessInput = accumulated;
+            emissiveInput = accumulated;
         } else {
-            std::array<GraphNodeId, 4> accumulated{base, base, base, base};
+            std::array<GraphNodeId, 9> accumulated{
+                base, base, base, base, base, base, base, base, base};
             constexpr std::array routedOutputs{
                 MaterialOutput::colour,
                 MaterialOutput::height,
                 MaterialOutput::roughness,
                 MaterialOutput::metalness,
+                MaterialOutput::coating,
+                MaterialOutput::occlusion,
+                MaterialOutput::clearCoat,
+                MaterialOutput::clearCoatRoughness,
+                MaterialOutput::emissive,
             };
             for (std::size_t layerIndex = 0;
                  layerIndex < material.layers.size();
@@ -674,6 +700,11 @@ GraphCompilationResult compileMaterialGraph(const Material& material)
             heightInput = accumulated[1];
             roughnessInput = accumulated[2];
             metalnessInput = accumulated[3];
+            coatingInput = accumulated[4];
+            occlusionInput = accumulated[5];
+            clearCoatInput = accumulated[6];
+            clearCoatRoughnessInput = accumulated[7];
+            emissiveInput = accumulated[8];
         }
     }
 
@@ -682,6 +713,12 @@ GraphCompilationResult compileMaterialGraph(const Material& material)
     graph.nodes.emplace_back(OutputNode{nextId++, MaterialOutput::normal, heightInput});
     graph.nodes.emplace_back(OutputNode{nextId++, MaterialOutput::roughness, roughnessInput});
     graph.nodes.emplace_back(OutputNode{nextId++, MaterialOutput::metalness, metalnessInput});
+    graph.nodes.emplace_back(OutputNode{nextId++, MaterialOutput::coating, coatingInput});
+    graph.nodes.emplace_back(OutputNode{nextId++, MaterialOutput::occlusion, occlusionInput});
+    graph.nodes.emplace_back(OutputNode{nextId++, MaterialOutput::clearCoat, clearCoatInput});
+    graph.nodes.emplace_back(OutputNode{
+        nextId++, MaterialOutput::clearCoatRoughness, clearCoatRoughnessInput});
+    graph.nodes.emplace_back(OutputNode{nextId++, MaterialOutput::emissive, emissiveInput});
     if (const auto error = validateMaterialGraph(graph)) {
         return *error;
     }

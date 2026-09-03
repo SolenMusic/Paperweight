@@ -41,6 +41,17 @@ enum class Field : std::size_t {
     metalnessLow,
     metalnessHigh,
     dielectricIor,
+    coatingLow,
+    coatingHigh,
+    occlusionLow,
+    occlusionHigh,
+    clearCoatLow,
+    clearCoatHigh,
+    clearCoatRoughnessLow,
+    clearCoatRoughnessHigh,
+    emissiveIntensity,
+    anisotropyStrength,
+    anisotropyRotation,
     layerCount,
     count,
 };
@@ -69,6 +80,17 @@ constexpr std::array<std::string_view, static_cast<std::size_t>(Field::count)> f
     "metalness.low",
     "metalness.high",
     "surface.ior",
+    "coating.low",
+    "coating.high",
+    "occlusion.low",
+    "occlusion.high",
+    "clearcoat.low",
+    "clearcoat.high",
+    "clearcoat.roughness_low",
+    "clearcoat.roughness_high",
+    "emissive.intensity",
+    "anisotropy.strength",
+    "anisotropy.rotation",
     "layers.count",
 };
 
@@ -555,6 +577,11 @@ std::string formatLayerOutputs(const LayerOutputRouting& outputs)
     if (outputs.height) append("height");
     if (outputs.roughness) append("roughness");
     if (outputs.metalness) append("metalness");
+    if (outputs.coating) append("coating");
+    if (outputs.occlusion) append("occlusion");
+    if (outputs.clearCoat) append("clearcoat");
+    if (outputs.clearCoatRoughness) append("clearcoat_roughness");
+    if (outputs.emissive) append("emissive");
     return value;
 }
 
@@ -583,7 +610,8 @@ std::optional<CompositeMode> parseCompositeMode(std::string_view value)
 
 std::optional<LayerOutputRouting> parseLayerOutputs(std::string_view value)
 {
-    LayerOutputRouting outputs{false, false, false, false};
+    LayerOutputRouting outputs{
+        false, false, false, false, false, false, false, false, false};
     std::size_t offset = 0;
     while (offset <= value.size()) {
         const auto comma = value.find(',', offset);
@@ -598,6 +626,16 @@ std::optional<LayerOutputRouting> parseLayerOutputs(std::string_view value)
             destination = &outputs.roughness;
         } else if (output == "metalness") {
             destination = &outputs.metalness;
+        } else if (output == "coating") {
+            destination = &outputs.coating;
+        } else if (output == "occlusion") {
+            destination = &outputs.occlusion;
+        } else if (output == "clearcoat") {
+            destination = &outputs.clearCoat;
+        } else if (output == "clearcoat_roughness") {
+            destination = &outputs.clearCoatRoughness;
+        } else if (output == "emissive") {
+            destination = &outputs.emissive;
         } else {
             return std::nullopt;
         }
@@ -610,7 +648,9 @@ std::optional<LayerOutputRouting> parseLayerOutputs(std::string_view value)
         }
         offset = comma + 1;
     }
-    if (!outputs.colour && !outputs.height && !outputs.roughness && !outputs.metalness) {
+    if (!outputs.colour && !outputs.height && !outputs.roughness && !outputs.metalness &&
+        !outputs.coating && !outputs.occlusion && !outputs.clearCoat &&
+        !outputs.clearCoatRoughness && !outputs.emissive) {
         return std::nullopt;
     }
     return outputs;
@@ -1593,6 +1633,61 @@ ParseResult parsePmat(std::string_view text)
                         return diagnostic(lineNumber, valueColumn, "surface.ior must be a decimal number");
                     }
                     break;
+                case Field::coatingLow:
+                    if (!parseDouble(value, material.coatingLow)) {
+                        return diagnostic(lineNumber, valueColumn, "coating.low must be a decimal number");
+                    }
+                    break;
+                case Field::coatingHigh:
+                    if (!parseDouble(value, material.coatingHigh)) {
+                        return diagnostic(lineNumber, valueColumn, "coating.high must be a decimal number");
+                    }
+                    break;
+                case Field::occlusionLow:
+                    if (!parseDouble(value, material.occlusionLow)) {
+                        return diagnostic(lineNumber, valueColumn, "occlusion.low must be a decimal number");
+                    }
+                    break;
+                case Field::occlusionHigh:
+                    if (!parseDouble(value, material.occlusionHigh)) {
+                        return diagnostic(lineNumber, valueColumn, "occlusion.high must be a decimal number");
+                    }
+                    break;
+                case Field::clearCoatLow:
+                    if (!parseDouble(value, material.clearCoatLow)) {
+                        return diagnostic(lineNumber, valueColumn, "clearcoat.low must be a decimal number");
+                    }
+                    break;
+                case Field::clearCoatHigh:
+                    if (!parseDouble(value, material.clearCoatHigh)) {
+                        return diagnostic(lineNumber, valueColumn, "clearcoat.high must be a decimal number");
+                    }
+                    break;
+                case Field::clearCoatRoughnessLow:
+                    if (!parseDouble(value, material.clearCoatRoughnessLow)) {
+                        return diagnostic(lineNumber, valueColumn, "clearcoat.roughness_low must be a decimal number");
+                    }
+                    break;
+                case Field::clearCoatRoughnessHigh:
+                    if (!parseDouble(value, material.clearCoatRoughnessHigh)) {
+                        return diagnostic(lineNumber, valueColumn, "clearcoat.roughness_high must be a decimal number");
+                    }
+                    break;
+                case Field::emissiveIntensity:
+                    if (!parseDouble(value, material.emissiveIntensity)) {
+                        return diagnostic(lineNumber, valueColumn, "emissive.intensity must be a decimal number");
+                    }
+                    break;
+                case Field::anisotropyStrength:
+                    if (!parseDouble(value, material.anisotropyStrength)) {
+                        return diagnostic(lineNumber, valueColumn, "anisotropy.strength must be a decimal number");
+                    }
+                    break;
+                case Field::anisotropyRotation:
+                    if (!parseDouble(value, material.anisotropyRotationDegrees)) {
+                        return diagnostic(lineNumber, valueColumn, "anisotropy.rotation must be decimal degrees");
+                    }
+                    break;
                 case Field::layerCount:
                     if (!parseInteger(value, layerCount)) {
                         return diagnostic(lineNumber, valueColumn, "layers.count must be an integer");
@@ -1665,7 +1760,7 @@ ParseResult parsePmat(std::string_view text)
                         return diagnostic(
                             lineNumber,
                             valueColumn,
-                            "layer outputs must list one or more of 'colour', 'height', 'roughness', and 'metalness' without duplicates");
+                            "layer outputs must list one or more supported material channels without duplicates");
                     }
                     if (!storeValue(builder.outputs, *parsed, lineNumber, valueColumn)) {
                         return duplicate();
@@ -3284,8 +3379,17 @@ ParseResult parsePmat(std::string_view text)
         const bool introducedInVersionSeventeen =
             field == Field::metalnessLow || field == Field::metalnessHigh ||
             field == Field::dielectricIor;
+        const bool introducedInVersionEighteen =
+            field == Field::coatingLow || field == Field::coatingHigh ||
+            field == Field::occlusionLow || field == Field::occlusionHigh ||
+            field == Field::clearCoatLow || field == Field::clearCoatHigh ||
+            field == Field::clearCoatRoughnessLow ||
+            field == Field::clearCoatRoughnessHigh ||
+            field == Field::emissiveIntensity || field == Field::anisotropyStrength ||
+            field == Field::anisotropyRotation;
         if (!seen[index] && !optionalInVersionOne &&
             !optionalMetadata && !optionalSurfaceAuthoring &&
+            !(formatVersion < 18 && introducedInVersionEighteen) &&
             !(formatVersion < 17 && introducedInVersionSeventeen) &&
             !(formatVersion < 6 && introducedInVersionSix)) {
             return diagnostic(
@@ -3333,6 +3437,30 @@ ParseResult parsePmat(std::string_view text)
             "metalness and dielectric optics require .pmat version 17");
     }
 
+    if (formatVersion < 18) {
+        constexpr std::array versionEighteenFields{
+            Field::coatingLow,
+            Field::coatingHigh,
+            Field::occlusionLow,
+            Field::occlusionHigh,
+            Field::clearCoatLow,
+            Field::clearCoatHigh,
+            Field::clearCoatRoughnessLow,
+            Field::clearCoatRoughnessHigh,
+            Field::emissiveIntensity,
+            Field::anisotropyStrength,
+            Field::anisotropyRotation,
+        };
+        for (const auto field : versionEighteenFields) {
+            if (seen[static_cast<std::size_t>(field)]) {
+                return diagnostic(
+                    lineNumber + 1,
+                    1,
+                    "coatings and special-surface fields require .pmat version 18");
+            }
+        }
+    }
+
     if (formatVersion == 1) {
         if (seen[static_cast<std::size_t>(Field::layerCount)] || !layerBuilders.empty()) {
             return diagnostic(lineNumber + 1, 1, "layer stacks require .pmat version 2");
@@ -3368,6 +3496,16 @@ ParseResult parsePmat(std::string_view text)
                     builder.outputs.line,
                     builder.outputs.column,
                     "metalness output routing requires .pmat version 17");
+            }
+            if (formatVersion < 18 && builder.outputs.value &&
+                (builder.outputs.value->coating || builder.outputs.value->occlusion ||
+                 builder.outputs.value->clearCoat ||
+                 builder.outputs.value->clearCoatRoughness ||
+                 builder.outputs.value->emissive)) {
+                return diagnostic(
+                    builder.outputs.line,
+                    builder.outputs.column,
+                    "coating, occlusion, clear-coat, and emissive routing require .pmat version 18");
             }
             if (formatVersion < 16 &&
                 ((builder.outputs.value &&
@@ -3615,6 +3753,16 @@ ParseResult parsePmat(std::string_view text)
                 // Metalness did not exist yet. Preserve the legacy meaning of an
                 // all-channel layer now that a fifth deterministic map exists.
                 layer.outputs.metalness = true;
+            }
+            if (formatVersion < 18) {
+                // Version 18 adds five channels. Neutral material-level defaults
+                // make them inert while all-channel migration preserves the
+                // historical shared graph used by old definitions.
+                layer.outputs.coating = true;
+                layer.outputs.occlusion = true;
+                layer.outputs.clearCoat = true;
+                layer.outputs.clearCoatRoughness = true;
+                layer.outputs.emissive = true;
             }
             if (formatVersion >= 3) {
                 layer.transform = CoordinateTransform{
@@ -5245,6 +5393,44 @@ ParseResult parsePmat(std::string_view text)
                        material.dielectricIor < MaterialLimits::minimumDielectricIor ||
                        material.dielectricIor > MaterialLimits::maximumDielectricIor) {
                 relevantField = Field::dielectricIor;
+            } else if (!std::isfinite(material.coatingLow) ||
+                       material.coatingLow < 0.0 || material.coatingLow > 1.0) {
+                relevantField = Field::coatingLow;
+            } else if (!std::isfinite(material.coatingHigh) ||
+                       material.coatingHigh < 0.0 || material.coatingHigh > 1.0) {
+                relevantField = Field::coatingHigh;
+            } else if (!std::isfinite(material.occlusionLow) ||
+                       material.occlusionLow < 0.0 || material.occlusionLow > 1.0) {
+                relevantField = Field::occlusionLow;
+            } else if (!std::isfinite(material.occlusionHigh) ||
+                       material.occlusionHigh < 0.0 || material.occlusionHigh > 1.0) {
+                relevantField = Field::occlusionHigh;
+            } else if (!std::isfinite(material.clearCoatLow) ||
+                       material.clearCoatLow < 0.0 || material.clearCoatLow > 1.0) {
+                relevantField = Field::clearCoatLow;
+            } else if (!std::isfinite(material.clearCoatHigh) ||
+                       material.clearCoatHigh < 0.0 || material.clearCoatHigh > 1.0) {
+                relevantField = Field::clearCoatHigh;
+            } else if (!std::isfinite(material.clearCoatRoughnessLow) ||
+                       material.clearCoatRoughnessLow < 0.0 ||
+                       material.clearCoatRoughnessLow > 1.0) {
+                relevantField = Field::clearCoatRoughnessLow;
+            } else if (!std::isfinite(material.clearCoatRoughnessHigh) ||
+                       material.clearCoatRoughnessHigh < 0.0 ||
+                       material.clearCoatRoughnessHigh > 1.0) {
+                relevantField = Field::clearCoatRoughnessHigh;
+            } else if (!std::isfinite(material.emissiveIntensity) ||
+                       material.emissiveIntensity < 0.0 ||
+                       material.emissiveIntensity > 1.0) {
+                relevantField = Field::emissiveIntensity;
+            } else if (!std::isfinite(material.anisotropyStrength) ||
+                       material.anisotropyStrength < 0.0 ||
+                       material.anisotropyStrength > 1.0) {
+                relevantField = Field::anisotropyStrength;
+            } else if (!std::isfinite(material.anisotropyRotationDegrees) ||
+                       material.anisotropyRotationDegrees < 0.0 ||
+                       material.anisotropyRotationDegrees > 360.0) {
+                relevantField = Field::anisotropyRotation;
             }
         }
         const auto index = static_cast<std::size_t>(relevantField);
@@ -5265,6 +5451,17 @@ SerialisationResult serialisePmat(const Material& material)
     const auto metalnessLow = formatDouble(material.metalnessLow);
     const auto metalnessHigh = formatDouble(material.metalnessHigh);
     const auto dielectricIor = formatDouble(material.dielectricIor);
+    const auto coatingLow = formatDouble(material.coatingLow);
+    const auto coatingHigh = formatDouble(material.coatingHigh);
+    const auto occlusionLow = formatDouble(material.occlusionLow);
+    const auto occlusionHigh = formatDouble(material.occlusionHigh);
+    const auto clearCoatLow = formatDouble(material.clearCoatLow);
+    const auto clearCoatHigh = formatDouble(material.clearCoatHigh);
+    const auto clearCoatRoughnessLow = formatDouble(material.clearCoatRoughnessLow);
+    const auto clearCoatRoughnessHigh = formatDouble(material.clearCoatRoughnessHigh);
+    const auto emissiveIntensity = formatDouble(material.emissiveIntensity);
+    const auto anisotropyStrength = formatDouble(material.anisotropyStrength);
+    const auto anisotropyRotation = formatDouble(material.anisotropyRotationDegrees);
     const auto physicalWidth = formatMetres(material.physicalSize.widthMetres);
     const auto physicalHeight = formatMetres(material.physicalSize.heightMetres);
     const auto reliefDepth = material.reliefDepthMetres
@@ -5272,6 +5469,11 @@ SerialisationResult serialisePmat(const Material& material)
         : std::string{};
     if (gain.empty() || normalStrength.empty() || roughnessLow.empty() || roughnessHigh.empty() ||
         metalnessLow.empty() || metalnessHigh.empty() || dielectricIor.empty() ||
+        coatingLow.empty() || coatingHigh.empty() || occlusionLow.empty() ||
+        occlusionHigh.empty() || clearCoatLow.empty() || clearCoatHigh.empty() ||
+        clearCoatRoughnessLow.empty() || clearCoatRoughnessHigh.empty() ||
+        emissiveIntensity.empty() || anisotropyStrength.empty() ||
+        anisotropyRotation.empty() ||
         physicalWidth.empty() || physicalHeight.empty()) {
         return SerialisationError{"could not format a decimal material parameter"};
     }
@@ -5327,6 +5529,17 @@ SerialisationResult serialisePmat(const Material& material)
     output += "metalness.low = " + metalnessLow + "\n";
     output += "metalness.high = " + metalnessHigh + "\n";
     output += "surface.ior = " + dielectricIor + "\n";
+    output += "coating.low = " + coatingLow + "\n";
+    output += "coating.high = " + coatingHigh + "\n";
+    output += "occlusion.low = " + occlusionLow + "\n";
+    output += "occlusion.high = " + occlusionHigh + "\n";
+    output += "clearcoat.low = " + clearCoatLow + "\n";
+    output += "clearcoat.high = " + clearCoatHigh + "\n";
+    output += "clearcoat.roughness_low = " + clearCoatRoughnessLow + "\n";
+    output += "clearcoat.roughness_high = " + clearCoatRoughnessHigh + "\n";
+    output += "emissive.intensity = " + emissiveIntensity + "\n";
+    output += "anisotropy.strength = " + anisotropyStrength + "\n";
+    output += "anisotropy.rotation = " + anisotropyRotation + "\n";
     output += "layers.count = " + std::to_string(material.layers.size()) + "\n";
 
     for (std::size_t index = 0; index < material.layers.size(); ++index) {

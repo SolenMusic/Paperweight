@@ -129,8 +129,8 @@ cells whose leaves cannot geometrically reach the sample.
 
 ## Exact-output gate
 
-The core tests contain golden FNV-1a checksums for colour, height, normal, and
-roughness or metalness outputs from the detailed surface, stylised, region, and course-layout
+The core tests contain golden FNV-1a checksums for historical and current
+material outputs from the detailed surface, stylised, region, and course-layout
 showcases through v0.0.18, including constructed surfaces, analytic shapes,
 mask Boolean operations, integer-winding lattices, and deterministic scatter
 populations with candidate-centre masks, anisotropic bark regions, branching
