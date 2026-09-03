@@ -594,6 +594,12 @@ std::optional<std::string> validateMaterial(const Material& material)
         material.normalStrength > MaterialLimits::maximumNormalStrength) {
         return "normal strength must be finite and between 0 and 16";
     }
+    if (material.reliefDepthMetres &&
+        (!std::isfinite(*material.reliefDepthMetres) ||
+         *material.reliefDepthMetres < MaterialLimits::minimumReliefDepthMetres ||
+         *material.reliefDepthMetres > MaterialLimits::maximumReliefDepthMetres)) {
+        return "surface relief depth must be finite and between 0m and 1000000m";
+    }
     if (!std::isfinite(material.roughnessLow) ||
         material.roughnessLow < MaterialLimits::minimumRoughness ||
         material.roughnessLow > MaterialLimits::maximumRoughness) {
@@ -618,12 +624,18 @@ std::optional<std::string> validateMaterial(const Material& material)
         case CompositeMode::blend:
         case CompositeMode::add:
         case CompositeMode::multiply:
+        case CompositeMode::minimum:
+        case CompositeMode::maximum:
+        case CompositeMode::detail:
             break;
         default:
             return prefix + "composite mode is not supported";
         }
         if (layer.operation.valueless_by_exception()) {
             return prefix + "operation has no value";
+        }
+        if (!layer.outputs.colour && !layer.outputs.height && !layer.outputs.roughness) {
+            return prefix + "must target at least one output channel";
         }
         if (layer.transform.scaleX < LayerLimits::minimumScale ||
             layer.transform.scaleX > LayerLimits::maximumScale ||
@@ -666,7 +678,13 @@ std::optional<std::string> validateMaterial(const Material& material)
         const auto operationError = std::visit(
             [&prefix, &material](const auto& operation) -> std::optional<std::string> {
                 using Operation = std::decay_t<decltype(operation)>;
-                if constexpr (std::is_same_v<Operation, LevelsOperation>) {
+                if constexpr (std::is_same_v<Operation, SurfaceValueOperation>) {
+                    if (!std::isfinite(operation.value) ||
+                        operation.value < LayerLimits::minimumLevel ||
+                        operation.value > LayerLimits::maximumLevel) {
+                        return prefix + "surface value must be finite and between 0 and 1";
+                    }
+                } else if constexpr (std::is_same_v<Operation, LevelsOperation>) {
                     if (!std::isfinite(operation.inputLow) ||
                         !std::isfinite(operation.inputHigh) ||
                         operation.inputLow < LayerLimits::minimumLevel ||

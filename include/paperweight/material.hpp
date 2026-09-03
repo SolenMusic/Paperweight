@@ -37,6 +37,7 @@ struct Material {
     std::vector<MaterialLayer> layers;
     PhysicalSize physicalSize;
     std::optional<MaterialMetadata> metadata;
+    std::optional<double> reliefDepthMetres;
 
     friend bool operator==(const Material&, const Material&) = default;
 };
@@ -54,6 +55,8 @@ struct MaterialLimits {
     static constexpr double maximumNormalStrength = 16.0;
     static constexpr double minimumRoughness = 0.0;
     static constexpr double maximumRoughness = 1.0;
+    static constexpr double minimumReliefDepthMetres = 0.0;
+    static constexpr double maximumReliefDepthMetres = 1000000.0;
     static constexpr std::uint32_t maximumLatticePeriod = 4096;
     static constexpr std::size_t maximumNameLength = 128;
     static constexpr std::size_t maximumDescriptionLength = 512;

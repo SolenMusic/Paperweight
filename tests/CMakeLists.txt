@@ -32,6 +32,10 @@ foreach(showcase IN ITEMS
     toon-dungeon
     painted-metal
     graphic-marble
+    polished-marble
+    wet-mortar
+    engraved-metal
+    varnished-wood
     region-stones
     castle-flagstone
     castle-stone

@@ -1,4 +1,4 @@
-# `.pmat` format version 15
+# `.pmat` format version 16
 
 Paperweight material files are UTF-8 text. They are intended to be readable,
 diffable, and small enough to embed alongside game assets.
@@ -7,11 +7,12 @@ diffable, and small enough to embed alongside game assets.
 
 ```text
 # Paperweight procedural material
-pmat.version = 15
+pmat.version = 16
 material.type = fbm
 material.seed = 18431
 material.width = 1m
 material.height = 1m
+surface.relief_depth = 0.003m
 colour.low = 0x000000FF
 colour.high = 0xFFFFFFFF
 noise.frequency = 4
@@ -24,6 +25,7 @@ roughness.high = 0.85
 layers.count = 1
 layer.0.enabled = true
 layer.0.operation = noise
+layer.0.outputs = colour, height, roughness
 layer.0.composite = blend
 layer.0.opacity = 1
 layer.0.noise.seed_offset = 0
@@ -68,18 +70,19 @@ no material; it never returns a partially accepted definition.
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
-| `pmat.version` | File-format version | `1` through `15`; the serialiser writes `15` |
+| `pmat.version` | File-format version | `1` through `16`; the serialiser writes `16` |
 | `material.type` | Generator model | `fbm` |
 | `material.seed` | Deterministic seed | Unsigned 64-bit integer |
 | `material.width` | Width of one seamless material repeat | Metre value from `0.000001m` to `1000000m` |
 | `material.height` | Height of one seamless material repeat | Metre value from `0.000001m` to `1000000m` |
+| `surface.relief_depth` | Optional real distance represented by height zero through one | Metre value from `0m` to `1000000m` |
 | `colour.low` | Low colour and threshold endpoint | `0xRRGGBBAA` hexadecimal |
 | `colour.high` | High colour and threshold endpoint | `0xRRGGBBAA` hexadecimal |
 | `noise.frequency` | Base lattice frequency for noise operations | Integer from 1 to 64 |
 | `noise.octaves` | FBM octave count | Integer from 1 to 8 |
 | `noise.lacunarity` | Frequency multiplier per octave | Integer from 1 to 4 |
 | `noise.gain` | Amplitude multiplier per octave | Decimal from 0.1 to 0.9 |
-| `normal.strength` | Tangent-space normal slope multiplier | Decimal from 0 to 16 |
+| `normal.strength` | Optional artistic multiplier after physical normal calculation | Decimal from 0 to 16 |
 | `roughness.low` | Roughness at scalar value zero | Decimal from 0 to 1 |
 | `roughness.high` | Roughness at scalar value one | Decimal from 0 to 1 |
 | `layers.count` | Number of ordered layers | Integer from 0 to 32 |
@@ -104,7 +107,8 @@ Every layer `N` has these common keys:
 | --- | --- | --- |
 | `layer.N.enabled` | Whether evaluation includes this layer | `true` or `false` |
 | `layer.N.operation` | Reusable evaluation operation | See operation table below |
-| `layer.N.composite` | How the result combines with accumulated input | `blend`, `add`, or `multiply` |
+| `layer.N.outputs` | Output branches affected by the layer | One or more of `colour`, `height`, `roughness` |
+| `layer.N.composite` | How the result combines with accumulated input | `blend`, `add`, `multiply`, `minimum`, `maximum`, or `detail` |
 | `layer.N.opacity` | Composite amount | Decimal from 0 to 1 |
 
 The operation selects exactly one parameter group:
@@ -113,6 +117,7 @@ The operation selects exactly one parameter group:
 | --- | --- | --- |
 | `noise` | `layer.N.noise.seed_offset` | Unsigned 64-bit integer |
 | `solid_colour` | `layer.N.solid.colour` | `0xRRGGBBAA` hexadecimal |
+| `surface_value` | `layer.N.surface.value` | Decimal from 0 to 1 |
 | `levels` | `layer.N.levels.input_low` | Decimal from 0 to 1 |
 | `levels` | `layer.N.levels.input_high` | Decimal from 0 to 1 and greater than input low |
 | `levels` | `layer.N.levels.gamma` | Decimal from 0.1 to 4 |
@@ -448,7 +453,7 @@ Offsets are continuous and wrap naturally. When enabled, warp uses two
 independent periodic FBM channels to displace the transformed coordinates.
 Disabling warp, or setting its strength to zero, is exactly the identity path.
 
-Every layer in versions 3 through 14 also declares its optional mask:
+Every layer in versions 3 through 16 also declares its optional mask:
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
@@ -462,7 +467,7 @@ The mask samples an independent periodic FBM field in the layer's transformed
 coordinates. Its remapped value multiplies the layer opacity, allowing smooth,
 threshold-like, or inverted spatial control without changing the operation.
 Disabled masks evaluate to exactly one. Transform, warp, and mask fields remain
-required in versions 3 through 14 even when their optional features are disabled; this
+required in versions 3 through 16 even when their optional features are disabled; this
 keeps canonical files explicit and round trips unambiguous.
 
 Noise seed offset zero reproduces the original material seed exactly. Other
@@ -473,12 +478,14 @@ accumulated input; threshold selects `colour.low` or `colour.high`.
 
 Blend interpolates between the accumulated and source values. Add sums the
 opacity-scaled source and clamps it to the normalised range. Multiply scales the
-accumulated value towards a full multiplication according to opacity. The same
+accumulated value towards a full multiplication according to opacity. Minimum
+and maximum move towards the lower or higher value. Detail adds a source centred
+around 0.5, making it suitable for fine relief and roughness variation. The same
 formula is applied to scalar, red, green, blue, and alpha channels.
 
 ## Graph compilation
 
-Paperweight v0.0.20 retains the layer syntax, now at version 15, as the compact,
+Paperweight v0.0.23 retains the layer syntax, now at version 16, as the compact,
 human-editable authoring projection. Before generation, the portable core
 compiles it into a directed acyclic material graph:
 
@@ -487,14 +494,15 @@ compiles it into a directed acyclic material graph:
   palettes, ink contours, region fields, and region surfaces become unary
   processing nodes;
 - enabled procedural masks become mask nodes;
-- layer blend, add, or multiply behaviour becomes composite processing nodes;
+- layer composition behaviour becomes composite processing nodes;
 - colour, height, normal, and roughness receive explicit output nodes.
 
 Disabled layers compile as exact no-ops. Node metadata records the source layer
-for future diagnostics and incremental evaluation. All four output nodes point
-to the final layer result for a `.pmat` material, preserving historical output.
-Portable C++ callers may instead provide a direct graph with independent output
-branches through `GenerationRequest::graph`.
+for future diagnostics and incremental evaluation. Version-16 layers compile
+into independent colour, height/normal, and roughness branches according to
+`layer.N.outputs`. Materials whose enabled layers target all branches retain
+the historical shared graph exactly. Portable C++ callers may also provide a
+direct graph through `GenerationRequest::graph`.
 
 Graph-specific text syntax is intentionally deferred until Paperweight has a
 graph authoring workflow that can round-trip it honestly. Format version 7 adds
@@ -532,18 +540,23 @@ material, while the material-library index requires a UID and friendly name for
 a ready entry. Templates remain identity-free when instantiated so two saved
 materials cannot accidentally inherit the same UID.
 
+Format version 16 adds channel routing, physical relief depth, `surface_value`,
+and the `minimum`, `maximum`, and `detail` composites. Normal follows height by
+definition, so it is not a separate routing token. A layer must target at least
+one branch.
+
 ## Material outputs
 
-Every layer-authored output derives from the same final graph sample at
-the same pixel centre:
+Every output derives from its routed graph branch at the same pixel centre:
 
 - Colour encodes the final RGBA channels.
 - Height writes the final scalar to R, G, and B as linear UNORM8, with alpha 255.
 - Roughness interpolates between `roughness.low` and `roughness.high` using the
   final scalar, then writes linear greyscale UNORM8 with alpha 255.
-- Normal uses wrapped central differences of the final scalar field. Derivatives
-  are measured per metre of requested coverage. The tangent-space vector
-  `(-dH/dx * strength, -dH/dy * strength, 1)` is
+- Normal uses wrapped central differences of the height branch. Derivatives are
+  measured per metre of requested coverage and multiplied by
+  `surface.relief_depth` when present. The tangent-space vector
+  `(-dH/dx * relief * strength, -dH/dy * relief * strength, 1)` is
   normalised, maps XYZ from `[-1, 1]` to RGB `[0, 255]`, and writes alpha 255.
 
 All procedural noise remains periodic, and scalar neighbours used by normal
@@ -552,7 +565,7 @@ generation wrap mathematically across both tile axes.
 ## Compatibility policy
 
 The `.pmat` format version and Paperweight application version are separate.
-Paperweight v0.0.20 reads versions 1 through 15 and writes version 15. A reader
+Paperweight v0.0.23 reads versions 1 through 16 and writes version 16. A reader
 rejects unsupported versions and unknown fields so that it cannot quietly
 reinterpret a future material.
 
@@ -579,8 +592,10 @@ evaluations. Version 13 adds deterministic scatter operations; versions 1
 through 12 retain byte-identical default evaluations. Version 14 adds organic
 structures; versions 1 through 13 retain byte-identical default evaluations.
 Version 15 adds metadata only; versions 1 through 14 retain byte-identical
-default evaluations. Saving any older format performs the explicit migration to
-version 15.
+default evaluations. Version 16 adds opt-in routing and physical relief. Missing
+routing means all outputs and missing relief uses the historical normal formula,
+so every version-15 material retains byte-identical output. Saving any older
+format performs the explicit migration to version 16.
 
 The portable entry points are `paperweight::parsePmat` and
 `paperweight::serialisePmat` in `include/paperweight/pmat.hpp`.

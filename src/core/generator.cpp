@@ -364,11 +364,13 @@ GenerationResult generate(
                     const double derivativeU =
                         (heightAt(nextX, y) - heightAt(previousX, y)) *
                         static_cast<double>(request.width) /
-                        coverage.widthMetres * 0.5;
+                        coverage.widthMetres * 0.5 *
+                        request.material.reliefDepthMetres.value_or(1.0);
                     const double derivativeV =
                         (heightAt(x, nextY) - heightAt(x, previousY)) *
                         static_cast<double>(request.height) /
-                        coverage.heightMetres * 0.5;
+                        coverage.heightMetres * 0.5 *
+                        request.material.reliefDepthMetres.value_or(1.0);
                     row[x] = encodeNormal(
                         derivativeU,
                         derivativeV,
