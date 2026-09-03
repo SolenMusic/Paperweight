@@ -19,6 +19,8 @@ struct PreviewUniforms {
     float4 toonSettings;
     float4 opticalSettings;
     float4 environmentSettings;
+    float4 specialMapSettings;
+    float4 anisotropySettings;
 };
 
 struct PreviewVaryings {
@@ -101,6 +103,26 @@ float distributionGGX(float normalDotHalf, float roughness)
     return alphaSquared / max(previewPi * denominator * denominator, 0.000001);
 }
 
+float distributionAnisotropicGGX(
+    float3 halfDirection,
+    float3 surfaceNormal,
+    float3 tangent,
+    float3 bitangent,
+    float roughness,
+    float anisotropy)
+{
+    const float alpha = max(roughness * roughness, 0.002);
+    const float aspect = sqrt(max(1.0 - anisotropy * 0.9, 0.1));
+    const float alphaX = max(alpha / aspect, 0.002);
+    const float alphaY = max(alpha * aspect, 0.002);
+    const float halfX = dot(halfDirection, tangent);
+    const float halfY = dot(halfDirection, bitangent);
+    const float halfZ = dot(halfDirection, surfaceNormal);
+    const float denominator = halfX * halfX / (alphaX * alphaX) +
+        halfY * halfY / (alphaY * alphaY) + halfZ * halfZ;
+    return 1.0 / max(previewPi * alphaX * alphaY * denominator * denominator, 0.000001);
+}
+
 float geometrySchlickGGX(float normalDotDirection, float roughness)
 {
     const float value = roughness + 1.0;
@@ -143,7 +165,12 @@ fragment float4 paperweightPreviewFragment(
     texture2d<float> colourTexture [[texture(0)]],
     texture2d<float> normalTexture [[texture(2)]],
     texture2d<float> roughnessTexture [[texture(3)]],
-    texture2d<float> metalnessTexture [[texture(4)]])
+    texture2d<float> metalnessTexture [[texture(4)]],
+    texture2d<float> coatingTexture [[texture(5)]],
+    texture2d<float> occlusionTexture [[texture(6)]],
+    texture2d<float> clearCoatTexture [[texture(7)]],
+    texture2d<float> clearCoatRoughnessTexture [[texture(8)]],
+    texture2d<float> emissiveTexture [[texture(9)]])
 {
     const float3 baseColour = uniforms.mapSettings.x > 0.5
         ? colourTexture.sample(materialSampler, input.uv).rgb
@@ -155,17 +182,40 @@ fragment float4 paperweightPreviewFragment(
     const float metalness = uniforms.opticalSettings.x > 0.5
         ? saturate(metalnessTexture.sample(materialSampler, input.uv).r)
         : 0.0;
+    const float coating = saturate(coatingTexture.sample(materialSampler, input.uv).r);
+    const float occlusion = uniforms.specialMapSettings.x > 0.5
+        ? saturate(occlusionTexture.sample(materialSampler, input.uv).r)
+        : 1.0;
+    const float clearCoat = uniforms.specialMapSettings.y > 0.5
+        ? saturate(clearCoatTexture.sample(materialSampler, input.uv).r)
+        : 0.0;
+    const float clearCoatRoughness = clamp(
+        clearCoatRoughnessTexture.sample(materialSampler, input.uv).r, 0.045, 1.0);
+    const float3 emissive = uniforms.specialMapSettings.z > 0.5
+        ? emissiveTexture.sample(materialSampler, input.uv).rgb
+        : float3(0.0);
 
     float3 surfaceNormal = normalize(input.normal);
+    float3 tangent = normalize(input.tangent - surfaceNormal * dot(surfaceNormal, input.tangent));
+    float3 bitangent = normalize(cross(surfaceNormal, tangent)) * input.tangentSign;
     if (uniforms.mapSettings.z > 0.5) {
-        const float3 tangent = normalize(input.tangent - surfaceNormal * dot(surfaceNormal, input.tangent));
-        const float3 bitangent = normalize(cross(surfaceNormal, tangent)) * input.tangentSign;
         float3 mapped = normalTexture.sample(materialSampler, input.uv).xyz * 2.0 - 1.0;
         mapped.xy *= uniforms.settings.z;
         mapped = normalize(mapped);
         surfaceNormal = normalize(
             tangent * mapped.x + bitangent * mapped.y + surfaceNormal * mapped.z);
+        tangent = normalize(tangent - surfaceNormal * dot(surfaceNormal, tangent));
+        bitangent = normalize(cross(surfaceNormal, tangent)) * input.tangentSign;
     }
+
+    const float brushRotation = uniforms.anisotropySettings.y;
+    const float brushCosine = cos(brushRotation);
+    const float brushSine = sin(brushRotation);
+    const float3 brushTangent = normalize(tangent * brushCosine + bitangent * brushSine);
+    const float3 brushBitangent = normalize(-tangent * brushSine + bitangent * brushCosine);
+    const float anisotropy = uniforms.specialMapSettings.w > 0.5
+        ? saturate(uniforms.anisotropySettings.x) * (1.0 - coating)
+        : 0.0;
 
     const float3 lightDirection = normalize(uniforms.lightDirection.xyz);
     const float3 viewDirection = normalize(uniforms.cameraPosition.xyz - input.worldPosition);
@@ -179,12 +229,30 @@ fragment float4 paperweightPreviewFragment(
     const float dielectricF0Scalar = pow((ior - 1.0) / (ior + 1.0), 2.0);
     const float3 reflectance = mix(float3(dielectricF0Scalar), baseColour, metalness);
     float3 fresnel = fresnelSchlick(viewDotHalf, reflectance);
-    const float distribution = distributionGGX(normalDotHalf, roughness);
+    const float distribution = mix(
+        distributionGGX(normalDotHalf, roughness),
+        distributionAnisotropicGGX(
+            halfDirection,
+            surfaceNormal,
+            brushTangent,
+            brushBitangent,
+            roughness,
+            anisotropy),
+        anisotropy);
     const float geometry = geometrySchlickGGX(normalDotView, roughness) *
         geometrySchlickGGX(normalDotLight, roughness);
     float3 directSpecular = distribution * geometry * fresnel /
         max(4.0 * normalDotView * normalDotLight, 0.0001);
     float3 directDiffuse = (1.0 - fresnel) * (1.0 - metalness) * baseColour / previewPi;
+    const float3 coatFresnel = fresnelSchlick(viewDotHalf, float3(0.04));
+    const float coatDistribution = distributionGGX(normalDotHalf, clearCoatRoughness);
+    const float coatGeometry = geometrySchlickGGX(normalDotView, clearCoatRoughness) *
+        geometrySchlickGGX(normalDotLight, clearCoatRoughness);
+    float3 directCoat = clearCoat * coatDistribution * coatGeometry * coatFresnel /
+        max(4.0 * normalDotView * normalDotLight, 0.0001);
+    const float baseAttenuation = 1.0 - clearCoat * coatFresnel.r;
+    directSpecular *= baseAttenuation;
+    directDiffuse *= baseAttenuation;
 
     if (uniforms.toonSettings.x > 0.5) {
         const float bands = max(round(uniforms.toonSettings.y), 2.0);
@@ -192,26 +260,43 @@ fragment float4 paperweightPreviewFragment(
         const float highlight = step(uniforms.toonSettings.z,
             max(max(directSpecular.r, directSpecular.g), directSpecular.b));
         directSpecular = highlight * fresnel;
+        directCoat = step(uniforms.toonSettings.z,
+            max(max(directCoat.r, directCoat.g), directCoat.b)) * coatFresnel * clearCoat;
     }
 
     const float3 directRadiance = float3(uniforms.settings.x * 3.2);
-    float3 colour = (directDiffuse + directSpecular) * directRadiance * normalDotLight;
+    float3 colour = (directDiffuse + directSpecular + directCoat) *
+        directRadiance * normalDotLight;
 
     const float preset = uniforms.environmentSettings.x;
     const float rotation = uniforms.opticalSettings.w;
     const float environmentIntensity = uniforms.opticalSettings.z;
     const float3 reflectionDirection = reflect(-viewDirection, surfaceNormal);
     const float3 sharpReflection = studioEnvironment(reflectionDirection, preset, rotation);
+    const float brushAlignment = abs(dot(reflectionDirection, brushTangent));
+    const float environmentRoughness = clamp(
+        roughness * mix(1.0, 0.38 + brushAlignment * 0.42, anisotropy), 0.045, 1.0);
     const float3 broadReflection = studioEnvironment(
-        normalize(mix(reflectionDirection, surfaceNormal, roughness * roughness)), preset, rotation);
-    const float3 reflectedEnvironment = mix(sharpReflection, broadReflection, roughness * 0.82);
+        normalize(mix(reflectionDirection, surfaceNormal,
+            environmentRoughness * environmentRoughness)), preset, rotation);
+    const float3 reflectedEnvironment = mix(
+        sharpReflection, broadReflection, environmentRoughness * 0.82);
     const float3 environmentFresnel = fresnelSchlick(normalDotView, reflectance);
     const float3 environmentSpecular = reflectedEnvironment * environmentFresnel *
         mix(1.0, 0.28, roughness * roughness);
     const float3 diffuseEnvironment = studioEnvironment(surfaceNormal, preset, rotation) *
         baseColour * (1.0 - metalness) * 0.18;
-    colour += (environmentSpecular + diffuseEnvironment) * environmentIntensity;
-    colour += baseColour * (1.0 - metalness) * uniforms.settings.y;
+    const float3 coatReflection = mix(
+        sharpReflection,
+        studioEnvironment(normalize(mix(reflectionDirection, surfaceNormal,
+            clearCoatRoughness * clearCoatRoughness)), preset, rotation),
+        clearCoatRoughness * 0.82);
+    const float3 environmentCoat = coatReflection *
+        fresnelSchlick(normalDotView, float3(0.04)) * clearCoat;
+    colour += (environmentSpecular * baseAttenuation + diffuseEnvironment + environmentCoat) *
+        environmentIntensity * occlusion;
+    colour += baseColour * (1.0 - metalness) * uniforms.settings.y * occlusion;
+    colour += emissive;
 
     if (uniforms.toonSettings.x > 0.5) {
         const float rim = smoothstep(0.55, 0.82, 1.0 - normalDotView) * uniforms.toonSettings.w;

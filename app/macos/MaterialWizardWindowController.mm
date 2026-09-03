@@ -125,6 +125,7 @@ NSString* controlSectionName(paperweight::WizardControlSection section)
 @property(nonatomic, strong) NSArray<NSButton*>* alternativeButtons;
 @property(nonatomic, strong) NSTextField* alternativeSummary;
 @property(nonatomic, strong) NSSegmentedControl* previewModeControl;
+@property(nonatomic, strong) NSPopUpButton* previewShapePopup;
 @property(nonatomic, strong) NSImageView* previewImageView;
 @property(nonatomic, strong) Material3DPreviewView* preview3DView;
 @property(nonatomic, strong) NSProgressIndicator* previewProgress;
@@ -480,7 +481,18 @@ NSString* controlSectionName(paperweight::WizardControlSection section)
     self.previewModeControl.target = self;
     self.previewModeControl.action = @selector(previewModeChanged:);
     self.previewModeControl.accessibilityLabel = @"Live preview mode";
-    auto* header = [NSStackView stackViewWithViews:@[heading, self.previewModeControl]];
+    self.previewShapePopup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+    [self.previewShapePopup addItemsWithTitles:@[
+        @"Square plane", @"Sphere", @"Cube", @"Cylinder",
+    ]];
+    [self.previewShapePopup selectItemAtIndex:1];
+    self.previewShapePopup.target = self;
+    self.previewShapePopup.action = @selector(previewShapeChanged:);
+    self.previewShapePopup.accessibilityLabel = @"Three-dimensional preview shape";
+    self.previewShapePopup.hidden = YES;
+    auto* header = [NSStackView stackViewWithViews:@[
+        heading, self.previewShapePopup, self.previewModeControl,
+    ]];
     header.orientation = NSUserInterfaceLayoutOrientationHorizontal;
     header.alignment = NSLayoutAttributeCenterY;
     header.distribution = NSStackViewDistributionFillProportionally;
@@ -1003,7 +1015,15 @@ NSString* controlSectionName(paperweight::WizardControlSection section)
     const BOOL threeDimensional = self.previewModeControl.selectedSegment == 1;
     self.previewImageView.hidden = threeDimensional;
     self.preview3DView.hidden = !threeDimensional;
+    self.previewShapePopup.hidden = !threeDimensional;
     [self schedulePreview];
+}
+
+- (void)previewShapeChanged:(id)sender
+{
+    static_cast<void>(sender);
+    self.preview3DView.previewShape = static_cast<PWPreviewShape>(
+        self.previewShapePopup.indexOfSelectedItem);
 }
 
 - (void)schedulePreview
@@ -1017,13 +1037,15 @@ NSString* controlSectionName(paperweight::WizardControlSection section)
     const auto material = *selectedMaterial_;
     const BOOL threeDimensional = self.previewModeControl.selectedSegment == 1;
     self.preview3DView.dielectricIor = material.dielectricIor;
+    self.preview3DView.anisotropyStrength = material.anisotropyStrength;
+    self.preview3DView.anisotropyRotationDegrees = material.anisotropyRotationDegrees;
     self.preview3DView.environmentPreset = material.metalnessHigh > 0.5
         ? PWPreviewEnvironmentChromeStudio
         : PWPreviewEnvironmentCeramic;
     [self.previewProgress startAnimation:nil];
     self.previewStatus.textColor = NSColor.secondaryLabelColor;
     self.previewStatus.stringValue = threeDimensional
-        ? [NSString stringWithFormat:@"Rendering five %lu × %lu maps…",
+        ? [NSString stringWithFormat:@"Rendering ten %lu × %lu maps…",
             static_cast<unsigned long>(previewResolution_), static_cast<unsigned long>(previewResolution_)]
         : [NSString stringWithFormat:@"Rendering %lu × %lu colour preview…",
             static_cast<unsigned long>(previewResolution_), static_cast<unsigned long>(previewResolution_)];
@@ -1079,7 +1101,12 @@ NSString* controlSectionName(paperweight::WizardControlSection section)
                                                   heightImage:*(*sharedImages)[1]
                                                   normalImage:*(*sharedImages)[2]
                                                roughnessImage:*(*sharedImages)[3]
-                                                metalnessImage:*(*sharedImages)[4]];
+                                                metalnessImage:*(*sharedImages)[4]
+                                                  coatingImage:*(*sharedImages)[5]
+                                                occlusionImage:*(*sharedImages)[6]
+                                                 clearCoatImage:*(*sharedImages)[7]
+                                        clearCoatRoughnessImage:*(*sharedImages)[8]
+                                                 emissiveImage:*(*sharedImages)[9]];
                 }
             } else if ((*sharedImages)[0]) {
                 strongSelf.previewImageView.image = imageFromPaperweight(

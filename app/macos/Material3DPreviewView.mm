@@ -36,6 +36,8 @@ struct PreviewUniforms {
     simd_float4 toonSettings;
     simd_float4 opticalSettings;
     simd_float4 environmentSettings;
+    simd_float4 specialMapSettings;
+    simd_float4 anisotropySettings;
 };
 
 struct MeshData {
@@ -276,6 +278,11 @@ MeshData makeMesh(PWPreviewShape shape)
     id<MTLTexture> normalTexture_;
     id<MTLTexture> roughnessTexture_;
     id<MTLTexture> metalnessTexture_;
+    id<MTLTexture> coatingTexture_;
+    id<MTLTexture> occlusionTexture_;
+    id<MTLTexture> clearCoatTexture_;
+    id<MTLTexture> clearCoatRoughnessTexture_;
+    id<MTLTexture> emissiveTexture_;
     BOOL rendererAvailable_;
     float cameraYaw_;
     float cameraPitch_;
@@ -298,6 +305,8 @@ MeshData makeMesh(PWPreviewShape shape)
         _environmentIntensity = 1.0;
         _environmentRotationDegrees = 0.0;
         _dielectricIor = 1.5;
+        _anisotropyStrength = 0.0;
+        _anisotropyRotationDegrees = 0.0;
         _displacementStrength = 0.04;
         _previewNormalStrength = 1.0;
         _toonBandCount = 3.0;
@@ -309,6 +318,10 @@ MeshData makeMesh(PWPreviewShape shape)
         _normalEnabled = YES;
         _roughnessEnabled = YES;
         _metalnessEnabled = YES;
+        _occlusionEnabled = YES;
+        _clearCoatEnabled = YES;
+        _emissiveEnabled = YES;
+        _anisotropyEnabled = YES;
         cameraYaw_ = 0.7F;
         cameraPitch_ = 0.38F;
         cameraDistance_ = 2.7F;
@@ -417,6 +430,11 @@ MeshData makeMesh(PWPreviewShape shape)
     const std::array<std::uint8_t, 4> normal{{128, 128, 255, 255}};
     const std::array<std::uint8_t, 4> roughness{{128, 128, 128, 255}};
     const std::array<std::uint8_t, 4> metalness{{0, 0, 0, 255}};
+    const std::array<std::uint8_t, 4> coating{{0, 0, 0, 255}};
+    const std::array<std::uint8_t, 4> occlusion{{255, 255, 255, 255}};
+    const std::array<std::uint8_t, 4> clearCoat{{0, 0, 0, 255}};
+    const std::array<std::uint8_t, 4> clearCoatRoughness{{26, 26, 26, 255}};
+    const std::array<std::uint8_t, 4> emissive{{0, 0, 0, 255}};
     colourTexture_ = [self textureWithWidth:1 height:1
                                pixelFormat:MTLPixelFormatRGBA8Unorm_sRGB
                                      bytes:colour.data() bytesPerRow:4];
@@ -432,6 +450,21 @@ MeshData makeMesh(PWPreviewShape shape)
     metalnessTexture_ = [self textureWithWidth:1 height:1
                                   pixelFormat:MTLPixelFormatRGBA8Unorm
                                         bytes:metalness.data() bytesPerRow:4];
+    coatingTexture_ = [self textureWithWidth:1 height:1
+                                pixelFormat:MTLPixelFormatRGBA8Unorm
+                                      bytes:coating.data() bytesPerRow:4];
+    occlusionTexture_ = [self textureWithWidth:1 height:1
+                                  pixelFormat:MTLPixelFormatRGBA8Unorm
+                                        bytes:occlusion.data() bytesPerRow:4];
+    clearCoatTexture_ = [self textureWithWidth:1 height:1
+                                  pixelFormat:MTLPixelFormatRGBA8Unorm
+                                        bytes:clearCoat.data() bytesPerRow:4];
+    clearCoatRoughnessTexture_ = [self textureWithWidth:1 height:1
+                                           pixelFormat:MTLPixelFormatRGBA8Unorm
+                                                 bytes:clearCoatRoughness.data() bytesPerRow:4];
+    emissiveTexture_ = [self textureWithWidth:1 height:1
+                                 pixelFormat:MTLPixelFormatRGBA8Unorm_sRGB
+                                       bytes:emissive.data() bytesPerRow:4];
 }
 
 - (void)setColourImage:(const paperweight::Image&)colour
@@ -468,6 +501,50 @@ MeshData makeMesh(PWPreviewShape shape)
                                     pixelFormat:MTLPixelFormatRGBA8Unorm
                                           bytes:metalness.pixels().data()
                                     bytesPerRow:metalness.bytesPerRow()];
+    [self requestDraw];
+}
+
+- (void)setColourImage:(const paperweight::Image&)colour
+            heightImage:(const paperweight::Image&)height
+            normalImage:(const paperweight::Image&)normal
+         roughnessImage:(const paperweight::Image&)roughness
+          metalnessImage:(const paperweight::Image&)metalness
+            coatingImage:(const paperweight::Image&)coating
+          occlusionImage:(const paperweight::Image&)occlusion
+           clearCoatImage:(const paperweight::Image&)clearCoat
+  clearCoatRoughnessImage:(const paperweight::Image&)clearCoatRoughness
+           emissiveImage:(const paperweight::Image&)emissive
+{
+    [self setColourImage:colour
+              heightImage:height
+              normalImage:normal
+           roughnessImage:roughness
+            metalnessImage:metalness];
+    coatingTexture_ = [self textureWithWidth:coating.width()
+                                      height:coating.height()
+                                 pixelFormat:MTLPixelFormatRGBA8Unorm
+                                       bytes:coating.pixels().data()
+                                 bytesPerRow:coating.bytesPerRow()];
+    occlusionTexture_ = [self textureWithWidth:occlusion.width()
+                                        height:occlusion.height()
+                                   pixelFormat:MTLPixelFormatRGBA8Unorm
+                                         bytes:occlusion.pixels().data()
+                                   bytesPerRow:occlusion.bytesPerRow()];
+    clearCoatTexture_ = [self textureWithWidth:clearCoat.width()
+                                        height:clearCoat.height()
+                                   pixelFormat:MTLPixelFormatRGBA8Unorm
+                                         bytes:clearCoat.pixels().data()
+                                   bytesPerRow:clearCoat.bytesPerRow()];
+    clearCoatRoughnessTexture_ = [self textureWithWidth:clearCoatRoughness.width()
+                                                 height:clearCoatRoughness.height()
+                                            pixelFormat:MTLPixelFormatRGBA8Unorm
+                                                  bytes:clearCoatRoughness.pixels().data()
+                                            bytesPerRow:clearCoatRoughness.bytesPerRow()];
+    emissiveTexture_ = [self textureWithWidth:emissive.width()
+                                       height:emissive.height()
+                                  pixelFormat:MTLPixelFormatRGBA8Unorm_sRGB
+                                        bytes:emissive.pixels().data()
+                                  bytesPerRow:emissive.bytesPerRow()];
     [self requestDraw];
 }
 
@@ -530,6 +607,8 @@ MeshData makeMesh(PWPreviewShape shape)
 - (void)setEnvironmentIntensity:(double)value { _environmentIntensity = value; [self requestDraw]; }
 - (void)setEnvironmentRotationDegrees:(double)value { _environmentRotationDegrees = value; [self requestDraw]; }
 - (void)setDielectricIor:(double)value { _dielectricIor = value; [self requestDraw]; }
+- (void)setAnisotropyStrength:(double)value { _anisotropyStrength = value; [self requestDraw]; }
+- (void)setAnisotropyRotationDegrees:(double)value { _anisotropyRotationDegrees = value; [self requestDraw]; }
 - (void)setDisplacementStrength:(double)value { _displacementStrength = value; [self requestDraw]; }
 - (void)setPreviewNormalStrength:(double)value { _previewNormalStrength = value; [self requestDraw]; }
 - (void)setToonLightingEnabled:(BOOL)value { _toonLightingEnabled = value; [self requestDraw]; }
@@ -543,6 +622,10 @@ MeshData makeMesh(PWPreviewShape shape)
 - (void)setNormalEnabled:(BOOL)value { _normalEnabled = value; [self requestDraw]; }
 - (void)setRoughnessEnabled:(BOOL)value { _roughnessEnabled = value; [self requestDraw]; }
 - (void)setMetalnessEnabled:(BOOL)value { _metalnessEnabled = value; [self requestDraw]; }
+- (void)setOcclusionEnabled:(BOOL)value { _occlusionEnabled = value; [self requestDraw]; }
+- (void)setClearCoatEnabled:(BOOL)value { _clearCoatEnabled = value; [self requestDraw]; }
+- (void)setEmissiveEnabled:(BOOL)value { _emissiveEnabled = value; [self requestDraw]; }
+- (void)setAnisotropyEnabled:(BOOL)value { _anisotropyEnabled = value; [self requestDraw]; }
 
 - (void)resetCamera
 {
@@ -666,6 +749,19 @@ MeshData makeMesh(PWPreviewShape shape)
             0.0F,
             0.0F,
         },
+        {
+            self.occlusionEnabled ? 1.0F : 0.0F,
+            self.clearCoatEnabled ? 1.0F : 0.0F,
+            self.emissiveEnabled ? 1.0F : 0.0F,
+            self.anisotropyEnabled ? 1.0F : 0.0F,
+        },
+        {
+            static_cast<float>(self.anisotropyStrength),
+            static_cast<float>(
+                self.anisotropyRotationDegrees / 180.0 * std::numbers::pi),
+            0.0F,
+            0.0F,
+        },
     };
 
     id<MTLCommandBuffer> commandBuffer = [commandQueue_ commandBuffer];
@@ -683,6 +779,11 @@ MeshData makeMesh(PWPreviewShape shape)
     [encoder setFragmentTexture:normalTexture_ atIndex:2];
     [encoder setFragmentTexture:roughnessTexture_ atIndex:3];
     [encoder setFragmentTexture:metalnessTexture_ atIndex:4];
+    [encoder setFragmentTexture:coatingTexture_ atIndex:5];
+    [encoder setFragmentTexture:occlusionTexture_ atIndex:6];
+    [encoder setFragmentTexture:clearCoatTexture_ atIndex:7];
+    [encoder setFragmentTexture:clearCoatRoughnessTexture_ atIndex:8];
+    [encoder setFragmentTexture:emissiveTexture_ atIndex:9];
     [encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle
                         indexCount:indexCount_
                          indexType:MTLIndexTypeUInt32

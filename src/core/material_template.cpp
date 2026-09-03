@@ -73,6 +73,37 @@ std::optional<std::string> applyBinding(
             MaterialLimits::maximumDielectricIor);
         return std::nullopt;
     }
+    const auto applyUnitMaterialValue = [&](TemplateProperty property, double& target) {
+        if (binding.property != property) {
+            return false;
+        }
+        target = std::clamp(value, 0.0, 1.0);
+        return true;
+    };
+    if (applyUnitMaterialValue(TemplateProperty::coatingLow, material.coatingLow) ||
+        applyUnitMaterialValue(TemplateProperty::coatingHigh, material.coatingHigh) ||
+        applyUnitMaterialValue(TemplateProperty::occlusionLow, material.occlusionLow) ||
+        applyUnitMaterialValue(TemplateProperty::occlusionHigh, material.occlusionHigh) ||
+        applyUnitMaterialValue(TemplateProperty::clearCoatLow, material.clearCoatLow) ||
+        applyUnitMaterialValue(TemplateProperty::clearCoatHigh, material.clearCoatHigh) ||
+        applyUnitMaterialValue(
+            TemplateProperty::clearCoatRoughnessLow,
+            material.clearCoatRoughnessLow) ||
+        applyUnitMaterialValue(
+            TemplateProperty::clearCoatRoughnessHigh,
+            material.clearCoatRoughnessHigh) ||
+        applyUnitMaterialValue(
+            TemplateProperty::emissiveIntensity,
+            material.emissiveIntensity) ||
+        applyUnitMaterialValue(
+            TemplateProperty::anisotropyStrength,
+            material.anisotropyStrength)) {
+        return std::nullopt;
+    }
+    if (binding.property == TemplateProperty::anisotropyRotationDegrees) {
+        material.anisotropyRotationDegrees = std::clamp(value, 0.0, 360.0);
+        return std::nullopt;
+    }
     if (binding.layerIndex >= material.layers.size()) {
         return "template control refers to a missing layer";
     }
@@ -89,6 +120,17 @@ std::optional<std::string> applyBinding(
     case TemplateProperty::metalnessLow:
     case TemplateProperty::metalnessHigh:
     case TemplateProperty::dielectricIor:
+    case TemplateProperty::coatingLow:
+    case TemplateProperty::coatingHigh:
+    case TemplateProperty::occlusionLow:
+    case TemplateProperty::occlusionHigh:
+    case TemplateProperty::clearCoatLow:
+    case TemplateProperty::clearCoatHigh:
+    case TemplateProperty::clearCoatRoughnessLow:
+    case TemplateProperty::clearCoatRoughnessHigh:
+    case TemplateProperty::emissiveIntensity:
+    case TemplateProperty::anisotropyStrength:
+    case TemplateProperty::anisotropyRotationDegrees:
         break;
     case TemplateProperty::surfaceValue:
         if (auto* operation = std::get_if<SurfaceValueOperation>(&layer.operation)) {
@@ -281,6 +323,17 @@ MaterialRecipe makeMaterialRecipe(const Material& material)
         material.metalnessLow,
         material.metalnessHigh,
         material.dielectricIor,
+        material.coatingLow,
+        material.coatingHigh,
+        material.occlusionLow,
+        material.occlusionHigh,
+        material.clearCoatLow,
+        material.clearCoatHigh,
+        material.clearCoatRoughnessLow,
+        material.clearCoatRoughnessHigh,
+        material.emissiveIntensity,
+        material.anisotropyStrength,
+        material.anisotropyRotationDegrees,
     };
 }
 
@@ -304,6 +357,17 @@ Material instantiateMaterial(const MaterialRecipe& recipe, std::uint64_t seed)
         recipe.metalnessLow,
         recipe.metalnessHigh,
         recipe.dielectricIor,
+        recipe.coatingLow,
+        recipe.coatingHigh,
+        recipe.occlusionLow,
+        recipe.occlusionHigh,
+        recipe.clearCoatLow,
+        recipe.clearCoatHigh,
+        recipe.clearCoatRoughnessLow,
+        recipe.clearCoatRoughnessHigh,
+        recipe.emissiveIntensity,
+        recipe.anisotropyStrength,
+        recipe.anisotropyRotationDegrees,
     };
 }
 

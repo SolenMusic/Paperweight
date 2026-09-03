@@ -772,6 +772,11 @@ struct LayerOutputRouting {
     bool height{true};
     bool roughness{true};
     bool metalness{true};
+    bool coating{true};
+    bool occlusion{true};
+    bool clearCoat{true};
+    bool clearCoatRoughness{true};
+    bool emissive{true};
 
     [[nodiscard]] constexpr bool includes(MaterialOutput output) const
     {
@@ -785,13 +790,24 @@ struct LayerOutputRouting {
             return roughness;
         case MaterialOutput::metalness:
             return metalness;
+        case MaterialOutput::coating:
+            return coating;
+        case MaterialOutput::occlusion:
+            return occlusion;
+        case MaterialOutput::clearCoat:
+            return clearCoat;
+        case MaterialOutput::clearCoatRoughness:
+            return clearCoatRoughness;
+        case MaterialOutput::emissive:
+            return emissive;
         }
         return false;
     }
 
     [[nodiscard]] constexpr bool isLegacyAll() const
     {
-        return colour && height && roughness && metalness;
+        return colour && height && roughness && metalness && coating && occlusion &&
+            clearCoat && clearCoatRoughness && emissive;
     }
 
     friend constexpr bool operator==(

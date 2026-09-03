@@ -46,7 +46,7 @@ each authored material receives identity only when the author assigns or saves
 it as a library item.
 
 Description, category, and tags are optional. They support browsing and search
-but never influence generated colour, height, normal, roughness, or metalness. The editor's
+but never influence any generated material output. The editor's
 Material Information dialogue edits these fields directly.
 
 ## Indexing and diagnostics
@@ -90,5 +90,5 @@ one entry can be instantiated with a chosen seed as a new editable material.
 
 The editor remembers a preview size of 64, 128, 256, 512, or 1024 pixels square.
 The same setting drives the ordinary 2D image, the optional stylised-lighting
-bake inputs, and all five 3D preview maps. It is deliberately not serialised:
+bake inputs, and all ten 3D preview maps. It is deliberately not serialised:
 changing inspection cost must not change material identity or game output.

@@ -625,6 +625,36 @@ std::optional<std::string> validateMaterial(const Material& material)
         material.dielectricIor > MaterialLimits::maximumDielectricIor) {
         return "dielectric IOR must be finite and between 1 and 4";
     }
+    const auto validUnit = [](double value) {
+        return std::isfinite(value) && value >= MaterialLimits::minimumUnitChannel &&
+            value <= MaterialLimits::maximumUnitChannel;
+    };
+    if (!validUnit(material.coatingLow) || !validUnit(material.coatingHigh)) {
+        return "coating range must be finite and between 0 and 1";
+    }
+    if (!validUnit(material.occlusionLow) || !validUnit(material.occlusionHigh)) {
+        return "occlusion range must be finite and between 0 and 1";
+    }
+    if (!validUnit(material.clearCoatLow) || !validUnit(material.clearCoatHigh)) {
+        return "clear coat range must be finite and between 0 and 1";
+    }
+    if (!validUnit(material.clearCoatRoughnessLow) ||
+        !validUnit(material.clearCoatRoughnessHigh)) {
+        return "clear coat roughness range must be finite and between 0 and 1";
+    }
+    if (!validUnit(material.emissiveIntensity)) {
+        return "emissive intensity must be finite and between 0 and 1";
+    }
+    if (!validUnit(material.anisotropyStrength)) {
+        return "anisotropy strength must be finite and between 0 and 1";
+    }
+    if (!std::isfinite(material.anisotropyRotationDegrees) ||
+        material.anisotropyRotationDegrees <
+            MaterialLimits::minimumAnisotropyRotationDegrees ||
+        material.anisotropyRotationDegrees >
+            MaterialLimits::maximumAnisotropyRotationDegrees) {
+        return "anisotropy rotation must be finite and between 0 and 360 degrees";
+    }
     if (material.layers.size() > LayerLimits::maximumLayers) {
         return "a material may contain at most 32 layers";
     }
@@ -650,7 +680,10 @@ std::optional<std::string> validateMaterial(const Material& material)
             return prefix + "operation has no value";
         }
         if (!layer.outputs.colour && !layer.outputs.height &&
-            !layer.outputs.roughness && !layer.outputs.metalness) {
+            !layer.outputs.roughness && !layer.outputs.metalness &&
+            !layer.outputs.coating && !layer.outputs.occlusion &&
+            !layer.outputs.clearCoat && !layer.outputs.clearCoatRoughness &&
+            !layer.outputs.emissive) {
             return prefix + "must target at least one output channel";
         }
         if (layer.transform.scaleX < LayerLimits::minimumScale ||

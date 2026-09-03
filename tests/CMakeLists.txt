@@ -41,6 +41,11 @@ foreach(showcase IN ITEMS
     brass
     painted-steel
     corroded-metal
+    glazed-ceramic
+    lacquered-wood
+    wet-stone
+    machinery-panels
+    illuminated-scifi
     varnished-wood
     region-stones
     castle-flagstone

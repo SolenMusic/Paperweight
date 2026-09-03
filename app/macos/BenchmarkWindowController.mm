@@ -119,6 +119,16 @@ NSString* outputDisplayName(paperweight::MaterialOutput output)
         return @"Roughness";
     case paperweight::MaterialOutput::metalness:
         return @"Metalness";
+    case paperweight::MaterialOutput::coating:
+        return @"Coating";
+    case paperweight::MaterialOutput::occlusion:
+        return @"Occlusion";
+    case paperweight::MaterialOutput::clearCoat:
+        return @"Clear coat";
+    case paperweight::MaterialOutput::clearCoatRoughness:
+        return @"Coat roughness";
+    case paperweight::MaterialOutput::emissive:
+        return @"Emissive";
     }
     return @"Unknown";
 }

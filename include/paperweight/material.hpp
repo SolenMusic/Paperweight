@@ -41,6 +41,17 @@ struct Material {
     double metalnessLow{0.0};
     double metalnessHigh{0.0};
     double dielectricIor{1.5};
+    double coatingLow{0.0};
+    double coatingHigh{0.0};
+    double occlusionLow{1.0};
+    double occlusionHigh{1.0};
+    double clearCoatLow{0.0};
+    double clearCoatHigh{0.0};
+    double clearCoatRoughnessLow{0.1};
+    double clearCoatRoughnessHigh{0.1};
+    double emissiveIntensity{0.0};
+    double anisotropyStrength{0.0};
+    double anisotropyRotationDegrees{0.0};
 
     friend bool operator==(const Material&, const Material&) = default;
 };
@@ -62,6 +73,10 @@ struct MaterialLimits {
     static constexpr double maximumMetalness = 1.0;
     static constexpr double minimumDielectricIor = 1.0;
     static constexpr double maximumDielectricIor = 4.0;
+    static constexpr double minimumUnitChannel = 0.0;
+    static constexpr double maximumUnitChannel = 1.0;
+    static constexpr double minimumAnisotropyRotationDegrees = 0.0;
+    static constexpr double maximumAnisotropyRotationDegrees = 360.0;
     static constexpr double minimumReliefDepthMetres = 0.0;
     static constexpr double maximumReliefDepthMetres = 1000000.0;
     static constexpr std::uint32_t maximumLatticePeriod = 4096;
@@ -83,6 +98,17 @@ enum class MaterialParameter {
     metalnessLow,
     metalnessHigh,
     dielectricIor,
+    coatingLow,
+    coatingHigh,
+    occlusionLow,
+    occlusionHigh,
+    clearCoatLow,
+    clearCoatHigh,
+    clearCoatRoughnessLow,
+    clearCoatRoughnessHigh,
+    emissiveIntensity,
+    anisotropyStrength,
+    anisotropyRotationDegrees,
 };
 
 enum class MaterialColour {
@@ -101,7 +127,7 @@ struct ParameterMetadata {
     bool integral;
 };
 
-inline constexpr std::array<ParameterMetadata, 10> parameterMetadata{{
+inline constexpr std::array<ParameterMetadata, 21> parameterMetadata{{
     {MaterialParameter::frequency, "noise.frequency", "Frequency", 4.0, 1.0, 64.0, 1.0, true},
     {MaterialParameter::octaves, "noise.octaves", "Octaves", 5.0, 1.0, 8.0, 1.0, true},
     {MaterialParameter::lacunarity, "noise.lacunarity", "Lacunarity", 2.0, 1.0, 4.0, 1.0, true},
@@ -112,6 +138,17 @@ inline constexpr std::array<ParameterMetadata, 10> parameterMetadata{{
     {MaterialParameter::metalnessLow, "metalness.low", "Metalness low", 0.0, 0.0, 1.0, 0.01, false},
     {MaterialParameter::metalnessHigh, "metalness.high", "Metalness high", 0.0, 0.0, 1.0, 0.01, false},
     {MaterialParameter::dielectricIor, "surface.ior", "Dielectric IOR", 1.5, 1.0, 4.0, 0.01, false},
+    {MaterialParameter::coatingLow, "coating.low", "Coating low", 0.0, 0.0, 1.0, 0.01, false},
+    {MaterialParameter::coatingHigh, "coating.high", "Coating high", 0.0, 0.0, 1.0, 0.01, false},
+    {MaterialParameter::occlusionLow, "occlusion.low", "Occlusion low", 1.0, 0.0, 1.0, 0.01, false},
+    {MaterialParameter::occlusionHigh, "occlusion.high", "Occlusion high", 1.0, 0.0, 1.0, 0.01, false},
+    {MaterialParameter::clearCoatLow, "clearcoat.low", "Clear coat low", 0.0, 0.0, 1.0, 0.01, false},
+    {MaterialParameter::clearCoatHigh, "clearcoat.high", "Clear coat high", 0.0, 0.0, 1.0, 0.01, false},
+    {MaterialParameter::clearCoatRoughnessLow, "clearcoat.roughness_low", "Coat roughness low", 0.1, 0.0, 1.0, 0.01, false},
+    {MaterialParameter::clearCoatRoughnessHigh, "clearcoat.roughness_high", "Coat roughness high", 0.1, 0.0, 1.0, 0.01, false},
+    {MaterialParameter::emissiveIntensity, "emissive.intensity", "Emissive intensity", 0.0, 0.0, 1.0, 0.01, false},
+    {MaterialParameter::anisotropyStrength, "anisotropy.strength", "Anisotropy strength", 0.0, 0.0, 1.0, 0.01, false},
+    {MaterialParameter::anisotropyRotationDegrees, "anisotropy.rotation", "Brush direction", 0.0, 0.0, 360.0, 1.0, false},
 }};
 
 [[nodiscard]] constexpr double dielectricF0FromIor(double ior)

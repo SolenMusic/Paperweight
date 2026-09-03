@@ -184,7 +184,29 @@
 @property(nonatomic, strong) NSTextField* metalnessHighValue;
 @property(nonatomic, strong) NSSlider* dielectricIorSlider;
 @property(nonatomic, strong) NSTextField* dielectricIorValue;
-@property(nonatomic, strong) NSSegmentedControl* outputControl;
+@property(nonatomic, strong) NSSlider* coatingLowSlider;
+@property(nonatomic, strong) NSTextField* coatingLowValue;
+@property(nonatomic, strong) NSSlider* coatingHighSlider;
+@property(nonatomic, strong) NSTextField* coatingHighValue;
+@property(nonatomic, strong) NSSlider* occlusionLowSlider;
+@property(nonatomic, strong) NSTextField* occlusionLowValue;
+@property(nonatomic, strong) NSSlider* occlusionHighSlider;
+@property(nonatomic, strong) NSTextField* occlusionHighValue;
+@property(nonatomic, strong) NSSlider* clearCoatLowSlider;
+@property(nonatomic, strong) NSTextField* clearCoatLowValue;
+@property(nonatomic, strong) NSSlider* clearCoatHighSlider;
+@property(nonatomic, strong) NSTextField* clearCoatHighValue;
+@property(nonatomic, strong) NSSlider* clearCoatRoughnessLowSlider;
+@property(nonatomic, strong) NSTextField* clearCoatRoughnessLowValue;
+@property(nonatomic, strong) NSSlider* clearCoatRoughnessHighSlider;
+@property(nonatomic, strong) NSTextField* clearCoatRoughnessHighValue;
+@property(nonatomic, strong) NSSlider* emissiveIntensitySlider;
+@property(nonatomic, strong) NSTextField* emissiveIntensityValue;
+@property(nonatomic, strong) NSSlider* anisotropyStrengthSlider;
+@property(nonatomic, strong) NSTextField* anisotropyStrengthValue;
+@property(nonatomic, strong) NSSlider* anisotropyRotationSlider;
+@property(nonatomic, strong) NSTextField* anisotropyRotationValue;
+@property(nonatomic, strong) NSPopUpButton* outputControl;
 @property(nonatomic, strong) NSButton* bakedPresentationCheckbox;
 @property(nonatomic, strong) NSStackView* bakeControls;
 @property(nonatomic, strong) NSSlider* bakeAzimuthSlider;
@@ -237,6 +259,10 @@
 @property(nonatomic, strong) NSButton* normalMapCheckbox;
 @property(nonatomic, strong) NSButton* roughnessMapCheckbox;
 @property(nonatomic, strong) NSButton* metalnessMapCheckbox;
+@property(nonatomic, strong) NSButton* occlusionMapCheckbox;
+@property(nonatomic, strong) NSButton* clearCoatMapCheckbox;
+@property(nonatomic, strong) NSButton* emissiveMapCheckbox;
+@property(nonatomic, strong) NSButton* anisotropyCheckbox;
 @property(nonatomic, strong) NSTimer* animationUiTimer;
 @property(nonatomic, strong) NSTextField* statusLabel;
 @property(nonatomic, strong) NSURL* currentFileURL;
@@ -259,7 +285,8 @@
 @property(nonatomic, strong) NSMutableArray<NSTextField*>* templateControlValues;
 @property(nonatomic, strong) NSButton* layerEnabledCheckbox;
 @property(nonatomic, strong) NSSegmentedControl* layerCompositeControl;
-@property(nonatomic, strong) NSSegmentedControl* layerOutputControl;
+@property(nonatomic, strong) NSStackView* layerOutputControl;
+@property(nonatomic, strong) NSArray<NSButton*>* layerOutputButtons;
 @property(nonatomic, strong) NSSlider* layerOpacitySlider;
 @property(nonatomic, strong) NSTextField* layerOpacityValue;
 @property(nonatomic, strong) NSStackView* noiseSeedRow;
@@ -609,6 +636,16 @@ NSString* outputName(paperweight::MaterialOutput output)
         return @"Roughness";
     case paperweight::MaterialOutput::metalness:
         return @"Metalness";
+    case paperweight::MaterialOutput::coating:
+        return @"Coating / exposed substrate";
+    case paperweight::MaterialOutput::occlusion:
+        return @"Ambient occlusion";
+    case paperweight::MaterialOutput::clearCoat:
+        return @"Clear coat";
+    case paperweight::MaterialOutput::clearCoatRoughness:
+        return @"Clear-coat roughness";
+    case paperweight::MaterialOutput::emissive:
+        return @"Emissive";
     }
     return @"Unknown";
 }
@@ -619,6 +656,11 @@ struct PreviewMapSet {
     paperweight::Image normal;
     paperweight::Image roughness;
     paperweight::Image metalness;
+    paperweight::Image coating;
+    paperweight::Image occlusion;
+    paperweight::Image clearCoat;
+    paperweight::Image clearCoatRoughness;
+    paperweight::Image emissive;
 };
 
 NSString* operationDisplayName(const paperweight::LayerOperation& operation)
@@ -1178,6 +1220,11 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @[ @"Polished Brass", @"brass" ],
         @[ @"Painted Steel", @"painted-steel" ],
         @[ @"Corroded Metal", @"corroded-metal" ],
+        @[ @"Glazed Ceramic", @"glazed-ceramic" ],
+        @[ @"Lacquered Wood", @"lacquered-wood" ],
+        @[ @"Wet Stone", @"wet-stone" ],
+        @[ @"Machinery Panels", @"machinery-panels" ],
+        @[ @"Illuminated Science-Fiction Surface", @"illuminated-scifi" ],
         @[ @"Varnished Wood", @"varnished-wood" ],
         @[ @"Region Stones", @"region-stones" ],
         @[ @"Castle Flagstone", @"castle-flagstone" ],
@@ -1927,6 +1974,55 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.dielectricIorSlider.toolTip =
         @"Controls neutral surface reflection for non-metal areas; common materials are roughly 1.3 to 1.7.";
 
+    auto* coatingLowRow = makeSliderRow(@"Coating low", 0.0, 1.0,
+        material_.coatingLow, false, self);
+    self.coatingLowSlider = static_cast<NSSlider*>(coatingLowRow.views[1]);
+    self.coatingLowValue = static_cast<NSTextField*>(coatingLowRow.views[2]);
+    auto* coatingHighRow = makeSliderRow(@"Coating high", 0.0, 1.0,
+        material_.coatingHigh, false, self);
+    self.coatingHighSlider = static_cast<NSSlider*>(coatingHighRow.views[1]);
+    self.coatingHighValue = static_cast<NSTextField*>(coatingHighRow.views[2]);
+    coatingHighRow.toolTip =
+        @"Maps routed layer values to paint/coating coverage. Reverse the range for exposed substrate.";
+    auto* occlusionLowRow = makeSliderRow(@"AO low", 0.0, 1.0,
+        material_.occlusionLow, false, self);
+    self.occlusionLowSlider = static_cast<NSSlider*>(occlusionLowRow.views[1]);
+    self.occlusionLowValue = static_cast<NSTextField*>(occlusionLowRow.views[2]);
+    auto* occlusionHighRow = makeSliderRow(@"AO high", 0.0, 1.0,
+        material_.occlusionHigh, false, self);
+    self.occlusionHighSlider = static_cast<NSSlider*>(occlusionHighRow.views[1]);
+    self.occlusionHighValue = static_cast<NSTextField*>(occlusionHighRow.views[2]);
+    auto* clearCoatLowRow = makeSliderRow(@"Clear coat low", 0.0, 1.0,
+        material_.clearCoatLow, false, self);
+    self.clearCoatLowSlider = static_cast<NSSlider*>(clearCoatLowRow.views[1]);
+    self.clearCoatLowValue = static_cast<NSTextField*>(clearCoatLowRow.views[2]);
+    auto* clearCoatHighRow = makeSliderRow(@"Clear coat high", 0.0, 1.0,
+        material_.clearCoatHigh, false, self);
+    self.clearCoatHighSlider = static_cast<NSSlider*>(clearCoatHighRow.views[1]);
+    self.clearCoatHighValue = static_cast<NSTextField*>(clearCoatHighRow.views[2]);
+    auto* coatRoughLowRow = makeSliderRow(@"Coat rough low", 0.0, 1.0,
+        material_.clearCoatRoughnessLow, false, self);
+    self.clearCoatRoughnessLowSlider = static_cast<NSSlider*>(coatRoughLowRow.views[1]);
+    self.clearCoatRoughnessLowValue = static_cast<NSTextField*>(coatRoughLowRow.views[2]);
+    auto* coatRoughHighRow = makeSliderRow(@"Coat rough high", 0.0, 1.0,
+        material_.clearCoatRoughnessHigh, false, self);
+    self.clearCoatRoughnessHighSlider = static_cast<NSSlider*>(coatRoughHighRow.views[1]);
+    self.clearCoatRoughnessHighValue = static_cast<NSTextField*>(coatRoughHighRow.views[2]);
+    auto* emissiveRow = makeSliderRow(@"Emission", 0.0, 1.0,
+        material_.emissiveIntensity, false, self);
+    self.emissiveIntensitySlider = static_cast<NSSlider*>(emissiveRow.views[1]);
+    self.emissiveIntensityValue = static_cast<NSTextField*>(emissiveRow.views[2]);
+    auto* anisotropyRow = makeSliderRow(@"Anisotropy", 0.0, 1.0,
+        material_.anisotropyStrength, false, self);
+    self.anisotropyStrengthSlider = static_cast<NSSlider*>(anisotropyRow.views[1]);
+    self.anisotropyStrengthValue = static_cast<NSTextField*>(anisotropyRow.views[2]);
+    auto* brushDirectionRow = makeSliderRow(@"Brush angle", 0.0, 360.0,
+        material_.anisotropyRotationDegrees, false, self);
+    self.anisotropyRotationSlider = static_cast<NSSlider*>(brushDirectionRow.views[1]);
+    self.anisotropyRotationValue = static_cast<NSTextField*>(brushDirectionRow.views[2]);
+    anisotropyRow.toolTip =
+        @"Stretches metallic highlights along a brushed direction in the interactive preview.";
+
     auto* previewModeLabel = makeLabel(@"Preview mode");
     self.previewModeControl = [[NSSegmentedControl alloc] initWithFrame:NSZeroRect];
     self.previewModeControl.segmentCount = 2;
@@ -1955,14 +2051,11 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @"Sets the generated texture size for 2D, baked, and 3D previews.";
 
     auto* outputLabel = makeLabel(@"Material output");
-    self.outputControl = [[NSSegmentedControl alloc] initWithFrame:NSZeroRect];
-    self.outputControl.segmentCount = 5;
-    [self.outputControl setLabel:@"Colour" forSegment:0];
-    [self.outputControl setLabel:@"Height" forSegment:1];
-    [self.outputControl setLabel:@"Normal" forSegment:2];
-    [self.outputControl setLabel:@"Roughness" forSegment:3];
-    [self.outputControl setLabel:@"Metalness" forSegment:4];
-    self.outputControl.selectedSegment = 0;
+    self.outputControl = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+    for (const auto output : paperweight::materialOutputs) {
+        [self.outputControl addItemWithTitle:outputName(output)];
+    }
+    [self.outputControl selectItemAtIndex:0];
     self.outputControl.target = self;
     self.outputControl.action = @selector(outputChanged:);
     self.outputControl.accessibilityLabel = @"Material output";
@@ -2131,12 +2224,28 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.metalnessMapCheckbox = [NSButton checkboxWithTitle:@"Metalness"
                                                       target:self
                                                       action:@selector(previewMapToggled:)];
+    self.occlusionMapCheckbox = [NSButton checkboxWithTitle:@"Ambient occlusion"
+                                                      target:self
+                                                      action:@selector(previewMapToggled:)];
+    self.clearCoatMapCheckbox = [NSButton checkboxWithTitle:@"Clear coat"
+                                                      target:self
+                                                      action:@selector(previewMapToggled:)];
+    self.emissiveMapCheckbox = [NSButton checkboxWithTitle:@"Emissive"
+                                                     target:self
+                                                     action:@selector(previewMapToggled:)];
+    self.anisotropyCheckbox = [NSButton checkboxWithTitle:@"Anisotropy"
+                                                    target:self
+                                                    action:@selector(previewMapToggled:)];
     for (NSButton* checkbox in @[
              self.colourMapCheckbox,
              self.heightMapCheckbox,
              self.normalMapCheckbox,
              self.roughnessMapCheckbox,
              self.metalnessMapCheckbox,
+             self.occlusionMapCheckbox,
+             self.clearCoatMapCheckbox,
+             self.emissiveMapCheckbox,
+             self.anisotropyCheckbox,
          ]) {
         checkbox.state = NSControlStateValueOn;
     }
@@ -2151,9 +2260,19 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     mapsSecondRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
     mapsSecondRow.distribution = NSStackViewDistributionFillEqually;
     auto* mapsThirdRow = [NSStackView stackViewWithViews:@[
-        self.metalnessMapCheckbox,
+        self.metalnessMapCheckbox, self.occlusionMapCheckbox,
     ]];
     mapsThirdRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    mapsThirdRow.distribution = NSStackViewDistributionFillEqually;
+    auto* mapsFourthRow = [NSStackView stackViewWithViews:@[
+        self.clearCoatMapCheckbox, self.emissiveMapCheckbox,
+    ]];
+    mapsFourthRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    mapsFourthRow.distribution = NSStackViewDistributionFillEqually;
+    auto* mapsFifthRow = [NSStackView stackViewWithViews:@[
+        self.anisotropyCheckbox,
+    ]];
+    mapsFifthRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
 
     auto* animationPhaseRow = makePreviewSliderRow(@"Light phase", 0.0, 1.0, 0.0, self);
     self.animationPhaseSlider = static_cast<NSSlider*>(animationPhaseRow.views[1]);
@@ -2187,6 +2306,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         mapsFirstRow,
         mapsSecondRow,
         mapsThirdRow,
+        mapsFourthRow,
+        mapsFifthRow,
         displacementRow,
         previewNormalRow,
         makeLabel(@"Stylised lighting"),
@@ -2251,6 +2372,18 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         metalnessLowRow,
         metalnessHighRow,
         dielectricIorRow,
+        makeLabel(@"Coatings and special surfaces"),
+        coatingLowRow,
+        coatingHighRow,
+        occlusionLowRow,
+        occlusionHighRow,
+        clearCoatLowRow,
+        clearCoatHighRow,
+        coatRoughLowRow,
+        coatRoughHighRow,
+        emissiveRow,
+        anisotropyRow,
+        brushDirectionRow,
         makeSeparator(),
         previewModeLabel,
         self.previewModeControl,
@@ -2307,6 +2440,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         [ambientRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
         [mapsFirstRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
         [mapsSecondRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
+        [mapsThirdRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
+        [mapsFourthRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
+        [mapsFifthRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
         [displacementRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
         [previewNormalRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
         [toonBandsRow.widthAnchor constraintEqualToAnchor:self.threeDPreviewControls.widthAnchor],
@@ -2433,15 +2569,31 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @"Blend, add, multiply, select the lower or higher value, or add centred fine detail.";
 
     auto* outputsLabel = makeLabel(@"Affect outputs");
-    self.layerOutputControl = [[NSSegmentedControl alloc] initWithFrame:NSZeroRect];
-    self.layerOutputControl.segmentCount = 4;
-    [self.layerOutputControl setLabel:@"Colour" forSegment:0];
-    [self.layerOutputControl setLabel:@"Height/Normal" forSegment:1];
-    [self.layerOutputControl setLabel:@"Roughness" forSegment:2];
-    [self.layerOutputControl setLabel:@"Metalness" forSegment:3];
-    self.layerOutputControl.trackingMode = NSSegmentSwitchTrackingSelectAny;
-    self.layerOutputControl.target = self;
-    self.layerOutputControl.action = @selector(layerParameterChanged:);
+    NSMutableArray<NSButton*>* outputButtons = [NSMutableArray array];
+    for (NSString* title in @[
+             @"Colour", @"Height / normal", @"Roughness", @"Metalness",
+             @"Coating", @"Ambient occlusion", @"Clear coat",
+             @"Coat roughness", @"Emissive",
+         ]) {
+        auto* button = [NSButton checkboxWithTitle:title
+                                             target:self
+                                             action:@selector(layerParameterChanged:)];
+        [outputButtons addObject:button];
+    }
+    self.layerOutputButtons = outputButtons;
+    NSMutableArray<NSStackView*>* outputRows = [NSMutableArray array];
+    for (NSUInteger index = 0; index < outputButtons.count; index += 3) {
+        const auto end = std::min(index + 3, outputButtons.count);
+        auto* row = [NSStackView stackViewWithViews:[outputButtons
+            subarrayWithRange:NSMakeRange(index, end - index)]];
+        row.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+        row.distribution = NSStackViewDistributionFillEqually;
+        row.spacing = 5.0;
+        [outputRows addObject:row];
+    }
+    self.layerOutputControl = [NSStackView stackViewWithViews:outputRows];
+    self.layerOutputControl.orientation = NSUserInterfaceLayoutOrientationVertical;
+    self.layerOutputControl.spacing = 4.0;
     self.layerOutputControl.toolTip =
         @"Choose independently which material maps this layer changes. Normal is derived from height.";
 
@@ -3187,7 +3339,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         static_cast<std::size_t>(selectedLayer_ + 1) < material_.layers.size();
     self.layerEnabledCheckbox.enabled = hasLayer;
     self.layerCompositeControl.enabled = hasLayer;
-    self.layerOutputControl.enabled = hasLayer;
+    for (NSButton* button in self.layerOutputButtons) {
+        button.enabled = hasLayer;
+    }
     self.layerOpacitySlider.enabled = hasLayer;
     self.layerInspectorTabs.enabled = hasLayer;
     if (!hasLayer) {
@@ -3240,10 +3394,22 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.layerEnabledCheckbox.state = layer->enabled
         ? NSControlStateValueOn
         : NSControlStateValueOff;
-    [self.layerOutputControl setSelected:layer->outputs.colour forSegment:0];
-    [self.layerOutputControl setSelected:layer->outputs.height forSegment:1];
-    [self.layerOutputControl setSelected:layer->outputs.roughness forSegment:2];
-    [self.layerOutputControl setSelected:layer->outputs.metalness forSegment:3];
+    constexpr std::array<bool paperweight::LayerOutputRouting::*, 9> routes{
+        &paperweight::LayerOutputRouting::colour,
+        &paperweight::LayerOutputRouting::height,
+        &paperweight::LayerOutputRouting::roughness,
+        &paperweight::LayerOutputRouting::metalness,
+        &paperweight::LayerOutputRouting::coating,
+        &paperweight::LayerOutputRouting::occlusion,
+        &paperweight::LayerOutputRouting::clearCoat,
+        &paperweight::LayerOutputRouting::clearCoatRoughness,
+        &paperweight::LayerOutputRouting::emissive,
+    };
+    for (std::size_t index = 0; index < routes.size(); ++index) {
+        self.layerOutputButtons[index].state = layer->outputs.*routes[index]
+            ? NSControlStateValueOn
+            : NSControlStateValueOff;
+    }
     switch (layer->compositeMode) {
     case paperweight::CompositeMode::blend:
         self.layerCompositeControl.selectedSegment = 0;
@@ -5118,17 +5284,25 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         break;
     }
     layer->opacity = self.layerOpacitySlider.doubleValue;
-    if (sender == self.layerOutputControl) {
+    if ([self.layerOutputButtons containsObject:sender]) {
         layer->outputs = {
-            [self.layerOutputControl isSelectedForSegment:0] == YES,
-            [self.layerOutputControl isSelectedForSegment:1] == YES,
-            [self.layerOutputControl isSelectedForSegment:2] == YES,
-            [self.layerOutputControl isSelectedForSegment:3] == YES,
+            self.layerOutputButtons[0].state == NSControlStateValueOn,
+            self.layerOutputButtons[1].state == NSControlStateValueOn,
+            self.layerOutputButtons[2].state == NSControlStateValueOn,
+            self.layerOutputButtons[3].state == NSControlStateValueOn,
+            self.layerOutputButtons[4].state == NSControlStateValueOn,
+            self.layerOutputButtons[5].state == NSControlStateValueOn,
+            self.layerOutputButtons[6].state == NSControlStateValueOn,
+            self.layerOutputButtons[7].state == NSControlStateValueOn,
+            self.layerOutputButtons[8].state == NSControlStateValueOn,
         };
         if (!layer->outputs.colour && !layer->outputs.height &&
-            !layer->outputs.roughness && !layer->outputs.metalness) {
+            !layer->outputs.roughness && !layer->outputs.metalness &&
+            !layer->outputs.coating && !layer->outputs.occlusion &&
+            !layer->outputs.clearCoat && !layer->outputs.clearCoatRoughness &&
+            !layer->outputs.emissive) {
             layer->outputs.colour = true;
-            [self.layerOutputControl setSelected:YES forSegment:0];
+            self.layerOutputButtons[0].state = NSControlStateValueOn;
             self.statusLabel.stringValue = @"A layer must affect at least one output.";
             self.statusLabel.textColor = NSColor.systemOrangeColor;
         }
@@ -5976,7 +6150,21 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     material_.metalnessLow = self.metalnessLowSlider.doubleValue;
     material_.metalnessHigh = self.metalnessHighSlider.doubleValue;
     material_.dielectricIor = self.dielectricIorSlider.doubleValue;
+    material_.coatingLow = self.coatingLowSlider.doubleValue;
+    material_.coatingHigh = self.coatingHighSlider.doubleValue;
+    material_.occlusionLow = self.occlusionLowSlider.doubleValue;
+    material_.occlusionHigh = self.occlusionHighSlider.doubleValue;
+    material_.clearCoatLow = self.clearCoatLowSlider.doubleValue;
+    material_.clearCoatHigh = self.clearCoatHighSlider.doubleValue;
+    material_.clearCoatRoughnessLow = self.clearCoatRoughnessLowSlider.doubleValue;
+    material_.clearCoatRoughnessHigh = self.clearCoatRoughnessHighSlider.doubleValue;
+    material_.emissiveIntensity = self.emissiveIntensitySlider.doubleValue;
+    material_.anisotropyStrength = self.anisotropyStrengthSlider.doubleValue;
+    material_.anisotropyRotationDegrees = self.anisotropyRotationSlider.doubleValue;
     self.material3DPreviewView.dielectricIor = material_.dielectricIor;
+    self.material3DPreviewView.anisotropyStrength = material_.anisotropyStrength;
+    self.material3DPreviewView.anisotropyRotationDegrees =
+        material_.anisotropyRotationDegrees;
     self.displacementSlider.doubleValue = recommendedPreviewDisplacement(material_);
     self.material3DPreviewView.displacementStrength = self.displacementSlider.doubleValue;
     [self updateControlLabels];
@@ -6029,7 +6217,21 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.metalnessLowSlider.doubleValue = material_.metalnessLow;
     self.metalnessHighSlider.doubleValue = material_.metalnessHigh;
     self.dielectricIorSlider.doubleValue = material_.dielectricIor;
+    self.coatingLowSlider.doubleValue = material_.coatingLow;
+    self.coatingHighSlider.doubleValue = material_.coatingHigh;
+    self.occlusionLowSlider.doubleValue = material_.occlusionLow;
+    self.occlusionHighSlider.doubleValue = material_.occlusionHigh;
+    self.clearCoatLowSlider.doubleValue = material_.clearCoatLow;
+    self.clearCoatHighSlider.doubleValue = material_.clearCoatHigh;
+    self.clearCoatRoughnessLowSlider.doubleValue = material_.clearCoatRoughnessLow;
+    self.clearCoatRoughnessHighSlider.doubleValue = material_.clearCoatRoughnessHigh;
+    self.emissiveIntensitySlider.doubleValue = material_.emissiveIntensity;
+    self.anisotropyStrengthSlider.doubleValue = material_.anisotropyStrength;
+    self.anisotropyRotationSlider.doubleValue = material_.anisotropyRotationDegrees;
     self.material3DPreviewView.dielectricIor = material_.dielectricIor;
+    self.material3DPreviewView.anisotropyStrength = material_.anisotropyStrength;
+    self.material3DPreviewView.anisotropyRotationDegrees =
+        material_.anisotropyRotationDegrees;
     self.displacementSlider.doubleValue = recommendedPreviewDisplacement(material_);
     self.material3DPreviewView.displacementStrength = self.displacementSlider.doubleValue;
     [self rebuildLayerList];
@@ -6059,26 +6261,11 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     static_cast<void>(sender);
     bakedPresentationSelected_ = false;
     self.bakedPresentationCheckbox.state = NSControlStateValueOff;
-    switch (self.outputControl.selectedSegment) {
-    case 0:
-        selectedOutput_ = paperweight::MaterialOutput::colour;
-        break;
-    case 1:
-        selectedOutput_ = paperweight::MaterialOutput::height;
-        break;
-    case 2:
-        selectedOutput_ = paperweight::MaterialOutput::normal;
-        break;
-    case 3:
-        selectedOutput_ = paperweight::MaterialOutput::roughness;
-        break;
-    case 4:
-        selectedOutput_ = paperweight::MaterialOutput::metalness;
-        break;
-    default:
-        selectedOutput_ = paperweight::MaterialOutput::colour;
-        break;
-    }
+    const NSInteger index = self.outputControl.indexOfSelectedItem;
+    selectedOutput_ = index >= 0 &&
+        static_cast<std::size_t>(index) < paperweight::materialOutputs.size()
+        ? paperweight::materialOutputs[static_cast<std::size_t>(index)]
+        : paperweight::MaterialOutput::colour;
     self.bakeControls.hidden = !bakedPresentationSelected_;
     [self regeneratePreview];
 }
@@ -6090,7 +6277,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.bakedPresentationCheckbox.state == NSControlStateValueOn;
     if (bakedPresentationSelected_) {
         selectedOutput_ = paperweight::MaterialOutput::colour;
-        self.outputControl.selectedSegment = 0;
+        [self.outputControl selectItemAtIndex:0];
     }
     self.bakeControls.hidden = !bakedPresentationSelected_;
     [self regeneratePreview];
@@ -6308,6 +6495,14 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.roughnessMapCheckbox.state == NSControlStateValueOn;
     self.material3DPreviewView.metalnessEnabled =
         self.metalnessMapCheckbox.state == NSControlStateValueOn;
+    self.material3DPreviewView.occlusionEnabled =
+        self.occlusionMapCheckbox.state == NSControlStateValueOn;
+    self.material3DPreviewView.clearCoatEnabled =
+        self.clearCoatMapCheckbox.state == NSControlStateValueOn;
+    self.material3DPreviewView.emissiveEnabled =
+        self.emissiveMapCheckbox.state == NSControlStateValueOn;
+    self.material3DPreviewView.anisotropyEnabled =
+        self.anisotropyCheckbox.state == NSControlStateValueOn;
 }
 
 - (void)togglePreviewAnimation:(id)sender
@@ -6359,6 +6554,28 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         [NSString stringWithFormat:@"%.2f", material_.metalnessHigh];
     self.dielectricIorValue.stringValue =
         [NSString stringWithFormat:@"%.2f", material_.dielectricIor];
+    self.coatingLowValue.stringValue =
+        [NSString stringWithFormat:@"%.2f", material_.coatingLow];
+    self.coatingHighValue.stringValue =
+        [NSString stringWithFormat:@"%.2f", material_.coatingHigh];
+    self.occlusionLowValue.stringValue =
+        [NSString stringWithFormat:@"%.2f", material_.occlusionLow];
+    self.occlusionHighValue.stringValue =
+        [NSString stringWithFormat:@"%.2f", material_.occlusionHigh];
+    self.clearCoatLowValue.stringValue =
+        [NSString stringWithFormat:@"%.2f", material_.clearCoatLow];
+    self.clearCoatHighValue.stringValue =
+        [NSString stringWithFormat:@"%.2f", material_.clearCoatHigh];
+    self.clearCoatRoughnessLowValue.stringValue =
+        [NSString stringWithFormat:@"%.2f", material_.clearCoatRoughnessLow];
+    self.clearCoatRoughnessHighValue.stringValue =
+        [NSString stringWithFormat:@"%.2f", material_.clearCoatRoughnessHigh];
+    self.emissiveIntensityValue.stringValue =
+        [NSString stringWithFormat:@"%.2f", material_.emissiveIntensity];
+    self.anisotropyStrengthValue.stringValue =
+        [NSString stringWithFormat:@"%.2f", material_.anisotropyStrength];
+    self.anisotropyRotationValue.stringValue =
+        [NSString stringWithFormat:@"%.0f°", material_.anisotropyRotationDegrees];
 }
 
 - (void)setActiveReferenceTemplate:(const paperweight::ReferenceMaterialTemplate*)descriptor
@@ -6437,7 +6654,21 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.metalnessLowSlider.doubleValue = material_.metalnessLow;
     self.metalnessHighSlider.doubleValue = material_.metalnessHigh;
     self.dielectricIorSlider.doubleValue = material_.dielectricIor;
+    self.coatingLowSlider.doubleValue = material_.coatingLow;
+    self.coatingHighSlider.doubleValue = material_.coatingHigh;
+    self.occlusionLowSlider.doubleValue = material_.occlusionLow;
+    self.occlusionHighSlider.doubleValue = material_.occlusionHigh;
+    self.clearCoatLowSlider.doubleValue = material_.clearCoatLow;
+    self.clearCoatHighSlider.doubleValue = material_.clearCoatHigh;
+    self.clearCoatRoughnessLowSlider.doubleValue = material_.clearCoatRoughnessLow;
+    self.clearCoatRoughnessHighSlider.doubleValue = material_.clearCoatRoughnessHigh;
+    self.emissiveIntensitySlider.doubleValue = material_.emissiveIntensity;
+    self.anisotropyStrengthSlider.doubleValue = material_.anisotropyStrength;
+    self.anisotropyRotationSlider.doubleValue = material_.anisotropyRotationDegrees;
     self.material3DPreviewView.dielectricIor = material_.dielectricIor;
+    self.material3DPreviewView.anisotropyStrength = material_.anisotropyStrength;
+    self.material3DPreviewView.anisotropyRotationDegrees =
+        material_.anisotropyRotationDegrees;
     [self rebuildLayerList];
     [self refreshLayerInspector];
     [self updateControlLabels];
@@ -6482,7 +6713,21 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.metalnessLowSlider.doubleValue = material_.metalnessLow;
     self.metalnessHighSlider.doubleValue = material_.metalnessHigh;
     self.dielectricIorSlider.doubleValue = material_.dielectricIor;
+    self.coatingLowSlider.doubleValue = material_.coatingLow;
+    self.coatingHighSlider.doubleValue = material_.coatingHigh;
+    self.occlusionLowSlider.doubleValue = material_.occlusionLow;
+    self.occlusionHighSlider.doubleValue = material_.occlusionHigh;
+    self.clearCoatLowSlider.doubleValue = material_.clearCoatLow;
+    self.clearCoatHighSlider.doubleValue = material_.clearCoatHigh;
+    self.clearCoatRoughnessLowSlider.doubleValue = material_.clearCoatRoughnessLow;
+    self.clearCoatRoughnessHighSlider.doubleValue = material_.clearCoatRoughnessHigh;
+    self.emissiveIntensitySlider.doubleValue = material_.emissiveIntensity;
+    self.anisotropyStrengthSlider.doubleValue = material_.anisotropyStrength;
+    self.anisotropyRotationSlider.doubleValue = material_.anisotropyRotationDegrees;
     self.material3DPreviewView.dielectricIor = material_.dielectricIor;
+    self.material3DPreviewView.anisotropyStrength = material_.anisotropyStrength;
+    self.material3DPreviewView.anisotropyRotationDegrees =
+        material_.anisotropyRotationDegrees;
     self.displacementSlider.doubleValue = recommendedPreviewDisplacement(material_);
     self.material3DPreviewView.displacementStrength = self.displacementSlider.doubleValue;
     [self rebuildLayerList];
@@ -6670,6 +6915,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 
 - (void)start3DPreviewGenerationForRevision:(std::uint64_t)revision
 {
+    self.material3DPreviewView.dielectricIor = material_.dielectricIor;
+    self.material3DPreviewView.anisotropyStrength = material_.anisotropyStrength;
+    self.material3DPreviewView.anisotropyRotationDegrees =
+        material_.anisotropyRotationDegrees;
     const paperweight::GenerationRequest request{
         material_,
         previewResolution_,
@@ -6728,6 +6977,11 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
                 std::move(*images[paperweight::materialOutputIndex(paperweight::MaterialOutput::normal)]),
                 std::move(*images[paperweight::materialOutputIndex(paperweight::MaterialOutput::roughness)]),
                 std::move(*images[paperweight::materialOutputIndex(paperweight::MaterialOutput::metalness)]),
+                std::move(*images[paperweight::materialOutputIndex(paperweight::MaterialOutput::coating)]),
+                std::move(*images[paperweight::materialOutputIndex(paperweight::MaterialOutput::occlusion)]),
+                std::move(*images[paperweight::materialOutputIndex(paperweight::MaterialOutput::clearCoat)]),
+                std::move(*images[paperweight::materialOutputIndex(paperweight::MaterialOutput::clearCoatRoughness)]),
+                std::move(*images[paperweight::materialOutputIndex(paperweight::MaterialOutput::emissive)]),
             });
         }
 
@@ -6744,10 +6998,15 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
                                                      heightImage:maps->height
                                                      normalImage:maps->normal
                                                   roughnessImage:maps->roughness
-                                                   metalnessImage:maps->metalness];
+                                                   metalnessImage:maps->metalness
+                                                     coatingImage:maps->coating
+                                                   occlusionImage:maps->occlusion
+                                                    clearCoatImage:maps->clearCoat
+                                           clearCoatRoughnessImage:maps->clearCoatRoughness
+                                                    emissiveImage:maps->emissive];
                 strongSelf->generated3DMaps_ = maps;
                 strongSelf.statusLabel.stringValue = [NSString stringWithFormat:
-                    @"Five %u × %u maps — %.6g × %.6g m — %zu-node graph — drag to orbit, scroll to zoom",
+                    @"Ten %u × %u maps — %.6g × %.6g m — %zu-node graph — drag to orbit, scroll to zoom",
                     strongSelf->previewResolution_,
                     strongSelf->previewResolution_,
                     strongSelf->previewCoverage_.widthMetres,
@@ -6784,7 +7043,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     if (self.previewModeControl.selectedSegment == 1) {
         [self.material3DPreviewView clearMaterialImages];
         self.statusLabel.stringValue = [NSString stringWithFormat:
-            @"Rendering five %u × %u material maps for 3D…",
+            @"Rendering ten %u × %u material maps for 3D…",
             previewResolution_, previewResolution_];
         self.previewLoadingLabel.stringValue = @"Rendering 3D material maps…";
     } else if (bakedPresentationSelected_) {
