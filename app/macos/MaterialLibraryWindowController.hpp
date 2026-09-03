@@ -4,6 +4,8 @@ typedef void (^PWOpenMaterialHandler)(NSURL* url);
 typedef void (^PWRelocateMaterialHandler)(NSURL* oldURL, NSURL* newURL);
 typedef BOOL (^PWCanRewriteMaterialHandler)(NSURL* url);
 
+FOUNDATION_EXPORT NSNotificationName const PWMaterialLibraryDidChangeNotification;
+
 @interface MaterialLibraryWindowController : NSWindowController
 
 - (instancetype)initWithOpenMaterialHandler:(PWOpenMaterialHandler)handler

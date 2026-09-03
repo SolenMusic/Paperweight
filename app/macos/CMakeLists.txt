@@ -56,6 +56,8 @@ add_executable(Paperweight MACOSX_BUNDLE
     Material3DPreviewView.mm
     MaterialLibraryWindowController.hpp
     MaterialLibraryWindowController.mm
+    MaterialLibraryNavigatorController.hpp
+    MaterialLibraryNavigatorController.mm
     PackedLibraryWindowController.hpp
     PackedLibraryWindowController.mm
     MaterialWizardWindowController.hpp
