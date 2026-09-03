@@ -362,6 +362,23 @@ Direct-graph text persistence is deferred until a node-authoring workflow can
 round-trip it without discarding information.
 See [pmat-format.md](pmat-format.md).
 
+## Native workspace ownership
+
+The v0.0.22 AppKit process has one application coordinator and one editor
+controller per open material. The coordinator owns global menus, the full
+library, the wizard, benchmarks, pack inspection, document-path identity, and
+the collection of live editors. Each editor owns all mutable material and
+preview state. This preserves the existing proven editor implementation while
+removing its former singleton lifetime assumption.
+
+The library window and editor windows share an AppKit tabbing identifier. The
+selected tab may be detached into an ordinary independent window without
+changing its controller or material state. A lightweight library navigator is
+instantiated per editor because AppKit views cannot safely belong to several
+windows at once. It performs filesystem discovery and PMAT metadata parsing for
+presentation only; generation and material semantics remain in the portable
+core. No workspace or window state is added to `.pmat` or `.pwlib`.
+
 ## Initial data flow
 
 ```text

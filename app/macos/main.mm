@@ -4,6 +4,7 @@
 #include "BenchmarkWindowController.hpp"
 #include "ImageBridge.hpp"
 #include "Material3DPreviewView.hpp"
+#include "MaterialLibraryNavigatorController.hpp"
 #include "MaterialLibraryWindowController.hpp"
 #include "MaterialWizardWindowController.hpp"
 #include "PackedLibraryWindowController.hpp"
@@ -129,7 +130,7 @@
 
 @end
 
-@interface AppDelegate : NSObject <NSApplicationDelegate, NSWindowDelegate>
+@interface AppDelegate : NSObject <NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation>
 
 @property(nonatomic, strong) NSWindow* window;
 @property(nonatomic, strong) BenchmarkWindowController* benchmarkWindowController;
@@ -137,6 +138,10 @@
 @property(nonatomic, strong) MaterialWizardWindowController* materialWizardWindowController;
 @property(nonatomic, strong) PackedLibraryWindowController* packedLibraryWindowController;
 @property(nonatomic, strong) NSArray<NSURL*>* pendingOpenURLs;
+@property(nonatomic, weak) AppDelegate* applicationCoordinator;
+@property(nonatomic, strong) NSMutableArray<AppDelegate*>* editorControllers;
+@property(nonatomic) BOOL applicationCoordinatorMode;
+@property(nonatomic) BOOL documentSessionOpen;
 @property(nonatomic, strong) NSTextField* materialUidField;
 @property(nonatomic, strong) NSView* previewContainer;
 @property(nonatomic, strong) NSStackView* comparisonStack;
@@ -221,6 +226,9 @@
 @property(nonatomic, strong) NSTimer* animationUiTimer;
 @property(nonatomic, strong) NSTextField* statusLabel;
 @property(nonatomic, strong) NSURL* currentFileURL;
+@property(nonatomic, strong) MaterialLibraryNavigatorController* libraryNavigatorController;
+@property(nonatomic, strong) NSLayoutConstraint* libraryNavigatorWidthConstraint;
+@property(nonatomic) BOOL libraryNavigatorVisible;
 @property(nonatomic, strong) NSStackView* layerListStack;
 @property(nonatomic, strong) NSPopUpButton* addOperationPopup;
 @property(nonatomic, strong) NSButton* removeLayerButton;
@@ -820,6 +828,30 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 - (void)applicationDidFinishLaunching:(NSNotification*)notification
 {
     static_cast<void>(notification);
+    self.applicationCoordinator = self;
+    self.applicationCoordinatorMode = YES;
+    self.editorControllers = [NSMutableArray array];
+    const NSInteger savedPreviewResolution =
+        [NSUserDefaults.standardUserDefaults integerForKey:@"previewResolution"];
+    previewResolution_ = savedPreviewResolution == 64 || savedPreviewResolution == 128 ||
+            savedPreviewResolution == 256 || savedPreviewResolution == 512 ||
+            savedPreviewResolution == 1024
+        ? static_cast<std::uint32_t>(savedPreviewResolution)
+        : 512;
+    [NSWindow setAllowsAutomaticWindowTabbing:YES];
+    [self buildMenus];
+    [self showMaterialLibrary:nil];
+    [NSApp activateIgnoringOtherApps:YES];
+
+    NSArray<NSURL*>* pendingURLs = self.pendingOpenURLs;
+    self.pendingOpenURLs = nil;
+    for (NSURL* url in pendingURLs) {
+        [self openDocumentAtURL:url];
+    }
+}
+
+- (void)prepareMaterialEditor
+{
     selectedOutput_ = paperweight::MaterialOutput::colour;
     bakedPresentationSelected_ = false;
     activeTemplate_ = nullptr;
@@ -836,20 +868,11 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     previewQueue_ = dispatch_queue_create(
         "org.solen-music.paperweight.preview",
         DISPATCH_QUEUE_SERIAL);
-    [self buildMenus];
     [self buildWindow];
     [self updateControlLabels];
     [self regeneratePreview];
     [self updateWindowTitle];
     [self.window center];
-    [self.window makeKeyAndOrderFront:nil];
-    [NSApp activateIgnoringOtherApps:YES];
-
-    NSArray<NSURL*>* pendingURLs = self.pendingOpenURLs;
-    self.pendingOpenURLs = nil;
-    for (NSURL* url in pendingURLs) {
-        [self openDocumentAtURL:url];
-    }
 }
 
 - (void)application:(NSApplication*)sender openFiles:(NSArray<NSString*>*)filenames
@@ -858,7 +881,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     for (NSString* filename in filenames) {
         [urls addObject:[NSURL fileURLWithPath:filename]];
     }
-    if (self.window == nil) {
+    if (self.materialLibraryWindowController == nil) {
         self.pendingOpenURLs = urls;
         [sender replyToOpenOrPrint:NSApplicationDelegateReplySuccess];
         return;
@@ -882,9 +905,20 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication*)sender
 {
     static_cast<void>(sender);
-    if (![self confirmDiscardIfNeeded]) {
-        return NSTerminateCancel;
+    NSArray<AppDelegate*>* editors = self.editorControllers.copy;
+    for (AppDelegate* editor in editors) {
+        if (editor.documentSessionOpen && ![editor confirmDiscardIfNeeded]) {
+            return NSTerminateCancel;
+        }
     }
+    for (AppDelegate* editor in editors) {
+        [editor cancelEditorWork];
+    }
+    return NSTerminateNow;
+}
+
+- (void)cancelEditorWork
+{
     ++previewRevision_;
     if (pendingPreviewBlock_ != nil) {
         dispatch_block_cancel(pendingPreviewBlock_);
@@ -895,7 +929,6 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     }
     [self.animationUiTimer invalidate];
     self.animationUiTimer = nil;
-    return NSTerminateNow;
 }
 
 - (BOOL)windowShouldClose:(NSWindow*)sender
@@ -914,9 +947,140 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     // Once it is closed, its URL must no longer make the library believe the
     // material is open. The retained window can subsequently be shown again
     // when a material is opened from the library or Finder.
+    [self cancelEditorWork];
+    self.documentSessionOpen = NO;
     self.currentFileURL = nil;
     self.window.documentEdited = NO;
     self.window.representedURL = nil;
+    AppDelegate* coordinator = self.applicationCoordinator;
+    if (coordinator != nil && coordinator != self) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [coordinator.editorControllers removeObjectIdenticalTo:self];
+        });
+    }
+}
+
+- (void)windowDidBecomeKey:(NSNotification*)notification
+{
+    if (notification.object == self.window && self.documentSessionOpen) {
+        [self.libraryNavigatorController refresh];
+    }
+}
+
+- (AppDelegate*)createMaterialEditor
+{
+    AppDelegate* coordinator = self.applicationCoordinator != nil
+        ? self.applicationCoordinator
+        : self;
+    if (coordinator != self) {
+        return [coordinator createMaterialEditor];
+    }
+
+    auto* editor = [[AppDelegate alloc] init];
+    editor.applicationCoordinator = self;
+    editor.applicationCoordinatorMode = NO;
+    [editor prepareMaterialEditor];
+    [self.editorControllers addObject:editor];
+    return editor;
+}
+
+- (AppDelegate*)activeMaterialEditor
+{
+    AppDelegate* coordinator = self.applicationCoordinator != nil
+        ? self.applicationCoordinator
+        : self;
+    if (coordinator != self) {
+        return [coordinator activeMaterialEditor];
+    }
+    NSWindow* keyWindow = NSApp.keyWindow;
+    for (AppDelegate* editor in self.editorControllers) {
+        NSWindowTabGroup* tabGroup = editor.window.tabGroup;
+        const BOOL selectedTab = tabGroup != nil && tabGroup.selectedWindow == editor.window;
+        const BOOL standaloneVisible = tabGroup == nil && editor.window.isVisible;
+        if (editor.documentSessionOpen && (editor.window == keyWindow ||
+            editor.window.isKeyWindow || selectedTab || standaloneVisible)) {
+            return editor;
+        }
+    }
+    return nil;
+}
+
+- (void)presentMaterialEditor:(AppDelegate*)editor
+{
+    AppDelegate* coordinator = self.applicationCoordinator != nil
+        ? self.applicationCoordinator
+        : self;
+    if (coordinator != self) {
+        [coordinator presentMaterialEditor:editor];
+        return;
+    }
+
+    editor.documentSessionOpen = YES;
+    NSWindow* libraryWindow = self.materialLibraryWindowController.window;
+    if (libraryWindow != nil && editor.window.tabbedWindows.count <= 1) {
+        [libraryWindow addTabbedWindow:editor.window ordered:NSWindowAbove];
+    }
+    NSScreen* screen = editor.window.screen != nil ? editor.window.screen : NSScreen.mainScreen;
+    NSRect visibleFrame = screen.visibleFrame;
+    NSSize desiredSize = NSMakeSize(
+        std::min<CGFloat>(1430.0, NSWidth(visibleFrame) - 40.0),
+        std::min<CGFloat>(820.0, NSHeight(visibleFrame) - 40.0));
+    [editor.window makeKeyAndOrderFront:nil];
+    if (NSWidth(editor.window.contentView.bounds) < desiredSize.width ||
+        NSHeight(editor.window.contentView.bounds) < desiredSize.height) {
+        [editor.window setContentSize:desiredSize];
+        [editor.window center];
+    }
+}
+
+- (BOOL)openMaterialDocumentAtURL:(NSURL*)url
+{
+    AppDelegate* coordinator = self.applicationCoordinator != nil
+        ? self.applicationCoordinator
+        : self;
+    if (coordinator != self) {
+        return [coordinator openMaterialDocumentAtURL:url];
+    }
+
+    NSURL* canonicalURL = url.URLByStandardizingPath.URLByResolvingSymlinksInPath;
+    for (AppDelegate* editor in self.editorControllers) {
+        NSURL* openURL = editor.currentFileURL.URLByStandardizingPath.URLByResolvingSymlinksInPath;
+        if (editor.documentSessionOpen && openURL != nil && [openURL isEqual:canonicalURL]) {
+            [editor.window makeKeyAndOrderFront:nil];
+            return YES;
+        }
+    }
+
+    AppDelegate* editor = [self createMaterialEditor];
+    if (![editor openMaterialAtURL:canonicalURL asShowcase:NO]) {
+        [self.editorControllers removeObjectIdenticalTo:editor];
+        return NO;
+    }
+    return YES;
+}
+
+- (void)relocateOpenMaterialFromURL:(NSURL*)oldURL toURL:(NSURL*)newURL
+{
+    NSURL* canonicalOldURL = oldURL.URLByStandardizingPath.URLByResolvingSymlinksInPath;
+    for (AppDelegate* editor in self.editorControllers) {
+        NSURL* openURL = editor.currentFileURL.URLByStandardizingPath.URLByResolvingSymlinksInPath;
+        if (editor.documentSessionOpen && openURL != nil && [openURL isEqual:canonicalOldURL]) {
+            editor.currentFileURL = newURL.URLByStandardizingPath.URLByResolvingSymlinksInPath;
+            [editor updateWindowTitle];
+        }
+    }
+}
+
+- (BOOL)canRewriteMaterialAtURL:(NSURL*)url
+{
+    NSURL* canonicalURL = url.URLByStandardizingPath.URLByResolvingSymlinksInPath;
+    for (AppDelegate* editor in self.editorControllers) {
+        NSURL* openURL = editor.currentFileURL.URLByStandardizingPath.URLByResolvingSymlinksInPath;
+        if (editor.documentSessionOpen && openURL != nil && [openURL isEqual:canonicalURL]) {
+            return NO;
+        }
+    }
+    return YES;
 }
 
 - (void)buildMenus
@@ -941,7 +1105,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
                                          keyEquivalent:@"n"];
     newMaterialItem.target = self;
     [fileMenu addItem:[NSMenuItem separatorItem]];
-    [fileMenu addItemWithTitle:@"Open…" action:@selector(openMaterial:) keyEquivalent:@"o"];
+    auto* openItem = [fileMenu addItemWithTitle:@"Open…"
+                                          action:@selector(openMaterial:)
+                                   keyEquivalent:@"o"];
+    openItem.target = self;
     auto* referenceTemplateItem = [[NSMenuItem alloc]
         initWithTitle:@"New from Reference Template"
         action:nil
@@ -1001,22 +1168,29 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     showcaseItem.submenu = showcaseMenu;
     [fileMenu addItem:showcaseItem];
     [fileMenu addItem:[NSMenuItem separatorItem]];
-    [fileMenu addItemWithTitle:@"Open Reference Image…"
-                        action:@selector(chooseReferenceImage:)
-                 keyEquivalent:@"r"];
-    [fileMenu addItemWithTitle:@"Hide Reference Image"
-                        action:@selector(clearReferenceImage:)
-                 keyEquivalent:@""];
+    auto* openReferenceItem = [fileMenu addItemWithTitle:@"Open Reference Image…"
+                                                   action:@selector(chooseReferenceImage:)
+                                            keyEquivalent:@"r"];
+    openReferenceItem.target = self;
+    auto* hideReferenceItem = [fileMenu addItemWithTitle:@"Hide Reference Image"
+                                                   action:@selector(clearReferenceImage:)
+                                            keyEquivalent:@""];
+    hideReferenceItem.target = self;
     [fileMenu addItem:[NSMenuItem separatorItem]];
-    [fileMenu addItemWithTitle:@"Save" action:@selector(saveMaterial:) keyEquivalent:@"s"];
+    auto* saveItem = [fileMenu addItemWithTitle:@"Save"
+                                          action:@selector(saveMaterial:)
+                                   keyEquivalent:@"s"];
+    saveItem.target = self;
     auto* saveAsItem = [fileMenu addItemWithTitle:@"Save As…"
                                           action:@selector(saveMaterialAs:)
                                    keyEquivalent:@"s"];
+    saveAsItem.target = self;
     saveAsItem.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift;
     [fileMenu addItem:[NSMenuItem separatorItem]];
     self.exportMenuItem = [fileMenu addItemWithTitle:@"Export PNG…"
                                               action:@selector(exportPng:)
                                        keyEquivalent:@"e"];
+    self.exportMenuItem.target = self;
     self.exportMenuItem.keyEquivalentModifierMask =
         NSEventModifierFlagCommand | NSEventModifierFlagShift;
     [fileMenu addItem:[NSMenuItem separatorItem]];
@@ -1030,6 +1204,17 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     [editMenu addItemWithTitle:@"Paste" action:@selector(paste:) keyEquivalent:@"v"];
     [editMenu addItemWithTitle:@"Select All" action:@selector(selectAll:) keyEquivalent:@"a"];
     editMenuItem.submenu = editMenu;
+
+    auto* viewMenuItem = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
+    [mainMenu addItem:viewMenuItem];
+    auto* viewMenu = [[NSMenu alloc] initWithTitle:@"View"];
+    auto* navigatorItem = [viewMenu addItemWithTitle:@"Hide Library Navigator"
+                                              action:@selector(toggleLibraryNavigator:)
+                                       keyEquivalent:@"l"];
+    navigatorItem.target = self;
+    navigatorItem.keyEquivalentModifierMask =
+        NSEventModifierFlagCommand | NSEventModifierFlagControl;
+    viewMenuItem.submenu = viewMenu;
 
     auto* toolsMenuItem = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
     [mainMenu addItem:toolsMenuItem];
@@ -1055,7 +1240,83 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         NSEventModifierFlagCommand | NSEventModifierFlagOption;
     toolsMenuItem.submenu = toolsMenu;
 
+    auto* windowMenuItem = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
+    [mainMenu addItem:windowMenuItem];
+    auto* windowMenu = [[NSMenu alloc] initWithTitle:@"Window"];
+    [windowMenu addItemWithTitle:@"Minimise" action:@selector(performMiniaturize:) keyEquivalent:@"m"];
+    [windowMenu addItemWithTitle:@"Zoom" action:@selector(performZoom:) keyEquivalent:@""];
+    [windowMenu addItem:[NSMenuItem separatorItem]];
+    [windowMenu addItemWithTitle:@"Show Previous Tab"
+                          action:@selector(selectPreviousTab:)
+                   keyEquivalent:@"{"];
+    [windowMenu addItemWithTitle:@"Show Next Tab"
+                          action:@selector(selectNextTab:)
+                   keyEquivalent:@"}"];
+    [windowMenu addItemWithTitle:@"Move Tab to New Window"
+                          action:@selector(moveTabToNewWindow:)
+                   keyEquivalent:@""];
+    [windowMenu addItemWithTitle:@"Merge All Windows"
+                          action:@selector(mergeAllWindows:)
+                   keyEquivalent:@""];
+    [windowMenu addItem:[NSMenuItem separatorItem]];
+    auto* showLibraryItem = [windowMenu addItemWithTitle:@"Material Library"
+                                                   action:@selector(showMaterialLibrary:)
+                                            keyEquivalent:@"0"];
+    showLibraryItem.target = self;
+    windowMenuItem.submenu = windowMenu;
+    NSApp.windowsMenu = windowMenu;
+
     NSApp.mainMenu = mainMenu;
+}
+
+- (BOOL)validateMenuItem:(NSMenuItem*)menuItem
+{
+    if (menuItem.action == @selector(toggleLibraryNavigator:)) {
+        AppDelegate* editor = [self activeMaterialEditor];
+        menuItem.title = editor == nil || !editor.libraryNavigatorVisible
+            ? @"Show Library Navigator"
+            : @"Hide Library Navigator";
+        return editor != nil;
+    }
+    if (menuItem.action == @selector(showMaterialInformation:)) {
+        return [self activeMaterialEditor] != nil;
+    }
+    if (menuItem.action == @selector(chooseReferenceImage:) ||
+        menuItem.action == @selector(clearReferenceImage:) ||
+        menuItem.action == @selector(saveMaterial:) ||
+        menuItem.action == @selector(saveMaterialAs:)) {
+        return [self activeMaterialEditor] != nil;
+    }
+    if (menuItem.action == @selector(exportPng:)) {
+        AppDelegate* editor = [self activeMaterialEditor];
+        return editor != nil && editor->generatedImage_.has_value();
+    }
+    return YES;
+}
+
+- (void)toggleLibraryNavigator:(id)sender
+{
+    if (self.applicationCoordinatorMode) {
+        AppDelegate* editor = [self activeMaterialEditor];
+        if (editor != nil) {
+            [editor toggleLibraryNavigator:sender];
+        }
+        return;
+    }
+    static_cast<void>(sender);
+    self.libraryNavigatorVisible = !self.libraryNavigatorVisible;
+    [NSUserDefaults.standardUserDefaults setBool:self.libraryNavigatorVisible
+                                          forKey:@"materialLibraryNavigatorVisible"];
+    self.libraryNavigatorController.view.hidden = !self.libraryNavigatorVisible;
+    [NSAnimationContext runAnimationGroup:^(NSAnimationContext* context) {
+        context.duration = 0.18;
+        self.libraryNavigatorWidthConstraint.animator.constant =
+            self.libraryNavigatorVisible ? 230.0 : 0.0;
+        [self.window.contentView layoutSubtreeIfNeeded];
+    } completionHandler:nil];
+    if (self.libraryNavigatorVisible) {
+        [self.libraryNavigatorController refresh];
+    }
 }
 
 - (void)showMaterialWizard:(id)sender
@@ -1072,23 +1333,24 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
             const paperweight::Material& material,
             NSString* templateIdentifier) {
             AppDelegate* strongSelf = weakSelf;
-            if (strongSelf == nil || ![strongSelf confirmDiscardIfNeeded]) {
+            if (strongSelf == nil) {
                 return NO;
             }
-            strongSelf->material_ = material;
-            strongSelf->selectedLayer_ = 0;
-            strongSelf.currentFileURL = nil;
-            strongSelf->dirty_ = true;
+            AppDelegate* editor = [strongSelf createMaterialEditor];
+            editor->material_ = material;
+            editor->selectedLayer_ = 0;
+            editor.currentFileURL = nil;
+            editor->dirty_ = true;
             const auto* descriptor = templateIdentifier.UTF8String == nullptr
                 ? nullptr
                 : paperweight::findWizardMaterialTemplate(templateIdentifier.UTF8String);
-            [strongSelf setActiveReferenceTemplate:descriptor];
-            [strongSelf clearReferenceImage:nil];
-            [strongSelf applyMaterialToControls];
-            [strongSelf updateWindowTitle];
-            strongSelf.statusLabel.stringValue = @"Wizard material is ready for detailed editing.";
-            strongSelf.statusLabel.textColor = NSColor.secondaryLabelColor;
-            [strongSelf.window makeKeyAndOrderFront:nil];
+            [editor setActiveReferenceTemplate:descriptor];
+            [editor clearReferenceImage:nil];
+            [editor applyMaterialToControls];
+            [editor updateWindowTitle];
+            editor.statusLabel.stringValue = @"Wizard material is ready for detailed editing.";
+            editor.statusLabel.textColor = NSColor.secondaryLabelColor;
+            [strongSelf presentMaterialEditor:editor];
             return YES;
         }
         savedMaterialHandler:^(NSURL* url) {
@@ -1101,28 +1363,34 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 - (void)showMaterialLibrary:(id)sender
 {
     static_cast<void>(sender);
+    AppDelegate* coordinator = self.applicationCoordinator != nil
+        ? self.applicationCoordinator
+        : self;
+    if (coordinator != self) {
+        [coordinator showMaterialLibrary:sender];
+        return;
+    }
     if (self.materialLibraryWindowController == nil) {
         __weak AppDelegate* weakSelf = self;
         self.materialLibraryWindowController = [[MaterialLibraryWindowController alloc]
             initWithOpenMaterialHandler:^(NSURL* url) {
                 AppDelegate* strongSelf = weakSelf;
                 if (strongSelf != nil) {
-                    [strongSelf openMaterialAtURL:url asShowcase:NO];
+                    [strongSelf openMaterialDocumentAtURL:url];
                 }
             }
             relocationHandler:^(NSURL* oldURL, NSURL* newURL) {
                 AppDelegate* strongSelf = weakSelf;
-                if (strongSelf != nil && [strongSelf.currentFileURL isEqual:oldURL]) {
-                    strongSelf.currentFileURL = newURL;
-                    [strongSelf updateWindowTitle];
+                if (strongSelf != nil) {
+                    [strongSelf relocateOpenMaterialFromURL:oldURL toURL:newURL];
                 }
             }
             canRewriteHandler:^BOOL(NSURL* url) {
                 AppDelegate* strongSelf = weakSelf;
-                return strongSelf == nil || !strongSelf.window.isVisible ||
-                    strongSelf.currentFileURL == nil ||
-                    ![strongSelf.currentFileURL isEqual:url];
+                return strongSelf == nil || [strongSelf canRewriteMaterialAtURL:url];
             }];
+        self.materialLibraryWindowController.window.tabbingMode = NSWindowTabbingModePreferred;
+        self.materialLibraryWindowController.window.tabbingIdentifier = @"paperweight.workspace";
     }
     [self.materialLibraryWindowController showMaterialLibrary];
 }
@@ -1137,6 +1405,13 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 
 - (void)showMaterialInformation:(id)sender
 {
+    if (self.applicationCoordinatorMode) {
+        AppDelegate* editor = [self activeMaterialEditor];
+        if (editor != nil) {
+            [editor showMaterialInformation:sender];
+        }
+        return;
+    }
     static_cast<void>(sender);
     const paperweight::MaterialMetadata current = material_.metadata.value_or(
         paperweight::MaterialMetadata{});
@@ -1253,12 +1528,33 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     // property pointing at a deallocated object and crashes the next editor
     // action (or application teardown while an auxiliary window is open).
     self.window.releasedWhenClosed = NO;
+    self.window.tabbingMode = NSWindowTabbingModePreferred;
+    self.window.tabbingIdentifier = @"paperweight.workspace";
     self.window.delegate = self;
     NSColorPanel.sharedColorPanel.showsAlpha = YES;
 
     auto* content = [[NSView alloc] initWithFrame:self.window.contentView.bounds];
     content.translatesAutoresizingMaskIntoConstraints = NO;
     self.window.contentView = content;
+
+    __weak AppDelegate* weakSelf = self;
+    self.libraryNavigatorController = [[MaterialLibraryNavigatorController alloc]
+        initWithOpenMaterialHandler:^(NSURL* url) {
+            AppDelegate* editor = weakSelf;
+            [editor.applicationCoordinator openMaterialDocumentAtURL:url];
+        }
+        showLibraryHandler:^{
+            AppDelegate* editor = weakSelf;
+            [editor.applicationCoordinator showMaterialLibrary:nil];
+        }];
+    NSView* libraryNavigator = self.libraryNavigatorController.view;
+    libraryNavigator.translatesAutoresizingMaskIntoConstraints = NO;
+    id storedNavigatorPreference = [NSUserDefaults.standardUserDefaults
+        objectForKey:@"materialLibraryNavigatorVisible"];
+    self.libraryNavigatorVisible = storedNavigatorPreference == nil
+        ? YES
+        : [storedNavigatorPreference boolValue];
+    libraryNavigator.hidden = !self.libraryNavigatorVisible;
 
     auto* controlsPanel = [[NSVisualEffectView alloc] initWithFrame:NSZeroRect];
     controlsPanel.translatesAutoresizingMaskIntoConstraints = NO;
@@ -1346,11 +1642,18 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     [self.previewContainer addSubview:self.material3DPreviewView];
     [self.previewContainer addSubview:self.previewLoadingPanel];
 
+    [content addSubview:libraryNavigator];
     [content addSubview:controlsPanel];
     [content addSubview:layersPanel];
     [content addSubview:self.previewContainer];
+    self.libraryNavigatorWidthConstraint = [libraryNavigator.widthAnchor
+        constraintEqualToConstant:self.libraryNavigatorVisible ? 230.0 : 0.0];
     [NSLayoutConstraint activateConstraints:@[
-        [controlsPanel.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
+        [libraryNavigator.leadingAnchor constraintEqualToAnchor:content.leadingAnchor],
+        [libraryNavigator.topAnchor constraintEqualToAnchor:content.topAnchor],
+        [libraryNavigator.bottomAnchor constraintEqualToAnchor:content.bottomAnchor],
+        self.libraryNavigatorWidthConstraint,
+        [controlsPanel.leadingAnchor constraintEqualToAnchor:libraryNavigator.trailingAnchor],
         [controlsPanel.topAnchor constraintEqualToAnchor:content.topAnchor],
         [controlsPanel.bottomAnchor constraintEqualToAnchor:content.bottomAnchor],
         [controlsPanel.widthAnchor constraintEqualToConstant:310.0],
@@ -6306,7 +6609,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     dirty_ = false;
     [self updateWindowTitle];
     [NSDocumentController.sharedDocumentController noteNewRecentDocumentURL:url];
-    [self.materialLibraryWindowController noteMaterialSavedAtURL:url];
+    [self.applicationCoordinator.materialLibraryWindowController noteMaterialSavedAtURL:url];
     self.statusLabel.stringValue = @"Material saved";
     self.statusLabel.textColor = NSColor.secondaryLabelColor;
     return YES;
@@ -6314,12 +6617,26 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 
 - (void)saveMaterial:(id)sender
 {
+    if (self.applicationCoordinatorMode) {
+        AppDelegate* editor = [self activeMaterialEditor];
+        if (editor != nil) {
+            [editor saveMaterial:sender];
+        }
+        return;
+    }
     static_cast<void>(sender);
     [self saveMaterialWithPanelIfNeeded];
 }
 
 - (void)saveMaterialAs:(id)sender
 {
+    if (self.applicationCoordinatorMode) {
+        AppDelegate* editor = [self activeMaterialEditor];
+        if (editor != nil) {
+            [editor saveMaterialAs:sender];
+        }
+        return;
+    }
     static_cast<void>(sender);
     NSURL* previousURL = self.currentFileURL;
     self.currentFileURL = nil;
@@ -6348,7 +6665,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 {
     NSString* extension = url.pathExtension.lowercaseString;
     if ([extension isEqualToString:@"pmat"]) {
-        return [self openMaterialAtURL:url asShowcase:NO];
+        return [self openMaterialDocumentAtURL:url];
     }
     if ([extension isEqualToString:@"pwlib"]) {
         return [self openPackedLibraryAtURL:url];
@@ -6365,21 +6682,22 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         initWithURL:url
         openHandler:^(paperweight::Material material) {
             AppDelegate* strongSelf = weakSelf;
-            if (strongSelf == nil || ![strongSelf confirmDiscardIfNeeded]) {
+            if (strongSelf == nil) {
                 return;
             }
-            strongSelf->material_ = std::move(material);
-            strongSelf->selectedLayer_ = 0;
-            strongSelf.currentFileURL = nil;
-            strongSelf->dirty_ = true;
-            [strongSelf setActiveReferenceTemplate:nullptr];
-            [strongSelf clearReferenceImage:nil];
-            [strongSelf applyMaterialToControls];
-            [strongSelf updateWindowTitle];
-            strongSelf.statusLabel.stringValue =
+            AppDelegate* editor = [strongSelf createMaterialEditor];
+            editor->material_ = std::move(material);
+            editor->selectedLayer_ = 0;
+            editor.currentFileURL = nil;
+            editor->dirty_ = true;
+            [editor setActiveReferenceTemplate:nullptr];
+            [editor clearReferenceImage:nil];
+            [editor applyMaterialToControls];
+            [editor updateWindowTitle];
+            editor.statusLabel.stringValue =
                 @"Packed material instantiated as a new editable document.";
-            strongSelf.statusLabel.textColor = NSColor.secondaryLabelColor;
-            [strongSelf.window makeKeyAndOrderFront:nil];
+            editor.statusLabel.textColor = NSColor.secondaryLabelColor;
+            [strongSelf presentMaterialEditor:editor];
         }];
     [self.packedLibraryWindowController showPackedLibrary];
     [NSDocumentController.sharedDocumentController noteNewRecentDocumentURL:url];
@@ -6388,6 +6706,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 
 - (void)openReferenceTemplate:(NSMenuItem*)sender
 {
+    if (self.applicationCoordinatorMode) {
+        [[self createMaterialEditor] openReferenceTemplate:sender];
+        return;
+    }
     NSString* identifier = [sender.representedObject isKindOfClass:NSString.class]
         ? static_cast<NSString*>(sender.representedObject)
         : nil;
@@ -6448,10 +6770,18 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         chosenSeed,
         descriptor->referenceFileName.data()];
     self.statusLabel.textColor = NSColor.secondaryLabelColor;
+    [self.applicationCoordinator presentMaterialEditor:self];
 }
 
 - (void)chooseReferenceImage:(id)sender
 {
+    if (self.applicationCoordinatorMode) {
+        AppDelegate* editor = [self activeMaterialEditor];
+        if (editor != nil) {
+            [editor chooseReferenceImage:sender];
+        }
+        return;
+    }
     static_cast<void>(sender);
     auto* panel = [NSOpenPanel openPanel];
     panel.title = @"Choose Reference Material Image";
@@ -6476,6 +6806,13 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 
 - (void)clearReferenceImage:(id)sender
 {
+    if (self.applicationCoordinatorMode) {
+        AppDelegate* editor = [self activeMaterialEditor];
+        if (editor != nil) {
+            [editor clearReferenceImage:sender];
+        }
+        return;
+    }
     static_cast<void>(sender);
     self.referenceImageView.materialImage = nil;
     [self.referenceImageView setNeedsDisplay:YES];
@@ -6485,6 +6822,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 
 - (void)openShowcase:(NSMenuItem*)sender
 {
+    if (self.applicationCoordinatorMode) {
+        [[self createMaterialEditor] openShowcase:sender];
+        return;
+    }
     NSString* name = [sender.representedObject isKindOfClass:NSString.class]
         ? static_cast<NSString*>(sender.representedObject)
         : nil;
@@ -6545,12 +6886,19 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.statusLabel.stringValue = @"Showcase loaded as a new editable material";
         self.statusLabel.textColor = NSColor.secondaryLabelColor;
     }
-    [self.window makeKeyAndOrderFront:nil];
+    [self.applicationCoordinator presentMaterialEditor:self];
     return YES;
 }
 
 - (void)exportPng:(id)sender
 {
+    if (self.applicationCoordinatorMode) {
+        AppDelegate* editor = [self activeMaterialEditor];
+        if (editor != nil) {
+            [editor exportPng:sender];
+        }
+        return;
+    }
     static_cast<void>(sender);
     if (!generatedImage_) {
         [self showErrorWithTitle:@"There is no texture to export"

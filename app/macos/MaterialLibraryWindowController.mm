@@ -16,6 +16,9 @@
 #include <utility>
 #include <vector>
 
+NSNotificationName const PWMaterialLibraryDidChangeNotification =
+    @"PWMaterialLibraryDidChangeNotification";
+
 @interface PWMaterialLibraryRow : NSObject
 @property(nonatomic, strong) NSURL* url;
 @property(nonatomic, copy) NSString* relativePath;
@@ -109,6 +112,7 @@ std::string slugForName(NSString* name)
 @property(nonatomic, strong) NSButton* moveButton;
 @property(nonatomic, strong) NSButton* revealButton;
 @property(nonatomic, strong) NSButton* exportPackButton;
+@property(nonatomic) BOOL hasPositionedWindow;
 @end
 
 @implementation MaterialLibraryWindowController {
@@ -123,7 +127,7 @@ std::string slugForName(NSString* name)
 {
     const NSWindowStyleMask style = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
         NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;
-    auto* window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 1100, 620)
+    auto* window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 1430, 820)
                                                 styleMask:style
                                                   backing:NSBackingStoreBuffered
                                                     defer:NO];
@@ -161,7 +165,10 @@ std::string slugForName(NSString* name)
 - (void)showMaterialLibrary
 {
     [self showWindow:nil];
-    [self.window center];
+    if (!self.hasPositionedWindow) {
+        [self.window center];
+        self.hasPositionedWindow = YES;
+    }
     [self.window makeKeyAndOrderFront:nil];
     [self refreshLibrary:nil];
 }
@@ -368,6 +375,8 @@ std::string slugForName(NSString* name)
         self.allRows = @[];
         [self filterChanged:nil];
         self.summaryLabel.stringValue = @"Choose a working folder to begin.";
+        [NSNotificationCenter.defaultCenter
+            postNotificationName:PWMaterialLibraryDidChangeNotification object:self];
         return;
     }
 
@@ -559,6 +568,8 @@ std::string slugForName(NSString* name)
             static_cast<unsigned long>(problemCount), problemCount == 1 ? @"" : @"s",
             byteCount(totalSourceBytes)];
     }
+    [NSNotificationCenter.defaultCenter
+        postNotificationName:PWMaterialLibraryDidChangeNotification object:self];
 }
 
 - (void)filterChanged:(id)sender

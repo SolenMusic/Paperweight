@@ -5,6 +5,27 @@ authoritative material library. There is no database and no hidden copy. The
 folder may be backed up, searched, edited with ordinary text tools, or placed in
 Git without involving Paperweight-specific infrastructure.
 
+## Library-centred workspace
+
+Paperweight v0.0.22 makes the full library browser the native application's
+launch screen and first tab. Opening a material creates an independent editor
+session in the same macOS tab group; opening an already-open path selects its
+existing editor. Each session owns its material, layer selection, dirty state,
+preview products, cancellation token, render queue, controls, and represented
+file URL. Changes in one tab therefore cannot leak into another.
+
+The compact navigator on the left of every editor searches friendly names,
+categories, and relative paths in the remembered working folder. Double-click
+opens a material and **Library Overview** returns to the full browser. The
+navigator can be collapsed from the View menu when the preview needs the room,
+and refreshes after saves or file operations in the full library.
+
+These are native AppKit tabs rather than an application-specific imitation.
+**Window > Move Tab to New Window** and tab dragging detach an editor for a
+second display; **Merge All Windows** restores a single-window layout. A closed
+editor immediately ceases to count as an open document, while unsaved editors
+still receive their own save warning when closed or when the application quits.
+
 Paperweight v0.0.21 can derive a compact `.pwlib` deployment artefact from the
 whole folder or selected rows. The readable `.pmat` files remain authoritative;
 editing or importing a pack is deliberately unsupported. See
@@ -62,7 +83,7 @@ folder, and refreshes the browser. **Edit Material** instead sends the same
 ordinary material to the complete editor. No private wizard document is kept.
 
 Both `.pmat` and `.pwlib` are registered with Finder. A source material opens
-in the normal editor; a pack opens in the read-only Pack Inspector, from which
+or selects its own editor tab; a pack opens in the read-only Pack Inspector, from which
 one entry can be instantiated with a chosen seed as a new editable material.
 
 ## Preview resolution

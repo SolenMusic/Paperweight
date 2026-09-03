@@ -13,15 +13,29 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-v0.0.21 is the current Portable Material Library Packs release. **Tools >
+v0.0.22 is the current Library Workspace release. Paperweight now opens on the
+full material library instead of manufacturing an unnamed editor document.
+Every opened material has an independent editing session and appears as a
+native macOS tab alongside the library. Tabs can be dragged out or moved with
+**Window > Move Tab to New Window** for a multi-display workflow, then merged
+again without copying or losing document state.
+
+Each editor also has a collapsible, searchable library navigator. Double-click
+another material to open it, use **Library Overview** to return to the complete
+browser, or toggle the navigator with **View > Show/Hide Library Navigator**.
+Opening an already-open `.pmat` selects its existing editor. Closing an editor
+removes that live document identity, so library rename and application teardown
+cannot be confused by a stale hidden window.
+
+The v0.0.21 Portable Material Library Packs work remains available. **Tools >
 Material Library > Export Pack** compiles an entire working folder or selected
 materials into one deterministic `.pwlib` deployment blob. The portable C++20
 reader lists entries directly from caller-owned memory, retrieves by canonical
 UID, and instantiates an ordinary material with the game's chosen seed. The
 source `.pmat` files remain the editable truth.
 
-Finder recognises both formats. Opening a `.pmat` loads the editable source in
-the main window. Opening a `.pwlib` presents a read-only Pack Inspector with
+Finder recognises both formats. Opening a `.pmat` selects or creates an editable
+material tab. Opening a `.pwlib` presents a read-only Pack Inspector with
 entry names, UIDs, storage modes, sizes, checksums, and chosen-seed
 instantiation into an ordinary new editor document.
 
