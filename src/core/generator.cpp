@@ -270,6 +270,7 @@ GenerationResult generate(
     case MaterialOutput::height:
     case MaterialOutput::normal:
     case MaterialOutput::roughness:
+    case MaterialOutput::metalness:
         break;
     default:
         return GenerationError{
@@ -406,6 +407,12 @@ GenerationResult generate(
                     row[x] = encodeScalar(
                         request.material.roughnessLow +
                         (request.material.roughnessHigh - request.material.roughnessLow) *
+                            sample.scalar);
+                    break;
+                case MaterialOutput::metalness:
+                    row[x] = encodeScalar(
+                        request.material.metalnessLow +
+                        (request.material.metalnessHigh - request.material.metalnessLow) *
                             sample.scalar);
                     break;
                 case MaterialOutput::normal:

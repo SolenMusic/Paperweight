@@ -38,6 +38,9 @@ struct Material {
     PhysicalSize physicalSize;
     std::optional<MaterialMetadata> metadata;
     std::optional<double> reliefDepthMetres;
+    double metalnessLow{0.0};
+    double metalnessHigh{0.0};
+    double dielectricIor{1.5};
 
     friend bool operator==(const Material&, const Material&) = default;
 };
@@ -55,6 +58,10 @@ struct MaterialLimits {
     static constexpr double maximumNormalStrength = 16.0;
     static constexpr double minimumRoughness = 0.0;
     static constexpr double maximumRoughness = 1.0;
+    static constexpr double minimumMetalness = 0.0;
+    static constexpr double maximumMetalness = 1.0;
+    static constexpr double minimumDielectricIor = 1.0;
+    static constexpr double maximumDielectricIor = 4.0;
     static constexpr double minimumReliefDepthMetres = 0.0;
     static constexpr double maximumReliefDepthMetres = 1000000.0;
     static constexpr std::uint32_t maximumLatticePeriod = 4096;
@@ -73,6 +80,9 @@ enum class MaterialParameter {
     normalStrength,
     roughnessLow,
     roughnessHigh,
+    metalnessLow,
+    metalnessHigh,
+    dielectricIor,
 };
 
 enum class MaterialColour {
@@ -91,7 +101,7 @@ struct ParameterMetadata {
     bool integral;
 };
 
-inline constexpr std::array<ParameterMetadata, 7> parameterMetadata{{
+inline constexpr std::array<ParameterMetadata, 10> parameterMetadata{{
     {MaterialParameter::frequency, "noise.frequency", "Frequency", 4.0, 1.0, 64.0, 1.0, true},
     {MaterialParameter::octaves, "noise.octaves", "Octaves", 5.0, 1.0, 8.0, 1.0, true},
     {MaterialParameter::lacunarity, "noise.lacunarity", "Lacunarity", 2.0, 1.0, 4.0, 1.0, true},
@@ -99,7 +109,16 @@ inline constexpr std::array<ParameterMetadata, 7> parameterMetadata{{
     {MaterialParameter::normalStrength, "normal.strength", "Normal strength", 1.0, 0.0, 16.0, 0.1, false},
     {MaterialParameter::roughnessLow, "roughness.low", "Roughness low", 0.25, 0.0, 1.0, 0.01, false},
     {MaterialParameter::roughnessHigh, "roughness.high", "Roughness high", 0.85, 0.0, 1.0, 0.01, false},
+    {MaterialParameter::metalnessLow, "metalness.low", "Metalness low", 0.0, 0.0, 1.0, 0.01, false},
+    {MaterialParameter::metalnessHigh, "metalness.high", "Metalness high", 0.0, 0.0, 1.0, 0.01, false},
+    {MaterialParameter::dielectricIor, "surface.ior", "Dielectric IOR", 1.5, 1.0, 4.0, 0.01, false},
 }};
+
+[[nodiscard]] constexpr double dielectricF0FromIor(double ior)
+{
+    const double ratio = (ior - 1.0) / (ior + 1.0);
+    return ratio * ratio;
+}
 
 struct ColourParameterMetadata {
     MaterialColour colour;

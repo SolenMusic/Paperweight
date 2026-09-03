@@ -38,6 +38,41 @@ std::optional<std::string> applyBinding(
             MaterialLimits::maximumReliefDepthMetres);
         return std::nullopt;
     }
+    if (binding.property == TemplateProperty::roughnessLow) {
+        material.roughnessLow = std::clamp(
+            value,
+            MaterialLimits::minimumRoughness,
+            MaterialLimits::maximumRoughness);
+        return std::nullopt;
+    }
+    if (binding.property == TemplateProperty::roughnessHigh) {
+        material.roughnessHigh = std::clamp(
+            value,
+            MaterialLimits::minimumRoughness,
+            MaterialLimits::maximumRoughness);
+        return std::nullopt;
+    }
+    if (binding.property == TemplateProperty::metalnessLow) {
+        material.metalnessLow = std::clamp(
+            value,
+            MaterialLimits::minimumMetalness,
+            MaterialLimits::maximumMetalness);
+        return std::nullopt;
+    }
+    if (binding.property == TemplateProperty::metalnessHigh) {
+        material.metalnessHigh = std::clamp(
+            value,
+            MaterialLimits::minimumMetalness,
+            MaterialLimits::maximumMetalness);
+        return std::nullopt;
+    }
+    if (binding.property == TemplateProperty::dielectricIor) {
+        material.dielectricIor = std::clamp(
+            value,
+            MaterialLimits::minimumDielectricIor,
+            MaterialLimits::maximumDielectricIor);
+        return std::nullopt;
+    }
     if (binding.layerIndex >= material.layers.size()) {
         return "template control refers to a missing layer";
     }
@@ -49,6 +84,11 @@ std::optional<std::string> applyBinding(
     switch (binding.property) {
     case TemplateProperty::normalStrength:
     case TemplateProperty::reliefDepthMetres:
+    case TemplateProperty::roughnessLow:
+    case TemplateProperty::roughnessHigh:
+    case TemplateProperty::metalnessLow:
+    case TemplateProperty::metalnessHigh:
+    case TemplateProperty::dielectricIor:
         break;
     case TemplateProperty::surfaceValue:
         if (auto* operation = std::get_if<SurfaceValueOperation>(&layer.operation)) {
@@ -238,6 +278,9 @@ MaterialRecipe makeMaterialRecipe(const Material& material)
         material.layers,
         material.physicalSize,
         material.reliefDepthMetres,
+        material.metalnessLow,
+        material.metalnessHigh,
+        material.dielectricIor,
     };
 }
 
@@ -258,6 +301,9 @@ Material instantiateMaterial(const MaterialRecipe& recipe, std::uint64_t seed)
         recipe.physicalSize,
         std::nullopt,
         recipe.reliefDepthMetres,
+        recipe.metalnessLow,
+        recipe.metalnessHigh,
+        recipe.dielectricIor,
     };
 }
 

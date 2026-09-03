@@ -1,4 +1,4 @@
-# `.pmat` format version 16
+# `.pmat` format version 17
 
 Paperweight material files are UTF-8 text. They are intended to be readable,
 diffable, and small enough to embed alongside game assets.
@@ -7,7 +7,7 @@ diffable, and small enough to embed alongside game assets.
 
 ```text
 # Paperweight procedural material
-pmat.version = 16
+pmat.version = 17
 material.type = fbm
 material.seed = 18431
 material.width = 1m
@@ -22,10 +22,13 @@ noise.gain = 0.5
 normal.strength = 1
 roughness.low = 0.25
 roughness.high = 0.85
+metalness.low = 0
+metalness.high = 0
+surface.ior = 1.5
 layers.count = 1
 layer.0.enabled = true
 layer.0.operation = noise
-layer.0.outputs = colour, height, roughness
+layer.0.outputs = colour, height, roughness, metalness
 layer.0.composite = blend
 layer.0.opacity = 1
 layer.0.noise.seed_offset = 0
@@ -70,7 +73,7 @@ no material; it never returns a partially accepted definition.
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
-| `pmat.version` | File-format version | `1` through `16`; the serialiser writes `16` |
+| `pmat.version` | File-format version | `1` through `17`; the serialiser writes `17` |
 | `material.type` | Generator model | `fbm` |
 | `material.seed` | Deterministic seed | Unsigned 64-bit integer |
 | `material.width` | Width of one seamless material repeat | Metre value from `0.000001m` to `1000000m` |
@@ -85,11 +88,15 @@ no material; it never returns a partially accepted definition.
 | `normal.strength` | Optional artistic multiplier after physical normal calculation | Decimal from 0 to 16 |
 | `roughness.low` | Roughness at scalar value zero | Decimal from 0 to 1 |
 | `roughness.high` | Roughness at scalar value one | Decimal from 0 to 1 |
+| `metalness.low` | Metalness at scalar value zero | Decimal from 0 to 1 |
+| `metalness.high` | Metalness at scalar value one | Decimal from 0 to 1 |
+| `surface.ior` | Index of refraction for dielectric reflection | Decimal from 1 to 4 |
 | `layers.count` | Number of ordered layers | Integer from 0 to 32 |
 
 The combination of frequency, octaves, and lacunarity must keep every lattice
-period at or below 4096. The roughness endpoints may be reversed if an inverse
-relationship is wanted.
+period at or below 4096. Roughness and metalness endpoints may be reversed if an
+inverse relationship is wanted. IOR 1.5 produces the common dielectric F0 value
+of 0.04; IOR affects reflective presentation but never rewrites colour-map bytes.
 
 `material.width` and `material.height` describe one complete mathematical
 repeat, not the pixel dimensions of an export. A caller may set
@@ -107,7 +114,7 @@ Every layer `N` has these common keys:
 | --- | --- | --- |
 | `layer.N.enabled` | Whether evaluation includes this layer | `true` or `false` |
 | `layer.N.operation` | Reusable evaluation operation | See operation table below |
-| `layer.N.outputs` | Output branches affected by the layer | One or more of `colour`, `height`, `roughness` |
+| `layer.N.outputs` | Output branches affected by the layer | One or more of `colour`, `height`, `roughness`, `metalness` |
 | `layer.N.composite` | How the result combines with accumulated input | `blend`, `add`, `multiply`, `minimum`, `maximum`, or `detail` |
 | `layer.N.opacity` | Composite amount | Decimal from 0 to 1 |
 
@@ -467,7 +474,7 @@ The mask samples an independent periodic FBM field in the layer's transformed
 coordinates. Its remapped value multiplies the layer opacity, allowing smooth,
 threshold-like, or inverted spatial control without changing the operation.
 Disabled masks evaluate to exactly one. Transform, warp, and mask fields remain
-required in versions 3 through 16 even when their optional features are disabled; this
+required in versions 3 through 17 even when their optional features are disabled; this
 keeps canonical files explicit and round trips unambiguous.
 
 Noise seed offset zero reproduces the original material seed exactly. Other
@@ -485,7 +492,7 @@ formula is applied to scalar, red, green, blue, and alpha channels.
 
 ## Graph compilation
 
-Paperweight v0.0.23 retains the layer syntax, now at version 16, as the compact,
+Paperweight v0.0.24 retains the layer syntax, now at version 17, as the compact,
 human-editable authoring projection. Before generation, the portable core
 compiles it into a directed acyclic material graph:
 
@@ -495,11 +502,11 @@ compiles it into a directed acyclic material graph:
   processing nodes;
 - enabled procedural masks become mask nodes;
 - layer composition behaviour becomes composite processing nodes;
-- colour, height, normal, and roughness receive explicit output nodes.
+- colour, height, normal, roughness, and metalness receive explicit output nodes.
 
 Disabled layers compile as exact no-ops. Node metadata records the source layer
-for future diagnostics and incremental evaluation. Version-16 layers compile
-into independent colour, height/normal, and roughness branches according to
+for future diagnostics and incremental evaluation. Version-17 layers compile
+into independent colour, height/normal, roughness, and metalness branches according to
 `layer.N.outputs`. Materials whose enabled layers target all branches retain
 the historical shared graph exactly. Portable C++ callers may also provide a
 direct graph through `GenerationRequest::graph`.
@@ -545,6 +552,11 @@ and the `minimum`, `maximum`, and `detail` composites. Normal follows height by
 definition, so it is not a separate routing token. A layer must target at least
 one branch.
 
+Format version 17 adds `metalness.low`, `metalness.high`, `surface.ior`, and the
+`metalness` routing token. The new map follows the same deterministic scalar
+remapping contract as roughness. Files from versions 1 through 16 acquire zero
+metalness, IOR 1.5, and legacy all-channel routing when read.
+
 ## Material outputs
 
 Every output derives from its routed graph branch at the same pixel centre:
@@ -553,6 +565,8 @@ Every output derives from its routed graph branch at the same pixel centre:
 - Height writes the final scalar to R, G, and B as linear UNORM8, with alpha 255.
 - Roughness interpolates between `roughness.low` and `roughness.high` using the
   final scalar, then writes linear greyscale UNORM8 with alpha 255.
+- Metalness interpolates between `metalness.low` and `metalness.high` using its
+  routed final scalar, then writes linear greyscale UNORM8 with alpha 255.
 - Normal uses wrapped central differences of the height branch. Derivatives are
   measured per metre of requested coverage and multiplied by
   `surface.relief_depth` when present. The tangent-space vector
@@ -565,7 +579,7 @@ generation wrap mathematically across both tile axes.
 ## Compatibility policy
 
 The `.pmat` format version and Paperweight application version are separate.
-Paperweight v0.0.23 reads versions 1 through 16 and writes version 16. A reader
+Paperweight v0.0.24 reads versions 1 through 17 and writes version 17. A reader
 rejects unsupported versions and unknown fields so that it cannot quietly
 reinterpret a future material.
 
@@ -594,8 +608,11 @@ structures; versions 1 through 13 retain byte-identical default evaluations.
 Version 15 adds metadata only; versions 1 through 14 retain byte-identical
 default evaluations. Version 16 adds opt-in routing and physical relief. Missing
 routing means all outputs and missing relief uses the historical normal formula,
-so every version-15 material retains byte-identical output. Saving any older
-format performs the explicit migration to version 16.
+so every version-15 material retains byte-identical output. Version 17 adds an
+opt-in metalness branch and dielectric IOR. Version-16 and older files default
+to zero metalness and IOR 1.5, preserving every historical colour, height,
+normal, and roughness byte. Saving any older format performs the explicit
+migration to version 17.
 
 The portable entry points are `paperweight::parsePmat` and
 `paperweight::serialisePmat` in `include/paperweight/pmat.hpp`.

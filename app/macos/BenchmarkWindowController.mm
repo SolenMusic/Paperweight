@@ -48,7 +48,7 @@ struct Showcase {
     const char* resource;
 };
 
-constexpr std::array<Showcase, 35> showcases{{
+constexpr std::array<Showcase, 41> showcases{{
     {"Default Noise", "default"},
     {"Brick Wall", "brick-wall"},
     {"Cobblestone", "cobblestone"},
@@ -65,6 +65,12 @@ constexpr std::array<Showcase, 35> showcases{{
     {"Polished Marble", "polished-marble"},
     {"Wet Mortar", "wet-mortar"},
     {"Engraved Metal", "engraved-metal"},
+    {"Polished Chrome", "chrome"},
+    {"Brushed Steel", "steel"},
+    {"Polished Copper", "copper"},
+    {"Polished Brass", "brass"},
+    {"Painted Steel", "painted-steel"},
+    {"Corroded Metal", "corroded-metal"},
     {"Varnished Wood", "varnished-wood"},
     {"Region Stones", "region-stones"},
     {"Castle Flagstone", "castle-flagstone"},
@@ -111,6 +117,8 @@ NSString* outputDisplayName(paperweight::MaterialOutput output)
         return @"Normal";
     case paperweight::MaterialOutput::roughness:
         return @"Roughness";
+    case paperweight::MaterialOutput::metalness:
+        return @"Metalness";
     }
     return @"Unknown";
 }
@@ -241,7 +249,9 @@ NSTableColumn* tableColumn(NSString* identifier, NSString* title, CGFloat width)
 
     NSTextField* outputLabel = labelWithText(@"Material output:");
     self.outputPopup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
-    [self.outputPopup addItemsWithTitles:@[@"Colour", @"Height", @"Normal", @"Roughness"]];
+    [self.outputPopup addItemsWithTitles:@[
+        @"Colour", @"Height", @"Normal", @"Roughness", @"Metalness",
+    ]];
     self.outputPopup.toolTip = @"A complete run benchmarks one output map at a time.";
 
     self.startButton = [NSButton buttonWithTitle:@"Start Benchmark"

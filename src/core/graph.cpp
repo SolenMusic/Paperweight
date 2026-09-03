@@ -29,6 +29,7 @@ bool validMaterialOutput(MaterialOutput output)
     case MaterialOutput::height:
     case MaterialOutput::normal:
     case MaterialOutput::roughness:
+    case MaterialOutput::metalness:
         return true;
     }
     return false;
@@ -603,11 +604,13 @@ GraphCompilationResult compileMaterialGraph(const Material& material)
     GraphNodeId colourInput = invalidGraphNodeId;
     GraphNodeId heightInput = invalidGraphNodeId;
     GraphNodeId roughnessInput = invalidGraphNodeId;
+    GraphNodeId metalnessInput = invalidGraphNodeId;
     if (material.layers.empty()) {
         const auto noise = addGenerator(NoiseOperation{}, {}, std::nullopt);
         colourInput = noise;
         heightInput = noise;
         roughnessInput = noise;
+        metalnessInput = noise;
     } else {
         const auto base = addGenerator(
             SolidColourOperation{Rgba8{0, 0, 0, 0}},
@@ -637,12 +640,14 @@ GraphCompilationResult compileMaterialGraph(const Material& material)
             colourInput = accumulated;
             heightInput = accumulated;
             roughnessInput = accumulated;
+            metalnessInput = accumulated;
         } else {
-            std::array<GraphNodeId, 3> accumulated{base, base, base};
+            std::array<GraphNodeId, 4> accumulated{base, base, base, base};
             constexpr std::array routedOutputs{
                 MaterialOutput::colour,
                 MaterialOutput::height,
                 MaterialOutput::roughness,
+                MaterialOutput::metalness,
             };
             for (std::size_t layerIndex = 0;
                  layerIndex < material.layers.size();
@@ -668,6 +673,7 @@ GraphCompilationResult compileMaterialGraph(const Material& material)
             colourInput = accumulated[0];
             heightInput = accumulated[1];
             roughnessInput = accumulated[2];
+            metalnessInput = accumulated[3];
         }
     }
 
@@ -675,6 +681,7 @@ GraphCompilationResult compileMaterialGraph(const Material& material)
     graph.nodes.emplace_back(OutputNode{nextId++, MaterialOutput::height, heightInput});
     graph.nodes.emplace_back(OutputNode{nextId++, MaterialOutput::normal, heightInput});
     graph.nodes.emplace_back(OutputNode{nextId++, MaterialOutput::roughness, roughnessInput});
+    graph.nodes.emplace_back(OutputNode{nextId++, MaterialOutput::metalness, metalnessInput});
     if (const auto error = validateMaterialGraph(graph)) {
         return *error;
     }

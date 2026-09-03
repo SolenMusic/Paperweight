@@ -20,8 +20,8 @@ library. The wizard preserves progress while moving through four steps:
 3. **Design** - choose a starting seed, two ordinary material colours, and the
    template's compact construction, surface, and wear controls.
 4. **Choose** - generate four deterministic alternatives, compare their
-   thumbnails, and inspect the selected result in the full-size 2D or 3D
-   preview.
+   thumbnails, and inspect the selected result in the full-size 2D or five-map
+   3D preview.
 
 Locks are available for seed, physical size, the colour pair, and every friendly
 template control. Alternative generation changes only unlocked values. The same
@@ -37,7 +37,7 @@ collects a friendly name, category, and tags, chooses a collision-free filename,
 and writes directly into the remembered working folder.
 
 Both routes produce an ordinary `Material`. Saving serialises the same readable
-version-16 `.pmat` text used elsewhere in Paperweight. Wizard state, locks,
+version-17 `.pmat` text used elsewhere in Paperweight. Wizard state, locks,
 family selection, comparison thumbnails, and preview mode are not serialised.
 
 ## Architecture
@@ -51,8 +51,9 @@ identity before the caller chooses a variation. The AppKit controller owns
 pages, controls, background preview work, and library file panels.
 
 The family catalogue deliberately follows the substance of a recipe rather
-than incidental details within it. Metal therefore offers Painted Metal and
-Weathered Metal, not a wooden crate merely because that recipe happens to
+than incidental details within it. Metal therefore offers Painted Metal,
+Weathered Metal, Engraved Metal, Chrome, Steel, Copper, Brass, Painted Steel,
+and Corroded Metal, not a wooden crate merely because that recipe happens to
 contain nails. Wood also offers Knotty Wood; stone includes Graphic Marble and
 Mossy Pebbles; gravel or debris includes Scattered Debris and Mossy Pebbles;
 and abstract includes Graphic Marble and Ember.

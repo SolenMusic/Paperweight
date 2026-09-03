@@ -610,6 +610,21 @@ std::optional<std::string> validateMaterial(const Material& material)
         material.roughnessHigh > MaterialLimits::maximumRoughness) {
         return "high roughness must be finite and between 0 and 1";
     }
+    if (!std::isfinite(material.metalnessLow) ||
+        material.metalnessLow < MaterialLimits::minimumMetalness ||
+        material.metalnessLow > MaterialLimits::maximumMetalness) {
+        return "low metalness must be finite and between 0 and 1";
+    }
+    if (!std::isfinite(material.metalnessHigh) ||
+        material.metalnessHigh < MaterialLimits::minimumMetalness ||
+        material.metalnessHigh > MaterialLimits::maximumMetalness) {
+        return "high metalness must be finite and between 0 and 1";
+    }
+    if (!std::isfinite(material.dielectricIor) ||
+        material.dielectricIor < MaterialLimits::minimumDielectricIor ||
+        material.dielectricIor > MaterialLimits::maximumDielectricIor) {
+        return "dielectric IOR must be finite and between 1 and 4";
+    }
     if (material.layers.size() > LayerLimits::maximumLayers) {
         return "a material may contain at most 32 layers";
     }
@@ -634,7 +649,8 @@ std::optional<std::string> validateMaterial(const Material& material)
         if (layer.operation.valueless_by_exception()) {
             return prefix + "operation has no value";
         }
-        if (!layer.outputs.colour && !layer.outputs.height && !layer.outputs.roughness) {
+        if (!layer.outputs.colour && !layer.outputs.height &&
+            !layer.outputs.roughness && !layer.outputs.metalness) {
             return prefix + "must target at least one output channel";
         }
         if (layer.transform.scaleX < LayerLimits::minimumScale ||

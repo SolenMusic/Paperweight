@@ -1016,10 +1016,14 @@ NSString* controlSectionName(paperweight::WizardControlSection section)
     previewCancellation_ = cancellation;
     const auto material = *selectedMaterial_;
     const BOOL threeDimensional = self.previewModeControl.selectedSegment == 1;
+    self.preview3DView.dielectricIor = material.dielectricIor;
+    self.preview3DView.environmentPreset = material.metalnessHigh > 0.5
+        ? PWPreviewEnvironmentChromeStudio
+        : PWPreviewEnvironmentCeramic;
     [self.previewProgress startAnimation:nil];
     self.previewStatus.textColor = NSColor.secondaryLabelColor;
     self.previewStatus.stringValue = threeDimensional
-        ? [NSString stringWithFormat:@"Rendering four %lu × %lu maps…",
+        ? [NSString stringWithFormat:@"Rendering five %lu × %lu maps…",
             static_cast<unsigned long>(previewResolution_), static_cast<unsigned long>(previewResolution_)]
         : [NSString stringWithFormat:@"Rendering %lu × %lu colour preview…",
             static_cast<unsigned long>(previewResolution_), static_cast<unsigned long>(previewResolution_)];
@@ -1040,8 +1044,8 @@ NSString* controlSectionName(paperweight::WizardControlSection section)
         } else {
             failure = std::get<paperweight::GraphError>(compilation).message;
         }
-        std::array<std::optional<paperweight::Image>, 4> images;
-        const std::size_t outputCount = threeDimensional ? 4 : 1;
+        std::array<std::optional<paperweight::Image>, paperweight::materialOutputs.size()> images;
+        const std::size_t outputCount = threeDimensional ? paperweight::materialOutputs.size() : 1;
         if (!failure) {
             for (std::size_t index = 0; index < outputCount; ++index) {
                 if (cancellation->load(std::memory_order_relaxed)) break;
@@ -1074,7 +1078,8 @@ NSString* controlSectionName(paperweight::WizardControlSection section)
                     [strongSelf.preview3DView setColourImage:*(*sharedImages)[0]
                                                   heightImage:*(*sharedImages)[1]
                                                   normalImage:*(*sharedImages)[2]
-                                               roughnessImage:*(*sharedImages)[3]];
+                                               roughnessImage:*(*sharedImages)[3]
+                                                metalnessImage:*(*sharedImages)[4]];
                 }
             } else if ((*sharedImages)[0]) {
                 strongSelf.previewImageView.image = imageFromPaperweight(

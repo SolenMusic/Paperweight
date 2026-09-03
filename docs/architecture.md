@@ -29,7 +29,7 @@ The generator combines platform-stable integer hashing, periodic 2D value
 noise, and normalised periodic FBM. Reusable evaluation objects produce both
 normalised RGBA colour and a scalar value. The layer authoring model compiles
 into a directed acyclic graph before pixels are evaluated, so colour, height,
-tangent-space normal, and roughness can share a procedural surface or follow
+tangent-space normal, roughness, and metalness can share a procedural surface or follow
 independent direct-graph branches. Texture samples are taken at pixel centres
 over one mathematical period. Normal-map finite differences wrap both axes; no
 output copies or repairs image edges.
@@ -74,7 +74,7 @@ node has a stable non-zero identifier and one explicit category:
 - processing nodes apply levels or threshold to one input, or composite source
   and background inputs with optional mask input;
 - mask nodes evaluate the existing transformed, remapped periodic mask field;
-- output nodes route colour, height, normal, or roughness to a value branch.
+- output nodes route colour, height, normal, roughness, or metalness to a value branch.
 
 Graph validation enforces the 512-node limit, unique identifiers, existing and
 category-compatible input references, valid operation parameters, acyclic
@@ -83,7 +83,7 @@ is irrelevant and disconnected working nodes are allowed, which is important
 for a future interactive editor.
 
 The layer compiler emits a transparent base, one generator or unary processor
-per enabled layer, optional mask nodes, explicit composite processors, and four
+per enabled layer, optional mask nodes, explicit composite processors, and five
 output nodes. Historical empty stacks retain their implicit base-noise source.
 Generated nodes record their source-layer index so diagnostics and later
 incremental caching can map evaluation work back to authoring state. Existing
@@ -257,10 +257,13 @@ in Objective-C++ and consumes the portable core's RGBA8 buffer without exposing
 AppKit types to the core. The same bridge encodes PNG data. Native file panels
 handle paths, while parsing and serialisation remain in portable C++.
 
-The optional 3D preview is an AppKit-hosted MetalKit renderer. It receives four
+The optional 3D preview is an AppKit-hosted MetalKit renderer. It receives five
 completed RGBA8 core images and uses them as colour, displacement, tangent-space
-normal, and roughness textures on built-in inspection meshes. Shape, camera,
-lighting, map switches, and animation are display state only. The Metal shader
+normal, roughness, and metalness textures on built-in inspection meshes. Its
+metallic/roughness shader derives dielectric F0 from IOR, treats base colour as
+metallic reflection tint where appropriate, and samples a deterministic
+procedural studio environment. Shape, camera, environment presets, lighting,
+map switches, and animation are display state only. The Metal shader
 is bundled with the application and compiled at runtime, avoiding a separate
 shader-toolchain requirement for ordinary CMake builds. A missing compatible
 Metal device disables only the 3D mode.
@@ -313,7 +316,7 @@ hit rate and bounded memory without altering the cancellation contract.
 `.pmat` is a human-readable, versioned text format. Parsing and serialisation live in the portable core. Round trips should be stable and errors should identify useful source locations.
 
 The format version is deliberately independent of the application version.
-Paperweight v0.0.23 reads `.pmat` format versions 1 through 16 and writes version 16.
+Paperweight v0.0.24 reads `.pmat` format versions 1 through 17 and writes version 17.
 Unknown keys and unsupported format versions fail explicitly instead of being
 silently ignored. Version 1 maps to the original implicit FBM source; adding an
 explicit base noise layer produces byte-identical output. Version-2 layers map
@@ -355,8 +358,11 @@ physical relief depth, constant surface values, and minimum, maximum, and detail
 composition. Legacy all-output materials keep the original shared compiled
 graph, and absent relief retains the historical normal calculation, so version-15
 pixel output remains byte-identical.
+Format version 17 adds an independently routed metalness scalar, global
+metalness remap endpoints, and dielectric IOR. Old files acquire zero metalness
+and IOR 1.5. These additions do not alter the prior four output branches.
 Paperweight v0.0.21 adds a separate derived `.pwlib` format around canonical
-version-16 PMAT payloads. Its encoder and memory-backed reader remain in the
+PMAT payloads. Its encoder and memory-backed reader remain in the
 portable core; filesystem discovery and save panels remain outside it. A strict
 little-endian directory exposes UID and friendly-name lookup without evaluating
 or parsing pixels. Raw and bounded RLE storage feed the same PMAT parser and
@@ -398,11 +404,11 @@ core. No workspace or window state is added to `.pmat` or `.pwlib`.
                       \          |          /         |
                        +------ memoised evaluation ----+
                                       |
-                           +----------+----------+---------+
-                           |          |          |         |
-                         colour    height     normal   roughness
-                           |          |          |         |
-                           +----------+----------+---------+
+                     +---------+--------+--------+---------+----------+
+                     |         |        |        |         |
+                   colour   height   normal  roughness  metalness
+                     |         |        |        |         |
+                     +---------+--------+--------+---------+
                                           |
                                     preview / PNG
 ```
@@ -410,8 +416,8 @@ core. No workspace or window state is added to `.pmat` or `.pwlib`.
 ## Deferred architecture
 
 Visual node-canvas authoring, graph-specific text persistence, WebAssembly
-bindings, game-engine adapters, complete PBR authoring, arbitrary global texture
+bindings, game-engine adapters, arbitrary global texture
 rotation, bitmap-backed botanical stamps, and procedural GPU backends remain
-outside v0.0.17. MetalKit in v0.0.17 presents
-CPU-generated images and optional cel lighting; it is not a
+outside v0.0.24. MetalKit presents CPU-generated images with metallic/roughness
+or optional cel lighting; it is not a
 generator backend and its lighting choices are never serialised into `.pmat`.
