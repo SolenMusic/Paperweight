@@ -37,6 +37,21 @@ foreach(material IN ITEMS
     foliage-foundation
     cel-forest-bark
     castle-foliage
+    polished-marble
+    wet-mortar
+    engraved-metal
+    varnished-wood
+    chrome
+    steel
+    copper
+    brass
+    painted-steel
+    corroded-metal
+    glazed-ceramic
+    lacquered-wood
+    wet-stone
+    machinery-panels
+    illuminated-scifi
 )
     configure_file(
         "${PROJECT_SOURCE_DIR}/examples/materials/${material}.pmat"

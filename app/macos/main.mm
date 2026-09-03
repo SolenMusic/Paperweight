@@ -650,18 +650,33 @@ NSString* outputName(paperweight::MaterialOutput output)
     return @"Unknown";
 }
 
-struct PreviewMapSet {
-    paperweight::Image colour;
-    paperweight::Image height;
-    paperweight::Image normal;
-    paperweight::Image roughness;
-    paperweight::Image metalness;
-    paperweight::Image coating;
-    paperweight::Image occlusion;
-    paperweight::Image clearCoat;
-    paperweight::Image clearCoatRoughness;
-    paperweight::Image emissive;
-};
+bool anyOutputSelected(const paperweight::MaterialOutputSelection& outputs)
+{
+    return std::any_of(outputs.begin(), outputs.end(), [](bool selected) {
+        return selected;
+    });
+}
+
+std::size_t selectedOutputCount(const paperweight::MaterialOutputSelection& outputs)
+{
+    return static_cast<std::size_t>(std::count(outputs.begin(), outputs.end(), true));
+}
+
+void includeOutputs(
+    paperweight::MaterialOutputSelection& destination,
+    const paperweight::MaterialOutputSelection& source)
+{
+    for (std::size_t index = 0; index < destination.size(); ++index) {
+        destination[index] = destination[index] || source[index];
+    }
+}
+
+bool hasCompleteMapSet(const paperweight::MaterialImageSet& images)
+{
+    return std::all_of(images.images.begin(), images.images.end(), [](const auto& image) {
+        return image.has_value();
+    });
+}
 
 NSString* operationDisplayName(const paperweight::LayerOperation& operation)
 {
@@ -884,7 +899,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     bool bakedPresentationSelected_;
     const paperweight::ReferenceMaterialTemplate* activeTemplate_;
     std::optional<paperweight::Image> generatedImage_;
-    std::shared_ptr<PreviewMapSet> generated3DMaps_;
+    std::shared_ptr<paperweight::MaterialImageSet> generated3DMaps_;
+    paperweight::MaterialOutputSelection invalidated3DOutputs_;
     dispatch_queue_t previewQueue_;
     dispatch_block_t pendingPreviewBlock_;
     std::shared_ptr<std::atomic_bool> previewCancellation_;
@@ -4697,6 +4713,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 
 - (void)layerListEnabledChanged:(NSButton*)sender
 {
+    const auto before = material_;
     auto* layer = layerAt(material_, sender.tag);
     if (layer == nullptr) {
         return;
@@ -4705,19 +4722,20 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     selectedLayer_ = sender.tag;
     [self rebuildLayerList];
     [self refreshLayerInspector];
-    [self regeneratePreview];
+    [self regeneratePreviewForOutputs:paperweight::affectedMaterialOutputs(before, material_)];
     [self markDirty];
 }
 
 - (void)layerEnabledChanged:(NSButton*)sender
 {
+    const auto before = material_;
     auto* layer = layerAt(material_, selectedLayer_);
     if (layer == nullptr) {
         return;
     }
     layer->enabled = sender.state == NSControlStateValueOn;
     [self rebuildLayerList];
-    [self regeneratePreview];
+    [self regeneratePreviewForOutputs:paperweight::affectedMaterialOutputs(before, material_)];
     [self markDirty];
 }
 
@@ -5258,6 +5276,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 
 - (void)layerParameterChanged:(id)sender
 {
+    const auto before = material_;
     auto* layer = layerAt(material_, selectedLayer_);
     if (layer == nullptr) {
         return;
@@ -5392,12 +5411,13 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     }
 
     [self updateLayerInspectorLiveValueLabels];
-    [self regeneratePreview];
+    [self regeneratePreviewForOutputs:paperweight::affectedMaterialOutputs(before, material_)];
     [self markDirty];
 }
 
 - (void)transformParameterChanged:(id)sender
 {
+    const auto before = material_;
     auto* layer = layerAt(material_, selectedLayer_);
     if (layer == nullptr) {
         return;
@@ -5435,12 +5455,13 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.warpFrequencySlider.enabled = transform.warpEnabled;
         self.warpSeedOffsetField.enabled = transform.warpEnabled;
     }
-    [self regeneratePreview];
+    [self regeneratePreviewForOutputs:paperweight::affectedMaterialOutputs(before, material_)];
     [self markDirty];
 }
 
 - (void)structuralParameterChanged:(id)sender
 {
+    const auto before = material_;
     auto* layer = layerAt(material_, selectedLayer_);
     if (layer == nullptr) {
         return;
@@ -6011,12 +6032,13 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         [self rebuildLayerList];
         [self refreshLayerInspector];
     }
-    [self regeneratePreview];
+    [self regeneratePreviewForOutputs:paperweight::affectedMaterialOutputs(before, material_)];
     [self markDirty];
 }
 
 - (void)maskParameterChanged:(id)sender
 {
+    const auto before = material_;
     auto* layer = layerAt(material_, selectedLayer_);
     if (layer == nullptr) {
         return;
@@ -6060,7 +6082,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.maskLowSlider.enabled = mask.enabled;
         self.maskHighSlider.enabled = mask.enabled;
     }
-    [self regeneratePreview];
+    [self regeneratePreviewForOutputs:paperweight::affectedMaterialOutputs(before, material_)];
     [self markDirty];
 }
 
@@ -6112,6 +6134,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 
 - (void)parameterChanged:(id)sender
 {
+    const auto before = material_;
     if (sender == self.seedField) {
         const std::string text = self.seedField.stringValue.UTF8String;
         std::uint64_t parsed = 0;
@@ -6168,7 +6191,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.displacementSlider.doubleValue = recommendedPreviewDisplacement(material_);
     self.material3DPreviewView.displacementStrength = self.displacementSlider.doubleValue;
     [self updateControlLabels];
-    [self regeneratePreview];
+    [self regeneratePreviewForOutputs:paperweight::affectedMaterialOutputs(before, material_)];
     [self markDirty];
 }
 
@@ -6244,9 +6267,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 - (void)colourChanged:(id)sender
 {
     static_cast<void>(sender);
+    const auto before = material_;
     material_.lowColour = rgba8FromColour(self.lowColourWell.color);
     material_.highColour = rgba8FromColour(self.highColourWell.color);
-    [self regeneratePreview];
+    [self regeneratePreviewForOutputs:paperweight::affectedMaterialOutputs(before, material_)];
     [self markDirty];
 }
 
@@ -6819,11 +6843,15 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 
 - (void)startBakedPreviewGenerationForRevision:(std::uint64_t)revision
 {
-    const paperweight::GenerationRequest request{
+    paperweight::MaterialOutputSelection outputs{};
+    outputs[paperweight::materialOutputIndex(paperweight::MaterialOutput::colour)] = true;
+    outputs[paperweight::materialOutputIndex(paperweight::MaterialOutput::height)] = true;
+    outputs[paperweight::materialOutputIndex(paperweight::MaterialOutput::normal)] = true;
+    const paperweight::MaterialSetRequest request{
         material_,
         previewResolution_,
         previewResolution_,
-        paperweight::MaterialOutput::colour,
+        outputs,
         std::nullopt,
         previewCoverage_,
     };
@@ -6843,39 +6871,28 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
             failure = std::get<paperweight::GraphError>(compilation).message;
         }
 
-        std::array<std::optional<paperweight::Image>, 3> sources;
-        constexpr std::array sourceOutputs{
-            paperweight::MaterialOutput::colour,
-            paperweight::MaterialOutput::height,
-            paperweight::MaterialOutput::normal,
-        };
+        std::optional<paperweight::MaterialImageSet> sources;
         if (!failure) {
-            for (std::size_t index = 0; index < sourceOutputs.size(); ++index) {
-                if (cancellation->load(std::memory_order_relaxed)) {
-                    break;
-                }
-                graphRequest.output = sourceOutputs[index];
-                auto generated = paperweight::generate(
-                    graphRequest,
-                    [cancellation]() {
-                        return cancellation->load(std::memory_order_relaxed);
-                    });
-                if (auto* image = std::get_if<paperweight::Image>(&generated)) {
-                    sources[index] = std::move(*image);
-                } else {
-                    failure = std::get<paperweight::GenerationError>(generated).message;
-                    break;
-                }
+            auto generated = paperweight::generateMaterialSet(
+                graphRequest,
+                [cancellation]() {
+                    return cancellation->load(std::memory_order_relaxed);
+                });
+            if (auto* imageSet = std::get_if<paperweight::MaterialImageSet>(&generated)) {
+                sources.emplace(std::move(*imageSet));
+            } else {
+                failure = std::get<paperweight::GenerationError>(generated).message;
             }
         }
 
         std::shared_ptr<paperweight::StylisedLightingResult> baked;
-        if (!failure && std::all_of(sources.begin(), sources.end(), [](const auto& source) {
-                return source.has_value();
-            })) {
+        if (!failure && sources) {
             baked = std::make_shared<paperweight::StylisedLightingResult>(
                 paperweight::bakeStylisedLighting(
-                    *sources[0], &*sources[1], &*sources[2], settings));
+                    *sources->image(paperweight::MaterialOutput::colour),
+                    sources->image(paperweight::MaterialOutput::height),
+                    sources->image(paperweight::MaterialOutput::normal),
+                    settings));
             if (const auto* error = std::get_if<paperweight::StylisedLightingError>(baked.get())) {
                 failure = error->message;
             }
@@ -6919,11 +6936,20 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.material3DPreviewView.anisotropyStrength = material_.anisotropyStrength;
     self.material3DPreviewView.anisotropyRotationDegrees =
         material_.anisotropyRotationDegrees;
-    const paperweight::GenerationRequest request{
+    auto outputs = invalidated3DOutputs_;
+    if (!generated3DMaps_) {
+        outputs = paperweight::allMaterialOutputsSelected;
+    } else {
+        for (std::size_t index = 0; index < outputs.size(); ++index) {
+            outputs[index] = outputs[index] || !generated3DMaps_->images[index].has_value();
+        }
+    }
+    const auto refreshedMapCount = selectedOutputCount(outputs);
+    const paperweight::MaterialSetRequest request{
         material_,
         previewResolution_,
         previewResolution_,
-        paperweight::MaterialOutput::colour,
+        outputs,
         std::nullopt,
         previewCoverage_,
     };
@@ -6946,43 +6972,18 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
             };
         }
 
-        std::array<std::optional<paperweight::Image>, paperweight::materialOutputs.size()> images;
+        std::optional<paperweight::MaterialImageSet> images;
         if (!failure) {
-            for (std::size_t outputIndex = 0; outputIndex < paperweight::materialOutputs.size(); ++outputIndex) {
-                if (cancellation->load(std::memory_order_relaxed)) {
-                    break;
-                }
-                graphRequest.output = paperweight::materialOutputs[outputIndex];
-                auto result = paperweight::generate(
-                    graphRequest,
-                    [cancellation]() {
-                        return cancellation->load(std::memory_order_relaxed);
-                    });
-                if (auto* image = std::get_if<paperweight::Image>(&result)) {
-                    images[outputIndex].emplace(std::move(*image));
-                    continue;
-                }
+            auto result = paperweight::generateMaterialSet(
+                graphRequest,
+                [cancellation]() {
+                    return cancellation->load(std::memory_order_relaxed);
+                });
+            if (auto* imageSet = std::get_if<paperweight::MaterialImageSet>(&result)) {
+                images.emplace(std::move(*imageSet));
+            } else {
                 failure = std::get<paperweight::GenerationError>(std::move(result));
-                break;
             }
-        }
-
-        std::shared_ptr<PreviewMapSet> maps;
-        if (!failure && std::all_of(images.begin(), images.end(), [](const auto& image) {
-                return image.has_value();
-            })) {
-            maps = std::make_shared<PreviewMapSet>(PreviewMapSet{
-                std::move(*images[paperweight::materialOutputIndex(paperweight::MaterialOutput::colour)]),
-                std::move(*images[paperweight::materialOutputIndex(paperweight::MaterialOutput::height)]),
-                std::move(*images[paperweight::materialOutputIndex(paperweight::MaterialOutput::normal)]),
-                std::move(*images[paperweight::materialOutputIndex(paperweight::MaterialOutput::roughness)]),
-                std::move(*images[paperweight::materialOutputIndex(paperweight::MaterialOutput::metalness)]),
-                std::move(*images[paperweight::materialOutputIndex(paperweight::MaterialOutput::coating)]),
-                std::move(*images[paperweight::materialOutputIndex(paperweight::MaterialOutput::occlusion)]),
-                std::move(*images[paperweight::materialOutputIndex(paperweight::MaterialOutput::clearCoat)]),
-                std::move(*images[paperweight::materialOutputIndex(paperweight::MaterialOutput::clearCoatRoughness)]),
-                std::move(*images[paperweight::materialOutputIndex(paperweight::MaterialOutput::emissive)]),
-            });
         }
 
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -6993,20 +6994,41 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
             }
             strongSelf->previewCancellation_.reset();
             [strongSelf setPreviewLoading:NO];
-            if (maps) {
-                [strongSelf.material3DPreviewView setColourImage:maps->colour
-                                                     heightImage:maps->height
-                                                     normalImage:maps->normal
-                                                  roughnessImage:maps->roughness
-                                                   metalnessImage:maps->metalness
-                                                     coatingImage:maps->coating
-                                                   occlusionImage:maps->occlusion
-                                                    clearCoatImage:maps->clearCoat
-                                           clearCoatRoughnessImage:maps->clearCoatRoughness
-                                                    emissiveImage:maps->emissive];
-                strongSelf->generated3DMaps_ = maps;
+            if (images) {
+                if (!strongSelf->generated3DMaps_) {
+                    strongSelf->generated3DMaps_ =
+                        std::make_shared<paperweight::MaterialImageSet>();
+                }
+                for (std::size_t index = 0; index < images->images.size(); ++index) {
+                    if (images->images[index]) {
+                        strongSelf->generated3DMaps_->images[index] =
+                            std::move(images->images[index]);
+                        strongSelf->invalidated3DOutputs_[index] = false;
+                    }
+                }
+                auto& maps = *strongSelf->generated3DMaps_;
+                if (!hasCompleteMapSet(maps)) {
+                    strongSelf.statusLabel.stringValue =
+                        @"3D preview generation returned an incomplete map set.";
+                    strongSelf.statusLabel.textColor = NSColor.systemRedColor;
+                    return;
+                }
+                [strongSelf.material3DPreviewView
+                    setColourImage:*maps.image(paperweight::MaterialOutput::colour)
+                        heightImage:*maps.image(paperweight::MaterialOutput::height)
+                        normalImage:*maps.image(paperweight::MaterialOutput::normal)
+                     roughnessImage:*maps.image(paperweight::MaterialOutput::roughness)
+                      metalnessImage:*maps.image(paperweight::MaterialOutput::metalness)
+                        coatingImage:*maps.image(paperweight::MaterialOutput::coating)
+                      occlusionImage:*maps.image(paperweight::MaterialOutput::occlusion)
+                       clearCoatImage:*maps.image(paperweight::MaterialOutput::clearCoat)
+              clearCoatRoughnessImage:*maps.image(
+                  paperweight::MaterialOutput::clearCoatRoughness)
+                       emissiveImage:*maps.image(paperweight::MaterialOutput::emissive)];
                 strongSelf.statusLabel.stringValue = [NSString stringWithFormat:
-                    @"Ten %u × %u maps — %.6g × %.6g m — %zu-node graph — drag to orbit, scroll to zoom",
+                    @"%zu %@ refreshed at %u × %u — %.6g × %.6g m — %zu-node graph — drag to orbit, scroll to zoom",
+                    refreshedMapCount,
+                    refreshedMapCount == 1 ? @"map" : @"maps",
                     strongSelf->previewResolution_,
                     strongSelf->previewResolution_,
                     strongSelf->previewCoverage_.widthMetres,
@@ -7016,10 +7038,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
                 return;
             }
 
-            strongSelf->generated3DMaps_.reset();
             const std::string message = failure
                 ? failure->message
-                : "3D preview generation did not produce a complete map set";
+                : "3D preview generation did not produce any maps";
             strongSelf.statusLabel.stringValue = [NSString stringWithUTF8String:message.c_str()];
             strongSelf.statusLabel.textColor = NSColor.systemRedColor;
         });
@@ -7028,6 +7049,36 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 
 - (void)regeneratePreview
 {
+    generatedImage_.reset();
+    generated3DMaps_.reset();
+    invalidated3DOutputs_ = paperweight::allMaterialOutputsSelected;
+    [self.material3DPreviewView clearMaterialImages];
+    [self regeneratePreviewForOutputs:paperweight::allMaterialOutputsSelected];
+}
+
+- (void)regeneratePreviewForOutputs:(paperweight::MaterialOutputSelection)outputs
+{
+    includeOutputs(invalidated3DOutputs_, outputs);
+    if (self.previewModeControl.selectedSegment == 1) {
+        outputs = invalidated3DOutputs_;
+    } else if (bakedPresentationSelected_) {
+        paperweight::MaterialOutputSelection bakedOutputs{};
+        bakedOutputs[paperweight::materialOutputIndex(paperweight::MaterialOutput::colour)] = true;
+        bakedOutputs[paperweight::materialOutputIndex(paperweight::MaterialOutput::height)] = true;
+        bakedOutputs[paperweight::materialOutputIndex(paperweight::MaterialOutput::normal)] = true;
+        for (std::size_t index = 0; index < outputs.size(); ++index) {
+            outputs[index] = outputs[index] && bakedOutputs[index];
+        }
+    } else {
+        const bool selectedChanged =
+            outputs[paperweight::materialOutputIndex(selectedOutput_)];
+        outputs.fill(false);
+        outputs[paperweight::materialOutputIndex(selectedOutput_)] = selectedChanged;
+    }
+    if (!anyOutputSelected(outputs)) {
+        return;
+    }
+
     ++previewRevision_;
     const auto revision = previewRevision_;
     if (previewCancellation_) {
@@ -7038,14 +7089,14 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     }
 
     generatedImage_.reset();
-    generated3DMaps_.reset();
     self.exportMenuItem.enabled = NO;
     if (self.previewModeControl.selectedSegment == 1) {
-        [self.material3DPreviewView clearMaterialImages];
         self.statusLabel.stringValue = [NSString stringWithFormat:
-            @"Rendering ten %u × %u material maps for 3D…",
+            @"Refreshing %zu %@ for the %u × %u 3D preview…",
+            selectedOutputCount(outputs),
+            selectedOutputCount(outputs) == 1 ? @"map" : @"maps",
             previewResolution_, previewResolution_];
-        self.previewLoadingLabel.stringValue = @"Rendering 3D material maps…";
+        self.previewLoadingLabel.stringValue = @"Refreshing 3D material maps…";
     } else if (bakedPresentationSelected_) {
         self.statusLabel.stringValue = @"Rendering colour, height and normal maps for a baked presentation…";
         self.previewLoadingLabel.stringValue = @"Baking stylised lighting…";

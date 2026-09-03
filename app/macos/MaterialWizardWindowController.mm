@@ -91,6 +91,34 @@ NSString* controlSectionName(paperweight::WizardControlSection section)
     return @"Controls";
 }
 
+bool anyOutputSelected(const paperweight::MaterialOutputSelection& outputs)
+{
+    return std::any_of(outputs.begin(), outputs.end(), [](bool selected) {
+        return selected;
+    });
+}
+
+std::size_t selectedOutputCount(const paperweight::MaterialOutputSelection& outputs)
+{
+    return static_cast<std::size_t>(std::count(outputs.begin(), outputs.end(), true));
+}
+
+void includeOutputs(
+    paperweight::MaterialOutputSelection& destination,
+    const paperweight::MaterialOutputSelection& source)
+{
+    for (std::size_t index = 0; index < destination.size(); ++index) {
+        destination[index] = destination[index] || source[index];
+    }
+}
+
+bool hasCompleteMapSet(const paperweight::MaterialImageSet& images)
+{
+    return std::all_of(images.images.begin(), images.images.end(), [](const auto& image) {
+        return image.has_value();
+    });
+}
+
 } // namespace
 
 @interface MaterialWizardWindowController () <NSWindowDelegate, NSTextFieldDelegate>
@@ -148,6 +176,8 @@ NSString* controlSectionName(paperweight::WizardControlSection section)
     std::uint64_t alternativeRevision_;
     std::shared_ptr<std::atomic_bool> previewCancellation_;
     std::shared_ptr<std::atomic_bool> alternativeCancellation_;
+    std::shared_ptr<paperweight::MaterialImageSet> previewMaps_;
+    paperweight::MaterialOutputSelection invalidatedPreviewOutputs_;
 }
 
 - (instancetype)initWithPreviewResolution:(NSUInteger)previewResolution
@@ -946,8 +976,12 @@ NSString* controlSectionName(paperweight::WizardControlSection section)
         self.previewStatus.textColor = NSColor.systemRedColor;
         return;
     }
-    selectedMaterial_ = std::get<paperweight::Material>(result);
-    [self schedulePreview];
+    auto material = std::get<paperweight::Material>(result);
+    const auto affected = selectedMaterial_
+        ? paperweight::affectedMaterialOutputs(*selectedMaterial_, material)
+        : paperweight::allMaterialOutputsSelected;
+    selectedMaterial_ = std::move(material);
+    [self schedulePreviewForOutputs:affected];
 }
 
 - (void)generateAlternatives:(id)sender
@@ -1000,13 +1034,17 @@ NSString* controlSectionName(paperweight::WizardControlSection section)
 {
     if (sender.tag < 0 || static_cast<std::size_t>(sender.tag) >= alternatives_.size()) return;
     selectedAlternative_ = sender.tag;
-    selectedMaterial_ = alternatives_[static_cast<std::size_t>(sender.tag)].material;
+    const auto material = alternatives_[static_cast<std::size_t>(sender.tag)].material;
+    const auto affected = selectedMaterial_
+        ? paperweight::affectedMaterialOutputs(*selectedMaterial_, material)
+        : paperweight::allMaterialOutputsSelected;
+    selectedMaterial_ = material;
     for (NSButton* button in self.alternativeButtons) {
         button.state = button == sender ? NSControlStateValueOn : NSControlStateValueOff;
     }
     self.alternativeSummary.stringValue = [NSString stringWithFormat:
         @"Variation %ld selected — seed %llu.", sender.tag + 1, selectedMaterial_->seed];
-    [self schedulePreview];
+    [self schedulePreviewForOutputs:affected];
 }
 
 - (void)previewModeChanged:(id)sender
@@ -1016,7 +1054,7 @@ NSString* controlSectionName(paperweight::WizardControlSection section)
     self.previewImageView.hidden = threeDimensional;
     self.preview3DView.hidden = !threeDimensional;
     self.previewShapePopup.hidden = !threeDimensional;
-    [self schedulePreview];
+    [self schedulePreviewForOutputs:paperweight::MaterialOutputSelection{}];
 }
 
 - (void)previewShapeChanged:(id)sender
@@ -1028,60 +1066,80 @@ NSString* controlSectionName(paperweight::WizardControlSection section)
 
 - (void)schedulePreview
 {
+    previewMaps_.reset();
+    invalidatedPreviewOutputs_ = paperweight::allMaterialOutputsSelected;
+    [self schedulePreviewForOutputs:paperweight::allMaterialOutputsSelected];
+}
+
+- (void)schedulePreviewForOutputs:(paperweight::MaterialOutputSelection)outputs
+{
     if (!selectedMaterial_) return;
-    ++previewRevision_;
-    const auto revision = previewRevision_;
-    if (previewCancellation_) previewCancellation_->store(true, std::memory_order_relaxed);
-    auto cancellation = std::make_shared<std::atomic_bool>(false);
-    previewCancellation_ = cancellation;
-    const auto material = *selectedMaterial_;
+    includeOutputs(invalidatedPreviewOutputs_, outputs);
     const BOOL threeDimensional = self.previewModeControl.selectedSegment == 1;
+    if (threeDimensional) {
+        outputs = invalidatedPreviewOutputs_;
+        for (std::size_t index = 0; index < outputs.size(); ++index) {
+            outputs[index] = outputs[index] || !previewMaps_ ||
+                !previewMaps_->images[index].has_value();
+        }
+    } else {
+        const auto colourIndex =
+            paperweight::materialOutputIndex(paperweight::MaterialOutput::colour);
+        const bool colourNeeded = invalidatedPreviewOutputs_[colourIndex] ||
+            !previewMaps_ || !previewMaps_->images[colourIndex].has_value();
+        outputs.fill(false);
+        outputs[colourIndex] = colourNeeded;
+    }
+    const auto material = *selectedMaterial_;
     self.preview3DView.dielectricIor = material.dielectricIor;
     self.preview3DView.anisotropyStrength = material.anisotropyStrength;
     self.preview3DView.anisotropyRotationDegrees = material.anisotropyRotationDegrees;
     self.preview3DView.environmentPreset = material.metalnessHigh > 0.5
         ? PWPreviewEnvironmentChromeStudio
         : PWPreviewEnvironmentCeramic;
+    if (!anyOutputSelected(outputs)) {
+        if (!threeDimensional && previewMaps_) {
+            const auto* colour = previewMaps_->image(paperweight::MaterialOutput::colour);
+            if (colour != nullptr) {
+                self.previewImageView.image = imageFromPaperweight(
+                    *colour, NSMakeSize(640.0, 640.0));
+            }
+        }
+        return;
+    }
+    ++previewRevision_;
+    const auto revision = previewRevision_;
+    if (previewCancellation_) previewCancellation_->store(true, std::memory_order_relaxed);
+    auto cancellation = std::make_shared<std::atomic_bool>(false);
+    previewCancellation_ = cancellation;
     [self.previewProgress startAnimation:nil];
     self.previewStatus.textColor = NSColor.secondaryLabelColor;
     self.previewStatus.stringValue = threeDimensional
-        ? [NSString stringWithFormat:@"Rendering ten %lu × %lu maps…",
+        ? [NSString stringWithFormat:@"Refreshing %zu %@ at %lu × %lu…",
+            selectedOutputCount(outputs),
+            selectedOutputCount(outputs) == 1 ? @"map" : @"maps",
             static_cast<unsigned long>(previewResolution_), static_cast<unsigned long>(previewResolution_)]
         : [NSString stringWithFormat:@"Rendering %lu × %lu colour preview…",
             static_cast<unsigned long>(previewResolution_), static_cast<unsigned long>(previewResolution_)];
     __weak MaterialWizardWindowController* weakSelf = self;
     dispatch_async(previewQueue_, ^{
-        paperweight::GenerationRequest request{
+        const paperweight::MaterialSetRequest request{
             material,
             static_cast<std::uint32_t>(previewResolution_),
             static_cast<std::uint32_t>(previewResolution_),
-            paperweight::MaterialOutput::colour,
+            outputs,
             std::nullopt,
             std::nullopt,
         };
-        auto compilation = paperweight::compileMaterialGraph(material);
         std::optional<std::string> failure;
-        if (auto* graph = std::get_if<paperweight::MaterialGraph>(&compilation)) {
-            request.graph = std::move(*graph);
+        std::optional<paperweight::MaterialImageSet> images;
+        auto generated = paperweight::generateMaterialSet(
+            request,
+            [cancellation]() { return cancellation->load(std::memory_order_relaxed); });
+        if (auto* imageSet = std::get_if<paperweight::MaterialImageSet>(&generated)) {
+            images.emplace(std::move(*imageSet));
         } else {
-            failure = std::get<paperweight::GraphError>(compilation).message;
-        }
-        std::array<std::optional<paperweight::Image>, paperweight::materialOutputs.size()> images;
-        const std::size_t outputCount = threeDimensional ? paperweight::materialOutputs.size() : 1;
-        if (!failure) {
-            for (std::size_t index = 0; index < outputCount; ++index) {
-                if (cancellation->load(std::memory_order_relaxed)) break;
-                request.output = paperweight::materialOutputs[index];
-                auto generated = paperweight::generate(
-                    request,
-                    [cancellation]() { return cancellation->load(std::memory_order_relaxed); });
-                if (auto* image = std::get_if<paperweight::Image>(&generated)) {
-                    images[index] = std::move(*image);
-                } else {
-                    failure = std::get<paperweight::GenerationError>(generated).message;
-                    break;
-                }
-            }
+            failure = std::get<paperweight::GenerationError>(generated).message;
         }
         auto sharedImages = std::make_shared<decltype(images)>(std::move(images));
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -1094,23 +1152,40 @@ NSString* controlSectionName(paperweight::WizardControlSection section)
                 strongSelf.previewStatus.textColor = NSColor.systemRedColor;
                 return;
             }
-            if (threeDimensional) {
-                if (std::all_of(sharedImages->begin(), sharedImages->end(),
-                    [](const auto& image) { return image.has_value(); })) {
-                    [strongSelf.preview3DView setColourImage:*(*sharedImages)[0]
-                                                  heightImage:*(*sharedImages)[1]
-                                                  normalImage:*(*sharedImages)[2]
-                                               roughnessImage:*(*sharedImages)[3]
-                                                metalnessImage:*(*sharedImages)[4]
-                                                  coatingImage:*(*sharedImages)[5]
-                                                occlusionImage:*(*sharedImages)[6]
-                                                 clearCoatImage:*(*sharedImages)[7]
-                                        clearCoatRoughnessImage:*(*sharedImages)[8]
-                                                 emissiveImage:*(*sharedImages)[9]];
+            if (!strongSelf->previewMaps_) {
+                strongSelf->previewMaps_ =
+                    std::make_shared<paperweight::MaterialImageSet>();
+            }
+            if (*sharedImages) {
+                for (std::size_t index = 0;
+                     index < (*sharedImages)->images.size(); ++index) {
+                    if ((*sharedImages)->images[index]) {
+                        strongSelf->previewMaps_->images[index] =
+                            std::move((*sharedImages)->images[index]);
+                        strongSelf->invalidatedPreviewOutputs_[index] = false;
+                    }
                 }
-            } else if ((*sharedImages)[0]) {
+            }
+            if (threeDimensional) {
+                if (hasCompleteMapSet(*strongSelf->previewMaps_)) {
+                    auto& set = *strongSelf->previewMaps_;
+                    [strongSelf.preview3DView
+                        setColourImage:*set.image(paperweight::MaterialOutput::colour)
+                            heightImage:*set.image(paperweight::MaterialOutput::height)
+                            normalImage:*set.image(paperweight::MaterialOutput::normal)
+                         roughnessImage:*set.image(paperweight::MaterialOutput::roughness)
+                          metalnessImage:*set.image(paperweight::MaterialOutput::metalness)
+                            coatingImage:*set.image(paperweight::MaterialOutput::coating)
+                          occlusionImage:*set.image(paperweight::MaterialOutput::occlusion)
+                           clearCoatImage:*set.image(paperweight::MaterialOutput::clearCoat)
+                  clearCoatRoughnessImage:*set.image(
+                      paperweight::MaterialOutput::clearCoatRoughness)
+                           emissiveImage:*set.image(paperweight::MaterialOutput::emissive)];
+                }
+            } else {
                 strongSelf.previewImageView.image = imageFromPaperweight(
-                    *(*sharedImages)[0], NSMakeSize(640.0, 640.0));
+                    *strongSelf->previewMaps_->image(paperweight::MaterialOutput::colour),
+                    NSMakeSize(640.0, 640.0));
             }
             strongSelf.previewStatus.stringValue = [NSString stringWithFormat:
                 @"%lu × %lu preview — %.3g × %.3g m seamless repeat",

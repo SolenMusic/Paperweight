@@ -75,18 +75,23 @@ private:
 #endif
 };
 
-std::uint32_t resolvedWorkerCount(const GenerationRequest& request)
+std::uint32_t resolvedWorkerCount(
+    std::uint32_t width,
+    std::uint32_t height,
+    std::uint32_t requestedCount)
 {
-    std::uint32_t count = request.workerCount;
+    std::uint32_t count = requestedCount;
 #if PAPERWEIGHT_ENABLE_THREADS
-    const auto pixels = static_cast<std::uint64_t>(request.width) * request.height;
+    const auto pixels = static_cast<std::uint64_t>(width) * height;
     if (count == 0) {
         count = pixels < automaticParallelPixelThreshold
             ? 1U
             : std::max(1U, std::thread::hardware_concurrency());
     }
-    return std::min({count, maximumWorkerCount, request.height});
+    return std::min({count, maximumWorkerCount, height});
 #else
+    static_cast<void>(width);
+    static_cast<void>(height);
     static_cast<void>(count);
     return 1;
 #endif
@@ -235,15 +240,123 @@ std::optional<std::string> validateGraphPhysicalScale(
     return std::nullopt;
 }
 
-} // namespace
-
-GenerationResult generate(const GenerationRequest& request)
+std::optional<Rgba8> constantOutputPixel(
+    MaterialOutput output,
+    const Material& material)
 {
-    return generate(request, {});
+    const auto constantScalar = [](double low, double high) -> std::optional<Rgba8> {
+        return low == high ? std::optional<Rgba8>{encodeScalar(low)} : std::nullopt;
+    };
+    switch (output) {
+    case MaterialOutput::roughness:
+        return constantScalar(material.roughnessLow, material.roughnessHigh);
+    case MaterialOutput::metalness:
+        return constantScalar(material.metalnessLow, material.metalnessHigh);
+    case MaterialOutput::coating:
+        return constantScalar(material.coatingLow, material.coatingHigh);
+    case MaterialOutput::occlusion:
+        return constantScalar(material.occlusionLow, material.occlusionHigh);
+    case MaterialOutput::clearCoat:
+        return constantScalar(material.clearCoatLow, material.clearCoatHigh);
+    case MaterialOutput::clearCoatRoughness:
+        return constantScalar(
+            material.clearCoatRoughnessLow,
+            material.clearCoatRoughnessHigh);
+    case MaterialOutput::colour:
+    case MaterialOutput::height:
+    case MaterialOutput::normal:
+    case MaterialOutput::emissive:
+        return std::nullopt;
+    }
+    return std::nullopt;
 }
 
-GenerationResult generate(
-    const GenerationRequest& request,
+bool normalEvaluationMatchesHeight(const MaterialGraph& graph)
+{
+    GraphNodeId heightInput = invalidGraphNodeId;
+    GraphNodeId normalInput = invalidGraphNodeId;
+    for (const auto& node : graph.nodes) {
+        if (const auto* output = std::get_if<OutputNode>(&node)) {
+            if (output->output == MaterialOutput::height) {
+                heightInput = output->input;
+            } else if (output->output == MaterialOutput::normal) {
+                normalInput = output->input;
+            }
+            continue;
+        }
+        const auto* processing = std::get_if<ProcessingNode>(&node);
+        if (processing == nullptr) {
+            continue;
+        }
+        if (const auto* surface =
+                std::get_if<RegionSurfaceProcessing>(&processing->operation);
+            surface != nullptr && surface->parameters.facetedNormals) {
+            return false;
+        }
+    }
+    return heightInput != invalidGraphNodeId && heightInput == normalInput;
+}
+
+Rgba8 encodeOutput(
+    MaterialOutput output,
+    const Material& material,
+    const EvaluatedSample& sample)
+{
+    switch (output) {
+    case MaterialOutput::colour:
+        return encodeColour(sample);
+    case MaterialOutput::height:
+        return encodeScalar(sample.scalar);
+    case MaterialOutput::roughness:
+        return encodeScalar(
+            material.roughnessLow +
+            (material.roughnessHigh - material.roughnessLow) * sample.scalar);
+    case MaterialOutput::metalness:
+        return encodeScalar(
+            material.metalnessLow +
+            (material.metalnessHigh - material.metalnessLow) * sample.scalar);
+    case MaterialOutput::coating:
+        return encodeScalar(
+            material.coatingLow +
+            (material.coatingHigh - material.coatingLow) * sample.scalar);
+    case MaterialOutput::occlusion:
+        return encodeScalar(
+            material.occlusionLow +
+            (material.occlusionHigh - material.occlusionLow) * sample.scalar);
+    case MaterialOutput::clearCoat:
+        return encodeScalar(
+            material.clearCoatLow +
+            (material.clearCoatHigh - material.clearCoatLow) * sample.scalar);
+    case MaterialOutput::clearCoatRoughness:
+        return encodeScalar(
+            material.clearCoatRoughnessLow +
+            (material.clearCoatRoughnessHigh - material.clearCoatRoughnessLow) *
+                sample.scalar);
+    case MaterialOutput::emissive: {
+        auto colour = encodeColour(sample);
+        colour.red = toUnorm8(sample.red * material.emissiveIntensity);
+        colour.green = toUnorm8(sample.green * material.emissiveIntensity);
+        colour.blue = toUnorm8(sample.blue * material.emissiveIntensity);
+        return colour;
+    }
+    case MaterialOutput::normal:
+        break;
+    }
+    return {};
+}
+
+} // namespace
+
+namespace {
+
+MaterialSetResult generateMaterialSetImpl(
+    const Material& material,
+    std::uint32_t width,
+    std::uint32_t height,
+    const MaterialOutputSelection& selectedOutputs,
+    const std::optional<MaterialGraph>& requestedGraph,
+    const std::optional<PhysicalSize>& requestedCoverage,
+    std::uint32_t requestedWorkerCount,
     const GenerationCancellationCheck& isCancelled)
 {
     CancellationState cancellation(isCancelled);
@@ -257,51 +370,40 @@ GenerationResult generate(
     if (cancellation.cancelled()) {
         return cancellationError();
     }
-    if (request.width == 0 || request.height == 0 || request.width > maximumDimension ||
-        request.height > maximumDimension) {
+    if (width == 0 || height == 0 || width > maximumDimension ||
+        height > maximumDimension) {
         return GenerationError{
             GenerationErrorCode::invalidDimensions,
             "output dimensions must be between 1 and 4096 pixels",
         };
     }
-
-    switch (request.output) {
-    case MaterialOutput::colour:
-    case MaterialOutput::height:
-    case MaterialOutput::normal:
-    case MaterialOutput::roughness:
-    case MaterialOutput::metalness:
-    case MaterialOutput::coating:
-    case MaterialOutput::occlusion:
-    case MaterialOutput::clearCoat:
-    case MaterialOutput::clearCoatRoughness:
-    case MaterialOutput::emissive:
-        break;
-    default:
+    if (std::none_of(selectedOutputs.begin(), selectedOutputs.end(), [](bool value) {
+            return value;
+        })) {
         return GenerationError{
             GenerationErrorCode::invalidOutput,
-            "the requested material output is not supported",
+            "at least one material output must be selected",
         };
     }
 
     MaterialGraph compiledGraph;
     const MaterialGraph* graph = nullptr;
-    if (request.graph) {
-        if (const auto error = validateMaterialSettings(request.material)) {
+    if (requestedGraph) {
+        if (const auto error = validateMaterialSettings(material)) {
             return GenerationError{GenerationErrorCode::invalidMaterial, *error};
         }
-        if (const auto error = validateMaterialGraph(*request.graph)) {
+        if (const auto error = validateMaterialGraph(*requestedGraph)) {
             return GenerationError{GenerationErrorCode::invalidGraph, error->message};
         }
-        if (const auto error = validateGraphPhysicalScale(request.material, *request.graph)) {
+        if (const auto error = validateGraphPhysicalScale(material, *requestedGraph)) {
             return GenerationError{GenerationErrorCode::invalidGraph, *error};
         }
-        graph = &*request.graph;
+        graph = &*requestedGraph;
     } else {
-        if (const auto error = validateMaterial(request.material)) {
+        if (const auto error = validateMaterial(material)) {
             return GenerationError{GenerationErrorCode::invalidMaterial, *error};
         }
-        auto compilation = compileMaterialGraph(request.material);
+        auto compilation = compileMaterialGraph(material);
         if (const auto* error = std::get_if<GraphError>(&compilation)) {
             return GenerationError{GenerationErrorCode::invalidGraph, error->message};
         }
@@ -309,14 +411,13 @@ GenerationResult generate(
         graph = &compiledGraph;
     }
 
-    const PhysicalSize coverage = request.physicalCoverage.value_or(
-        request.material.physicalSize);
+    const PhysicalSize coverage = requestedCoverage.value_or(material.physicalSize);
     const auto horizontalRepeats = exactRepeatCount(
         coverage.widthMetres,
-        request.material.physicalSize.widthMetres);
+        material.physicalSize.widthMetres);
     const auto verticalRepeats = exactRepeatCount(
         coverage.heightMetres,
-        request.material.physicalSize.heightMetres);
+        material.physicalSize.heightMetres);
     if (!horizontalRepeats || !verticalRepeats) {
         return GenerationError{
             GenerationErrorCode::invalidPhysicalCoverage,
@@ -325,148 +426,266 @@ GenerationResult generate(
     }
 
     try {
-        const auto workerCount = resolvedWorkerCount(request);
+        const auto workerCount = resolvedWorkerCount(width, height, requestedWorkerCount);
+        MaterialImageSet result;
+        std::array<bool, materialOutputs.size()> needsEvaluation{};
+        bool anyEvaluation = false;
+        for (std::size_t index = 0; index < materialOutputs.size(); ++index) {
+            if (!selectedOutputs[index]) {
+                continue;
+            }
+            const auto output = materialOutputs[index];
+            if (const auto constant = constantOutputPixel(output, material)) {
+                result.images[index].emplace(width, height, *constant);
+                continue;
+            }
+            result.images[index].emplace(width, height);
+            needsEvaluation[index] = true;
+            anyEvaluation = true;
+        }
+        if (!anyEvaluation) {
+            return result;
+        }
+
         std::vector<detail::GraphEvaluator> evaluators;
         evaluators.reserve(workerCount);
-        for (std::uint32_t worker = 0; worker < workerCount; ++worker) {
-            evaluators.emplace_back(request.material, *graph);
+        evaluators.emplace_back(material, *graph);
+        for (std::uint32_t worker = 1; worker < workerCount; ++worker) {
+            evaluators.push_back(evaluators.front().cloneWorker());
         }
-        Image image(request.width, request.height);
-        if (request.output == MaterialOutput::normal) {
-            std::vector<double> heights(
-                static_cast<std::size_t>(request.width) * request.height);
-            const bool heightsComplete = forEachRow(
-                request.height,
-                workerCount,
-                cancellation,
-                [&](std::uint32_t worker, std::uint32_t y) {
-                const double v =
-                    (static_cast<double>(y) + 0.5) / request.height * *verticalRepeats;
-                for (std::uint32_t x = 0; x < request.width; ++x) {
-                    const double u =
-                        (static_cast<double>(x) + 0.5) / request.width * *horizontalRepeats;
-                    heights[static_cast<std::size_t>(y) * request.width + x] =
-                        evaluators[worker].evaluate(MaterialOutput::normal, u, v).scalar;
-                }
-            });
-            if (!heightsComplete) {
-                return cancellationError();
-            }
+        std::vector<double> uCoordinates(width);
+        for (std::uint32_t x = 0; x < width; ++x) {
+            uCoordinates[x] =
+                (static_cast<double>(x) + 0.5) / width * *horizontalRepeats;
+        }
 
-            const auto heightAt = [&](std::uint32_t x, std::uint32_t y) {
-                return heights[static_cast<std::size_t>(y) * request.width + x];
-            };
-            const bool normalsComplete = forEachRow(
-                request.height,
-                workerCount,
-                cancellation,
-                [&](std::uint32_t, std::uint32_t y) {
-                auto row = image.row(y);
-                const auto previousY = y == 0 ? request.height - 1 : y - 1;
-                const auto nextY = y + 1 == request.height ? 0 : y + 1;
-                for (std::uint32_t x = 0; x < request.width; ++x) {
-                    const auto previousX = x == 0 ? request.width - 1 : x - 1;
-                    const auto nextX = x + 1 == request.width ? 0 : x + 1;
-                    const double derivativeU =
-                        (heightAt(nextX, y) - heightAt(previousX, y)) *
-                        static_cast<double>(request.width) /
-                        coverage.widthMetres * 0.5 *
-                        request.material.reliefDepthMetres.value_or(1.0);
-                    const double derivativeV =
-                        (heightAt(x, nextY) - heightAt(x, previousY)) *
-                        static_cast<double>(request.height) /
-                        coverage.heightMetres * 0.5 *
-                        request.material.reliefDepthMetres.value_or(1.0);
-                    row[x] = encodeNormal(
-                        derivativeU,
-                        derivativeV,
-                        request.material.normalStrength);
-                }
-            });
-            if (!normalsComplete) {
-                return cancellationError();
-            }
-            return image;
+        const auto normalIndex = materialOutputIndex(MaterialOutput::normal);
+        const auto heightIndex = materialOutputIndex(MaterialOutput::height);
+        const bool normalRequested = selectedOutputs[normalIndex];
+        const bool reuseNormalFieldForHeight = normalRequested && selectedOutputs[heightIndex] &&
+            normalEvaluationMatchesHeight(*graph);
+        if (reuseNormalFieldForHeight) {
+            needsEvaluation[heightIndex] = false;
+        }
+        std::vector<double> normalField;
+        if (normalRequested) {
+            normalField.resize(static_cast<std::size_t>(width) * height);
         }
 
         const bool generationComplete = forEachRow(
-            request.height,
+            height,
             workerCount,
             cancellation,
             [&](std::uint32_t worker, std::uint32_t y) {
-            auto row = image.row(y);
             const double v =
-                (static_cast<double>(y) + 0.5) / request.height * *verticalRepeats;
-            for (std::uint32_t x = 0; x < request.width; ++x) {
-                const double u =
-                    (static_cast<double>(x) + 0.5) / request.width * *horizontalRepeats;
-                const auto sample = evaluators[worker].evaluate(request.output, u, v);
-                switch (request.output) {
-                case MaterialOutput::colour:
-                    row[x] = encodeColour(sample);
-                    break;
-                case MaterialOutput::height:
-                    row[x] = encodeScalar(sample.scalar);
-                    break;
-                case MaterialOutput::roughness:
-                    row[x] = encodeScalar(
-                        request.material.roughnessLow +
-                        (request.material.roughnessHigh - request.material.roughnessLow) *
-                            sample.scalar);
-                    break;
-                case MaterialOutput::metalness:
-                    row[x] = encodeScalar(
-                        request.material.metalnessLow +
-                        (request.material.metalnessHigh - request.material.metalnessLow) *
-                            sample.scalar);
-                    break;
-                case MaterialOutput::coating:
-                    row[x] = encodeScalar(
-                        request.material.coatingLow +
-                        (request.material.coatingHigh - request.material.coatingLow) *
-                            sample.scalar);
-                    break;
-                case MaterialOutput::occlusion:
-                    row[x] = encodeScalar(
-                        request.material.occlusionLow +
-                        (request.material.occlusionHigh - request.material.occlusionLow) *
-                            sample.scalar);
-                    break;
-                case MaterialOutput::clearCoat:
-                    row[x] = encodeScalar(
-                        request.material.clearCoatLow +
-                        (request.material.clearCoatHigh - request.material.clearCoatLow) *
-                            sample.scalar);
-                    break;
-                case MaterialOutput::clearCoatRoughness:
-                    row[x] = encodeScalar(
-                        request.material.clearCoatRoughnessLow +
-                        (request.material.clearCoatRoughnessHigh -
-                         request.material.clearCoatRoughnessLow) * sample.scalar);
-                    break;
-                case MaterialOutput::emissive: {
-                    auto colour = encodeColour(sample);
-                    colour.red = toUnorm8(
-                        sample.red * request.material.emissiveIntensity);
-                    colour.green = toUnorm8(
-                        sample.green * request.material.emissiveIntensity);
-                    colour.blue = toUnorm8(
-                        sample.blue * request.material.emissiveIntensity);
-                    row[x] = colour;
-                    break;
+                (static_cast<double>(y) + 0.5) / height * *verticalRepeats;
+            for (std::size_t outputIndex = 0;
+                 outputIndex < materialOutputs.size();
+                 ++outputIndex) {
+                if (!needsEvaluation[outputIndex]) {
+                    continue;
                 }
-                case MaterialOutput::normal:
-                    break;
+                if (cancellation.cancelled()) {
+                    return;
+                }
+                const auto output = materialOutputs[outputIndex];
+                if (output == MaterialOutput::normal) {
+                    for (std::uint32_t x = 0; x < width; ++x) {
+                        normalField[static_cast<std::size_t>(y) * width + x] =
+                            evaluators[worker].evaluate(
+                                MaterialOutput::normal,
+                                uCoordinates[x],
+                                v).scalar;
+                    }
+                    continue;
+                }
+                auto row = result.images[outputIndex]->row(y);
+                for (std::uint32_t x = 0; x < width; ++x) {
+                    const auto sample = evaluators[worker].evaluate(
+                        output,
+                        uCoordinates[x],
+                        v);
+                    row[x] = encodeOutput(output, material, sample);
                 }
             }
         });
         if (!generationComplete) {
             return cancellationError();
         }
-        return image;
+
+        if (normalRequested) {
+            const auto heightAt = [&](std::uint32_t x, std::uint32_t y) {
+                return normalField[static_cast<std::size_t>(y) * width + x];
+            };
+            const bool normalsComplete = forEachRow(
+                height,
+                workerCount,
+                cancellation,
+                [&](std::uint32_t, std::uint32_t y) {
+                auto normalRow = result.images[normalIndex]->row(y);
+                std::span<Rgba8> heightRow;
+                if (reuseNormalFieldForHeight) {
+                    heightRow = result.images[heightIndex]->row(y);
+                }
+                const auto previousY = y == 0 ? height - 1 : y - 1;
+                const auto nextY = y + 1 == height ? 0 : y + 1;
+                for (std::uint32_t x = 0; x < width; ++x) {
+                    const auto previousX = x == 0 ? width - 1 : x - 1;
+                    const auto nextX = x + 1 == width ? 0 : x + 1;
+                    const double derivativeU =
+                        (heightAt(nextX, y) - heightAt(previousX, y)) *
+                        static_cast<double>(width) /
+                        coverage.widthMetres * 0.5 *
+                        material.reliefDepthMetres.value_or(1.0);
+                    const double derivativeV =
+                        (heightAt(x, nextY) - heightAt(x, previousY)) *
+                        static_cast<double>(height) /
+                        coverage.heightMetres * 0.5 *
+                        material.reliefDepthMetres.value_or(1.0);
+                    normalRow[x] = encodeNormal(
+                        derivativeU,
+                        derivativeV,
+                        material.normalStrength);
+                    if (reuseNormalFieldForHeight) {
+                        heightRow[x] = encodeScalar(heightAt(x, y));
+                    }
+                }
+            });
+            if (!normalsComplete) {
+                return cancellationError();
+            }
+        }
+        return result;
     } catch (const std::exception& exception) {
         return GenerationError{GenerationErrorCode::allocationFailure, exception.what()};
     }
+}
+
+} // namespace
+
+GenerationResult generate(const GenerationRequest& request)
+{
+    return generate(request, {});
+}
+
+GenerationResult generate(
+    const GenerationRequest& request,
+    const GenerationCancellationCheck& isCancelled)
+{
+    MaterialOutputSelection outputs{};
+    const auto outputIndex = materialOutputIndex(request.output);
+    if (outputIndex >= outputs.size()) {
+        return GenerationError{
+            GenerationErrorCode::invalidOutput,
+            "the requested material output is not supported",
+        };
+    }
+    outputs[outputIndex] = true;
+    auto result = generateMaterialSetImpl(
+        request.material,
+        request.width,
+        request.height,
+        outputs,
+        request.graph,
+        request.physicalCoverage,
+        request.workerCount,
+        isCancelled);
+    if (auto* error = std::get_if<GenerationError>(&result)) {
+        return std::move(*error);
+    }
+    auto& images = std::get<MaterialImageSet>(result).images;
+    return std::move(*images[outputIndex]);
+}
+
+MaterialSetResult generateMaterialSet(const MaterialSetRequest& request)
+{
+    return generateMaterialSet(request, {});
+}
+
+MaterialSetResult generateMaterialSet(
+    const MaterialSetRequest& request,
+    const GenerationCancellationCheck& isCancelled)
+{
+    return generateMaterialSetImpl(
+        request.material,
+        request.width,
+        request.height,
+        request.outputs,
+        request.graph,
+        request.physicalCoverage,
+        request.workerCount,
+        isCancelled);
+}
+
+MaterialOutputSelection affectedMaterialOutputs(
+    const Material& before,
+    const Material& after) noexcept
+{
+    MaterialOutputSelection affected{};
+    const auto include = [&affected](MaterialOutput output) {
+        affected[materialOutputIndex(output)] = true;
+        if (output == MaterialOutput::height) {
+            affected[materialOutputIndex(MaterialOutput::normal)] = true;
+        }
+    };
+    const auto includeRouting = [&include](const LayerOutputRouting& routing) {
+        for (const auto output : materialOutputs) {
+            if (routing.includes(output)) {
+                include(output);
+            }
+        }
+    };
+
+    if (before.seed != after.seed || before.frequency != after.frequency ||
+        before.octaves != after.octaves || before.lacunarity != after.lacunarity ||
+        before.gain != after.gain || before.physicalSize != after.physicalSize ||
+        before.layers.size() != after.layers.size()) {
+        return allMaterialOutputsSelected;
+    }
+
+    if (before.lowColour != after.lowColour || before.highColour != after.highColour) {
+        include(MaterialOutput::colour);
+        include(MaterialOutput::emissive);
+    }
+    if (before.normalStrength != after.normalStrength ||
+        before.reliefDepthMetres != after.reliefDepthMetres) {
+        include(MaterialOutput::normal);
+    }
+    if (before.roughnessLow != after.roughnessLow ||
+        before.roughnessHigh != after.roughnessHigh) {
+        include(MaterialOutput::roughness);
+    }
+    if (before.metalnessLow != after.metalnessLow ||
+        before.metalnessHigh != after.metalnessHigh) {
+        include(MaterialOutput::metalness);
+    }
+    if (before.coatingLow != after.coatingLow ||
+        before.coatingHigh != after.coatingHigh) {
+        include(MaterialOutput::coating);
+    }
+    if (before.occlusionLow != after.occlusionLow ||
+        before.occlusionHigh != after.occlusionHigh) {
+        include(MaterialOutput::occlusion);
+    }
+    if (before.clearCoatLow != after.clearCoatLow ||
+        before.clearCoatHigh != after.clearCoatHigh) {
+        include(MaterialOutput::clearCoat);
+    }
+    if (before.clearCoatRoughnessLow != after.clearCoatRoughnessLow ||
+        before.clearCoatRoughnessHigh != after.clearCoatRoughnessHigh) {
+        include(MaterialOutput::clearCoatRoughness);
+    }
+    if (before.emissiveIntensity != after.emissiveIntensity) {
+        include(MaterialOutput::emissive);
+    }
+
+    for (std::size_t index = 0; index < before.layers.size(); ++index) {
+        if (before.layers[index] != after.layers[index]) {
+            includeRouting(before.layers[index].outputs);
+            includeRouting(after.layers[index].outputs);
+        }
+    }
+    return affected;
 }
 
 } // namespace paperweight

@@ -13,8 +13,31 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-v0.0.25 is the current Coatings and Special Surfaces release. The portable CPU
-core now generates ten deterministic maps: colour, height, normal, roughness,
+v0.0.26 is the current Incremental and Multi-Output Performance release. A new
+portable `generateMaterialSet` API validates and prepares one material once,
+then produces any selected combination of its ten maps through one coordinated
+worker pool. Immutable graph plans and deterministic scatter, crack, and leaf
+layouts are shared by those workers; per-sample caches and output images remain
+independent. The original single-output `generate` API is source-compatible and
+delegates to the same implementation.
+
+The main editor and Material Design Wizard now retain a completed 3D map set.
+Edits conservatively invalidate only affected outputs: roughness controls refresh
+roughness, physical relief refreshes normals, and a height-routed layer refreshes
+height plus normals. Presentation-only IOR and anisotropy changes update Metal
+without launching CPU generation. Superseded work is cancelled, the last valid
+preview stays visible while replacements render, and only the newest revision is
+published.
+
+Across all 46 bundled materials at 64 x 64 on the development machine, the
+coordinated ten-map path averaged 1.47x the throughput of ten sequential calls,
+with a 1.02x to 2.32x measured range and zero checksum differences. The benchmark
+window now defaults to that complete-set test and can still isolate any of the
+ten outputs. Exact compatibility, rather than a merely similar picture, remains
+the acceptance gate.
+
+The v0.0.25 Coatings and Special Surfaces work remains available. The portable CPU
+core generates ten deterministic maps: colour, height, normal, roughness,
 metalness, coating, ambient occlusion, clear coat, clear-coat roughness, and
 emissive colour. `.pmat` version 18 gives every non-derived channel independent
 layer routing and readable remap or intensity controls. Older files acquire
@@ -308,8 +331,8 @@ studio environments, their rotation and intensity, direct-light controls, and
 all GPU arithmetic remain inspection state only.
 
 Use Tools > Performance Benchmark (Command-Option-B) to run a visible benchmark
-suite at 64, 128, 256, 512, and 1024 pixels. Choose any of the ten outputs before
-starting. The separate window shows timings,
+suite at 64, 128, 256, 512, and 1024 pixels. Benchmark the coordinated complete
+ten-map material set or choose any individual output before starting. The separate window shows timings,
 throughput,
 speed-up, and byte-identity for each material and size as they finish; it also
 supports cancellation and copy/save CSV for comparisons between machines. A
@@ -339,6 +362,14 @@ material outputs deliberately select different sources. Layer-oriented
 callers can continue using `GenerationRequest` exactly as before; the core
 compiles their material once per request. Set `physicalCoverage` when a caller
 needs more than the material's single default repeat.
+
+Callers that need several maps should use `MaterialSetRequest` and
+`generateMaterialSet`. Its boolean output selection avoids generating unused
+maps, returns one optional image slot per `MaterialOutput`, and preserves the
+exact bytes produced by equivalent single-output calls. Use
+`affectedMaterialOutputs(before, after)` to conservatively invalidate cached
+maps after an authoring change; height dependencies automatically include the
+derived normal map, while presentation-only optics invalidate no CPU image.
 
 `paperweight_pack` compiles library-ready PMAT sources for game deployment:
 

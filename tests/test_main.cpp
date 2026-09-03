@@ -173,9 +173,9 @@ paperweight::Material materialWithNoiseParameters(
 
 void testVersion()
 {
-    constexpr paperweight::Version expected{0, 0, 25};
+    constexpr paperweight::Version expected{0, 0, 26};
     static_assert(paperweight::currentVersion == expected);
-    expect(paperweight::versionString() == "0.0.25", "version string is 0.0.25");
+    expect(paperweight::versionString() == "0.0.26", "version string is 0.0.26");
 }
 
 void testImage()
@@ -4671,6 +4671,157 @@ void testCoatingsAndSpecialSurfaces()
     }
 }
 
+void testMultiOutputGeneration()
+{
+    std::vector<paperweight::Material> materials{paperweight::Material{}};
+    constexpr std::array<std::string_view, 45> fixtureNames{
+        "brick-wall", "cobblestone", "ember", "cracked-stone", "weathered-metal",
+        "mossy-pebbles", "knotty-wood", "marble-veins", "eroded-terrain",
+        "toon-dungeon", "painted-metal", "graphic-marble", "polished-marble",
+        "wet-mortar", "engraved-metal", "chrome", "steel", "copper", "brass",
+        "painted-steel", "corroded-metal", "varnished-wood", "region-stones",
+        "castle-flagstone", "castle-stone", "cel-castle-stone", "castle-roof",
+        "cel-forest-rock", "sculpted-flagstone", "worn-masonry",
+        "sculpted-roof-slate", "castle-window", "detailed-crate",
+        "decorative-fasteners", "masonry-corner-variation", "cel-courtyard-gravel",
+        "scattered-debris", "foliage-foundation", "cel-forest-bark", "castle-foliage",
+        "glazed-ceramic", "lacquered-wood", "wet-stone", "machinery-panels",
+        "illuminated-scifi",
+    };
+    for (const auto name : fixtureNames) {
+        std::ifstream file(std::string(name) + ".pmat", std::ios::binary);
+        const std::string source(
+            std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{});
+        const auto parsed = paperweight::parsePmat(source);
+        if (const auto* material = std::get_if<paperweight::Material>(&parsed)) {
+            materials.push_back(*material);
+        }
+    }
+    expect(materials.size() == 46,
+           "multi-output identity coverage includes every bundled material");
+
+    for (const auto& material : materials) {
+        auto request = paperweight::MaterialSetRequest{
+            material,
+            17,
+            13,
+            paperweight::allMaterialOutputsSelected,
+            std::nullopt,
+            std::nullopt,
+            1,
+        };
+        auto serialResult = paperweight::generateMaterialSet(request);
+        const auto* serialSet = std::get_if<paperweight::MaterialImageSet>(&serialResult);
+        bool matchesLegacy = serialSet != nullptr;
+        if (serialSet != nullptr) {
+            for (const auto output : paperweight::materialOutputs) {
+                const auto legacy = paperweight::generate({
+                    material, 17, 13, output, std::nullopt, std::nullopt, 1});
+                const auto* legacyImage = std::get_if<paperweight::Image>(&legacy);
+                const auto* setImage = serialSet->image(output);
+                matchesLegacy = matchesLegacy && legacyImage != nullptr && setImage != nullptr &&
+                    std::equal(
+                        legacyImage->pixels().begin(), legacyImage->pixels().end(),
+                        setImage->pixels().begin());
+            }
+        }
+        expect(matchesLegacy,
+               "multi-output generation is byte-identical to every legacy single-output call");
+
+        request.workerCount = 4;
+        auto parallelResult = paperweight::generateMaterialSet(request);
+        const auto* parallelSet = std::get_if<paperweight::MaterialImageSet>(&parallelResult);
+        bool workerIdentical = serialSet != nullptr && parallelSet != nullptr;
+        if (serialSet != nullptr && parallelSet != nullptr) {
+            for (const auto output : paperweight::materialOutputs) {
+                const auto* serialImage = serialSet->image(output);
+                const auto* parallelImage = parallelSet->image(output);
+                workerIdentical = workerIdentical && serialImage != nullptr &&
+                    parallelImage != nullptr && std::equal(
+                        serialImage->pixels().begin(), serialImage->pixels().end(),
+                        parallelImage->pixels().begin());
+            }
+        }
+        expect(workerIdentical,
+               "multi-output generation is byte-identical across worker counts");
+    }
+
+    paperweight::MaterialOutputSelection subset{};
+    subset[paperweight::materialOutputIndex(paperweight::MaterialOutput::roughness)] = true;
+    subset[paperweight::materialOutputIndex(paperweight::MaterialOutput::occlusion)] = true;
+    auto subsetResult = paperweight::generateMaterialSet({
+        paperweight::Material{}, 11, 9, subset, std::nullopt, std::nullopt, 2});
+    const auto* subsetImages = std::get_if<paperweight::MaterialImageSet>(&subsetResult);
+    expect(subsetImages != nullptr &&
+               subsetImages->image(paperweight::MaterialOutput::roughness) != nullptr &&
+               subsetImages->image(paperweight::MaterialOutput::occlusion) != nullptr &&
+               subsetImages->image(paperweight::MaterialOutput::colour) == nullptr &&
+               subsetImages->image(paperweight::MaterialOutput::normal) == nullptr,
+           "multi-output selection returns only explicitly requested maps");
+
+    const auto emptyResult = paperweight::generateMaterialSet({
+        paperweight::Material{}, 8, 8, {}, std::nullopt, std::nullopt, 1});
+    expect(std::holds_alternative<paperweight::GenerationError>(emptyResult) &&
+               std::get<paperweight::GenerationError>(emptyResult).code ==
+                   paperweight::GenerationErrorCode::invalidOutput,
+           "multi-output generation rejects an empty output selection");
+
+    const auto cancelledResult = paperweight::generateMaterialSet(
+        {paperweight::Material{}, 8, 8, paperweight::allMaterialOutputsSelected,
+         std::nullopt, std::nullopt, 1},
+        []() { return true; });
+    expect(std::holds_alternative<paperweight::GenerationError>(cancelledResult) &&
+               std::get<paperweight::GenerationError>(cancelledResult).code ==
+                   paperweight::GenerationErrorCode::cancelled,
+           "multi-output generation honours cancellation atomically");
+
+    const auto selected = [](const paperweight::MaterialOutputSelection& outputs,
+                              paperweight::MaterialOutput output) {
+        return outputs[paperweight::materialOutputIndex(output)];
+    };
+    paperweight::Material before;
+    before.layers.push_back(paperweight::makeNoiseLayer());
+    auto after = before;
+    after.dielectricIor = 2.0;
+    after.anisotropyStrength = 0.75;
+    const auto opticsOnly = paperweight::affectedMaterialOutputs(before, after);
+    expect(std::none_of(opticsOnly.begin(), opticsOnly.end(), [](bool value) { return value; }),
+           "preview-only optical changes do not invalidate deterministic CPU maps");
+
+    after = before;
+    after.roughnessHigh = 0.5;
+    const auto roughnessOnly = paperweight::affectedMaterialOutputs(before, after);
+    expect(selected(roughnessOnly, paperweight::MaterialOutput::roughness) &&
+               std::count(roughnessOnly.begin(), roughnessOnly.end(), true) == 1,
+           "roughness remapping invalidates only the roughness output");
+
+    after = before;
+    after.reliefDepthMetres = 0.004;
+    const auto normalsOnly = paperweight::affectedMaterialOutputs(before, after);
+    expect(selected(normalsOnly, paperweight::MaterialOutput::normal) &&
+               std::count(normalsOnly.begin(), normalsOnly.end(), true) == 1,
+           "physical relief changes invalidate normals without rebuilding height");
+
+    before.layers.front().outputs = {
+        true, false, false, false, false, false, false, false, false};
+    after = before;
+    after.layers.front().opacity = 0.4;
+    const auto colourLayerOnly = paperweight::affectedMaterialOutputs(before, after);
+    expect(selected(colourLayerOnly, paperweight::MaterialOutput::colour) &&
+               std::count(colourLayerOnly.begin(), colourLayerOnly.end(), true) == 1,
+           "a colour-only layer edit invalidates only the colour output");
+
+    before.layers.front().outputs = {
+        false, true, false, false, false, false, false, false, false};
+    after = before;
+    after.layers.front().opacity = 0.6;
+    const auto heightLayer = paperweight::affectedMaterialOutputs(before, after);
+    expect(selected(heightLayer, paperweight::MaterialOutput::height) &&
+               selected(heightLayer, paperweight::MaterialOutput::normal) &&
+               std::count(heightLayer.begin(), heightLayer.end(), true) == 2,
+           "height-layer edits also invalidate the derived normal output");
+}
+
 void testMaterialWizard()
 {
     expect(paperweight::wizardMaterialFamilies.size() == 8,
@@ -5247,6 +5398,7 @@ int main()
     testMetalnessAndOptics();
     testMetalTemplates();
     testCoatingsAndSpecialSurfaces();
+    testMultiOutputGeneration();
     testMaterialIdentityAndLibrary();
     testPackedMaterialLibrary();
 
