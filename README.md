@@ -13,7 +13,21 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-v0.0.30 is the current Organic Silhouettes and Hierarchical Clusters release.
+v0.0.31 is the current Layer Stack Workflow release. The AppKit editor now uses
+a native multi-select layer table with drag sorting, Option-arrow movement, and
+focus-aware Cut, Copy, Paste, Duplicate, Delete, Select All, Undo, and Redo.
+Selections retain evaluation order when copied or moved, and a versioned
+portable text fragment preserves every authored layer field across tabs and
+documents. Pasted and duplicated layers receive fresh editor identities while
+the destination material keeps its own seed.
+
+All structural edits participate in layer-stack undo and immediately cancel and
+replace obsolete preview work. The inspector clearly reports multi-selection,
+native insertion feedback and table auto-scroll support long stacks, and row,
+checkbox, selection-count, and command labels are exposed to accessibility.
+`.pmat` remains format 22 and generated output is unchanged.
+
+The v0.0.30 Organic Silhouettes and Hierarchical Clusters work remains available.
 The portable organic-cluster operation now combines primary, secondary, and
 tertiary populations with independently authored analytic profiles, palettes,
 and scale. Blob, rosette, and lichen silhouettes join the existing leaf shapes;
@@ -217,6 +231,7 @@ See [docs/architecture.md](docs/architecture.md),
 [docs/region-attached-detail.md](docs/region-attached-detail.md),
 [docs/organic-structures.md](docs/organic-structures.md),
 [docs/organic-silhouettes-and-clusters.md](docs/organic-silhouettes-and-clusters.md),
+[docs/layer-stack-workflow.md](docs/layer-stack-workflow.md),
 [docs/reference-materials.md](docs/reference-materials.md),
 [docs/material-wizard.md](docs/material-wizard.md),
 [docs/material-library.md](docs/material-library.md),
@@ -235,7 +250,11 @@ branch; the preview status shows the resulting node count. Structural controls,
 transforms, warp, masks, output selection, 1x1/3x3 tiling, open/save, and PNG
 export behave as before. Preview work remains cancellable and off AppKit's event
 thread, and continuous sliders retain direct mouse tracking. The visible layer
-stack matches bottom-to-top evaluation. Compact repeat-size and preview-coverage
+stack matches bottom-to-top evaluation. Command-click or Shift-click selects
+multiple layers; drag them to reorder as one block, or use Cut, Copy, Paste,
+Duplicate, Delete, and Option-Up/Down from the Edit menu. Clipboard fragments
+work across editor tabs without replacing the destination material's seed.
+Compact repeat-size and preview-coverage
 controls use metres, while brick layers can switch between relative sizing and
 friendly metre fields. Physical bricks and course layouts expose their derived
 counts alongside dimensions and calculate a compatible seamless repeat; authors
@@ -340,7 +359,10 @@ to store one, build a stack in the Layer Stack panel, choose a material output,
 and use File > Export PNG to write that 512x512 RGBA8 tile. Select a layer and
 use the Layer, Transform, and Mask tabs to shape it. Structural operations show
 their own controls in the Layer tab. The stack is shown bottom-to-top, matching
-evaluation order. Repeat Size is stored with the material; Coverage controls how
+evaluation order. Select one or more rows with standard macOS selection gestures;
+drag to sort, use Option-Up/Down to move, or use the standard editing shortcuts
+to transfer layers between open materials. Repeat Size is stored with the
+material; Coverage controls how
 many whole physical repeats the preview generates. Add Region Field immediately
 above a brick, tile, Worley, random-cell, line, rectangle, or circle layer to
 select seeded random variation, local coordinates, or centre/boundary distance.

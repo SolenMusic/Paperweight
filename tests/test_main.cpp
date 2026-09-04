@@ -4,6 +4,7 @@
 #include <paperweight/evaluation.hpp>
 #include <paperweight/graph.hpp>
 #include <paperweight/layer.hpp>
+#include <paperweight/layer_fragment.hpp>
 #include <paperweight/material.hpp>
 #include <paperweight/material_library.hpp>
 #include <paperweight/material_template.hpp>
@@ -178,9 +179,121 @@ paperweight::Material materialWithNoiseParameters(
 
 void testVersion()
 {
-    constexpr paperweight::Version expected{0, 0, 30};
+    constexpr paperweight::Version expected{0, 0, 31};
     static_assert(paperweight::currentVersion == expected);
-    expect(paperweight::versionString() == "0.0.30", "version string is 0.0.30");
+    expect(paperweight::versionString() == "0.0.31", "version string is 0.0.31");
+}
+
+void testLayerFragments()
+{
+    auto noise = paperweight::makeNoiseLayer(71);
+    noise.opacity = 0.42;
+    noise.outputs.metalness = false;
+    noise.transform.scaleX = 3;
+    noise.mask.enabled = true;
+    noise.mask.inputLow = 0.2;
+
+    auto colour = paperweight::makeSolidColourLayer({32, 96, 160, 255});
+    colour.compositeMode = paperweight::CompositeMode::multiply;
+    colour.outputs.height = false;
+
+    const std::array layers{noise, colour};
+    const auto encoded = paperweight::serialiseLayerFragment(layers);
+    const auto* text = std::get_if<std::string>(&encoded);
+    expect(text != nullptr &&
+               text->find("paperweight.layer_fragment.version = 1") != std::string::npos,
+           "layer fragments have an explicit independent format version");
+    if (text != nullptr) {
+        const auto decoded = paperweight::parseLayerFragment(*text);
+        const auto* fragment = std::get_if<paperweight::LayerFragment>(&decoded);
+        expect(fragment != nullptr && fragment->layers ==
+                   std::vector<paperweight::MaterialLayer>(layers.begin(), layers.end()),
+               "mixed layer selections round-trip losslessly through clipboard fragments");
+
+        auto future = *text;
+        const auto marker = future.find("layer_fragment.version = 1");
+        future.replace(marker, std::string_view{"layer_fragment.version = 1"}.size(),
+                       "layer_fragment.version = 99");
+        const auto unsupported = paperweight::parseLayerFragment(future);
+        const auto* diagnostic = std::get_if<paperweight::ParseDiagnostic>(&unsupported);
+        expect(diagnostic != nullptr && diagnostic->line == 2,
+               "future layer-fragment versions fail safely before reading their payload");
+    }
+
+    auto everyOperation = std::array{
+        paperweight::makeNoiseLayer(),
+        paperweight::makeSolidColourLayer(),
+        paperweight::makeLevelsLayer(),
+        paperweight::makeThresholdLayer(),
+        paperweight::makeBrickGridLayer(),
+        paperweight::makeTileGridLayer(),
+        paperweight::makeWorleyCellsLayer(),
+        paperweight::makeRandomCellsLayer(),
+        paperweight::makeLinesLayer(),
+        paperweight::makeRectanglesLayer(),
+        paperweight::makeCirclesLayer(),
+        paperweight::makeSurfacePatternLayer(),
+        paperweight::makeSurfaceFilterLayer(),
+        paperweight::makePosteriseLayer(),
+        paperweight::makeColourRampLayer(),
+        paperweight::makePaletteLayer(),
+        paperweight::makeInkContourLayer(),
+        paperweight::makeRegionFieldLayer(),
+        paperweight::makeCourseLayoutLayer(),
+        paperweight::makeRegionSurfaceLayer(),
+        paperweight::makeShapePrimitiveLayer(),
+        paperweight::makeShapeBooleanLayer(),
+        paperweight::makeLatticeLayer(),
+        paperweight::makeScatterLayer(),
+        paperweight::makeOrganicCellLayer(),
+        paperweight::makeOrganicCrackLayer(),
+        paperweight::makeLeafClusterLayer(),
+        paperweight::makeOrganicAccumulationLayer(),
+        paperweight::makeSurfaceValueLayer(),
+        paperweight::makeTextileLayer(),
+        paperweight::makeRegionAttachmentLayer(),
+    };
+    everyOperation[0].outputs.colour = false;
+    everyOperation[1].outputs.height = false;
+    everyOperation[2].outputs.roughness = false;
+    everyOperation[3].outputs.metalness = false;
+    everyOperation[4].outputs.coating = false;
+    everyOperation[5].outputs.occlusion = false;
+    everyOperation[6].outputs.clearCoat = false;
+    everyOperation[7].outputs.clearCoatRoughness = false;
+    everyOperation[8].outputs.emissive = false;
+
+    const auto singleEncoded = paperweight::serialiseLayerFragment(
+        std::span<const paperweight::MaterialLayer>{everyOperation.data(), 1});
+    const auto* singleText = std::get_if<std::string>(&singleEncoded);
+    expect(singleText != nullptr, "one selected layer can be copied");
+    if (singleText != nullptr) {
+        const auto singleDecoded = paperweight::parseLayerFragment(*singleText);
+        const auto* singleFragment = std::get_if<paperweight::LayerFragment>(&singleDecoded);
+        expect(singleFragment != nullptr && singleFragment->layers.size() == 1 &&
+                   singleFragment->layers.front() == everyOperation.front(),
+               "one selected layer round-trips losslessly");
+    }
+
+    const auto allEncoded = paperweight::serialiseLayerFragment(everyOperation);
+    const auto* allText = std::get_if<std::string>(&allEncoded);
+    expect(allText != nullptr, "every current layer operation can be copied together");
+    if (allText != nullptr) {
+        const auto allDecoded = paperweight::parseLayerFragment(*allText);
+        const auto* allFragment = std::get_if<paperweight::LayerFragment>(&allDecoded);
+        expect(allFragment != nullptr && allFragment->layers ==
+                   std::vector<paperweight::MaterialLayer>(
+                       everyOperation.begin(), everyOperation.end()),
+               "every current layer operation survives a lossless fragment round-trip");
+    }
+
+    expect(std::holds_alternative<paperweight::SerialisationError>(
+               paperweight::serialiseLayerFragment(
+                   std::span<const paperweight::MaterialLayer>{})),
+           "an empty layer selection cannot be encoded as a clipboard fragment");
+    expect(std::holds_alternative<paperweight::ParseDiagnostic>(
+               paperweight::parseLayerFragment("ordinary clipboard text")),
+           "ordinary clipboard text is not mistaken for a layer fragment");
 }
 
 void testImage()
@@ -5975,6 +6088,7 @@ int main()
     testPeriodicNoise();
     testMaterialAndFbm();
     testLayerEvaluation();
+    testLayerFragments();
     testMasksAndWarping();
     testStructuralGenerators();
     testRegionAttributes();

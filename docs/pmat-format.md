@@ -84,7 +84,7 @@ no material; it never returns a partially accepted definition.
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
-| `pmat.version` | File-format version | `1` through `21`; the serialiser writes `21` |
+| `pmat.version` | File-format version | `1` through `22`; the serialiser writes `22` |
 | `material.type` | Generator model | `fbm` |
 | `material.seed` | Deterministic seed | Unsigned 64-bit integer |
 | `material.width` | Width of one seamless material repeat | Metre value from `0.000001m` to `1000000m` |
@@ -556,7 +556,7 @@ formula is applied to scalar, red, green, blue, and alpha channels.
 
 ## Graph compilation
 
-Paperweight v0.0.30 retains the layer syntax, now at version 22, as the compact,
+Paperweight v0.0.31 retains the layer syntax, now at version 22, as the compact,
 human-editable authoring projection. Before generation, the portable core
 compiles it into a directed acyclic material graph:
 
@@ -686,7 +686,7 @@ generation wrap mathematically across both tile axes.
 ## Compatibility policy
 
 The `.pmat` format version and Paperweight application version are separate.
-Paperweight v0.0.30 reads versions 1 through 22 and writes version 22. A reader
+Paperweight v0.0.31 reads versions 1 through 22 and writes version 22. A reader
 rejects unsupported versions and unknown fields so that it cannot quietly
 reinterpret a future material.
 
@@ -737,3 +737,9 @@ The portable entry points are `paperweight::parsePmat` and
 `paperweight::serialisePmat` in `include/paperweight/pmat.hpp`.
 The graph model, compiler, and validator are declared in
 `include/paperweight/graph.hpp`.
+
+The v0.0.31 editor clipboard is not a new `.pmat` revision. Its separately
+versioned layer-fragment envelope uses PMAT text as a lossless carrier but parses
+only the ordered `MaterialLayer` values. Material identity, seed, physical size,
+and surface-wide values remain properties of the destination document. Editor
+selection UUIDs are transient and are never serialised.
