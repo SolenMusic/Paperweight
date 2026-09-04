@@ -7,7 +7,7 @@ generator algorithm, output, dimensions, physical coverage, and pixel format.
 ## Running the benchmark in the app
 
 Choose **Tools > Performance Benchmark** (Command-Option-B) in the native app.
-The separate window runs all 55 bundled material recipes at 64 x 64, 128 x 128,
+The separate window runs all 59 bundled material recipes at 64 x 64, 128 x 128,
 256 x 256, 512 x 512, and 1024 x 1024. It defaults to the coordinated complete
 ten-map material set, or can isolate any one of the ten outputs.
 
@@ -42,7 +42,7 @@ cmake --build build-profile
   --resolution 128 --iterations 3 --output colour --workers 1
 ```
 
-The executable writes CSV to standard output. It covers the same 49 bundled
+The executable writes CSV to standard output. It covers the same 59 bundled
 materials and can select one material or
 output with `--material` and `--output`; use `--output set` to report both ten
 sequential single-output calls and one coordinated material-set call.

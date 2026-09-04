@@ -55,6 +55,16 @@ foreach(material IN ITEMS
     woven-upholstery
     alternating-carpet
     heraldic-banner-cloth
+    radial-target
+    arc-and-crescent-motifs
+    attached-paving
+    arch-stone-panel
+    damaged-crate
+    detailed-target-panel
+    hierarchical-foliage
+    hierarchical-ground
+    rich-moss-colonies
+    rich-lichen-stamps
 )
     configure_file(
         "${PROJECT_SOURCE_DIR}/examples/materials/${material}.pmat"

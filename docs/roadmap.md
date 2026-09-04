@@ -447,6 +447,31 @@ format migration rejection, exact round-trips, one/four-worker identity,
 showcase golden hashes, and ARM64/x86-64 builds remain release gates. Tracked by
 [roadmap issue #292](https://github.com/SolenMusic/Paperweight/issues/292).
 
+## v0.0.30 - Organic Silhouettes and Hierarchical Clusters
+
+Implemented: extend the existing portable leaf-cluster evaluator into a reusable
+hierarchical organic population system. Blob, rosette, and lichen join the
+analytic shape profiles, and the ground-scatter arrangement applies the same
+stable placement contract to stones, debris, lichen, and other non-leaf forms.
+Primary, secondary, and tertiary populations each own a profile, palette, and
+scale. Stable cluster-level and instance-level colour channels provide broad and
+fine variation without mutable random state.
+
+Fill, contour, inner-highlight, cluster-random, and population fields can be
+routed through ordinary layers. Organic accumulation adds colony and speckle
+profiles plus reusable fill, outline, highlight, and detail masks for richer
+moss and lichen. Hierarchical Foliage, Hierarchical Ground, Rich Moss Colonies,
+and Rich Lichen Stamps demonstrate the vocabulary without introducing asset-
+specific generators.
+
+PMAT format 22 stores the complete hierarchy explicitly, while version-21 and
+older organic layers acquire neutral defaults and preserve their output bytes.
+The editor exposes population selection and profiles, palettes, weights, scales,
+colour variation, and contour controls through the existing layer inspector.
+Exact torus sampling, parser compatibility, one/four-worker identity, showcase
+golden hashes, and ARM64/x86-64 builds remain release gates. Tracked by
+[roadmap issue #299](https://github.com/SolenMusic/Paperweight/issues/299).
+
 ## v0.1.0 - Game Library
 
 Stabilise the embedding API and add material-definition versioning, generator

@@ -599,6 +599,9 @@ enum class LeafProfile : std::uint8_t {
     lanceolate = 1,
     cordate = 2,
     lobed = 3,
+    blob = 4,
+    rosette = 5,
+    lichen = 6,
 };
 
 enum class LeafClusterPattern : std::uint8_t {
@@ -606,6 +609,7 @@ enum class LeafClusterPattern : std::uint8_t {
     fan = 1,
     vine = 2,
     canopy = 3,
+    groundScatter = 4,
 };
 
 enum class LeafField : std::uint8_t {
@@ -615,6 +619,10 @@ enum class LeafField : std::uint8_t {
     midrib = 3,
     veins = 4,
     instanceRandom = 5,
+    outline = 6,
+    innerHighlight = 7,
+    clusterRandom = 8,
+    population = 9,
 };
 
 enum class LeafSpecies : std::uint8_t {
@@ -657,6 +665,20 @@ struct LeafClusterOperation {
     double minimumRoughness{0.62};
     double maximumRoughness{0.9};
     std::uint64_t seedOffset{};
+    double innerHighlightWidth{0.06};
+    double innerHighlightInset{0.08};
+    double clusterColourVariation{0.0};
+    double instanceColourVariation{1.0};
+    LeafProfile secondaryProfile{LeafProfile::blob};
+    double secondaryWeight{0.0};
+    double secondaryScale{0.72};
+    Rgba8 secondaryLowColour{48, 82, 38, 255};
+    Rgba8 secondaryHighColour{118, 150, 72, 255};
+    LeafProfile tertiaryProfile{LeafProfile::lichen};
+    double tertiaryWeight{0.0};
+    double tertiaryScale{0.45};
+    Rgba8 tertiaryLowColour{70, 91, 48, 255};
+    Rgba8 tertiaryHighColour{157, 169, 98, 255};
 
     friend constexpr bool operator==(
         const LeafClusterOperation&,
@@ -676,6 +698,20 @@ enum class OrganicAccumulationSource : std::uint8_t {
     authoredMask = 3,
 };
 
+enum class OrganicAccumulationProfile : std::uint8_t {
+    noise = 0,
+    colonies = 1,
+    speckles = 2,
+};
+
+enum class OrganicAccumulationField : std::uint8_t {
+    material = 0,
+    fill = 1,
+    outline = 2,
+    innerHighlight = 3,
+    detail = 4,
+};
+
 struct OrganicAccumulationOperation {
     OrganicAccumulationKind kind{OrganicAccumulationKind::moss};
     OrganicAccumulationSource source{OrganicAccumulationSource::cavity};
@@ -689,6 +725,11 @@ struct OrganicAccumulationOperation {
     Rgba8 highColour{95, 118, 54, 255};
     std::uint64_t seedOffset{};
     ProcessingTarget target{ProcessingTarget::colour};
+    OrganicAccumulationProfile profile{OrganicAccumulationProfile::noise};
+    OrganicAccumulationField field{OrganicAccumulationField::material};
+    double outlineWidth{0.08};
+    double innerHighlightWidth{0.1};
+    double innerHighlightInset{0.08};
 
     friend constexpr bool operator==(
         const OrganicAccumulationOperation&,
@@ -1674,6 +1715,9 @@ struct LayerLimits {
     case LeafProfile::lanceolate: return "lanceolate";
     case LeafProfile::cordate: return "cordate";
     case LeafProfile::lobed: return "lobed";
+    case LeafProfile::blob: return "blob";
+    case LeafProfile::rosette: return "rosette";
+    case LeafProfile::lichen: return "lichen";
     }
     return "unknown";
 }
@@ -1685,6 +1729,7 @@ struct LayerLimits {
     case LeafClusterPattern::fan: return "fan";
     case LeafClusterPattern::vine: return "vine";
     case LeafClusterPattern::canopy: return "canopy";
+    case LeafClusterPattern::groundScatter: return "ground_scatter";
     }
     return "unknown";
 }
@@ -1698,6 +1743,34 @@ struct LayerLimits {
     case LeafField::midrib: return "midrib";
     case LeafField::veins: return "veins";
     case LeafField::instanceRandom: return "instance_random";
+    case LeafField::outline: return "outline";
+    case LeafField::innerHighlight: return "inner_highlight";
+    case LeafField::clusterRandom: return "cluster_random";
+    case LeafField::population: return "population";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view organicAccumulationProfileName(
+    OrganicAccumulationProfile profile)
+{
+    switch (profile) {
+    case OrganicAccumulationProfile::noise: return "noise";
+    case OrganicAccumulationProfile::colonies: return "colonies";
+    case OrganicAccumulationProfile::speckles: return "speckles";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view organicAccumulationFieldName(
+    OrganicAccumulationField field)
+{
+    switch (field) {
+    case OrganicAccumulationField::material: return "material";
+    case OrganicAccumulationField::fill: return "fill";
+    case OrganicAccumulationField::outline: return "outline";
+    case OrganicAccumulationField::innerHighlight: return "inner_highlight";
+    case OrganicAccumulationField::detail: return "detail";
     }
     return "unknown";
 }

@@ -393,6 +393,20 @@ struct LayerBuilder {
     ParsedValue<double> leafMinimumRoughness;
     ParsedValue<double> leafMaximumRoughness;
     ParsedValue<std::uint64_t> leafSeedOffset;
+    ParsedValue<double> leafInnerHighlightWidth;
+    ParsedValue<double> leafInnerHighlightInset;
+    ParsedValue<double> leafClusterColourVariation;
+    ParsedValue<double> leafInstanceColourVariation;
+    ParsedValue<LeafProfile> leafSecondaryProfile;
+    ParsedValue<double> leafSecondaryWeight;
+    ParsedValue<double> leafSecondaryScale;
+    ParsedValue<Rgba8> leafSecondaryLowColour;
+    ParsedValue<Rgba8> leafSecondaryHighColour;
+    ParsedValue<LeafProfile> leafTertiaryProfile;
+    ParsedValue<double> leafTertiaryWeight;
+    ParsedValue<double> leafTertiaryScale;
+    ParsedValue<Rgba8> leafTertiaryLowColour;
+    ParsedValue<Rgba8> leafTertiaryHighColour;
     ParsedValue<OrganicAccumulationKind> organicAccumulationKind;
     ParsedValue<OrganicAccumulationSource> organicAccumulationSource;
     ParsedValue<std::uint32_t> organicAccumulationScale;
@@ -405,6 +419,11 @@ struct LayerBuilder {
     ParsedValue<Rgba8> organicAccumulationHighColour;
     ParsedValue<std::uint64_t> organicAccumulationSeedOffset;
     ParsedValue<ProcessingTarget> organicAccumulationTarget;
+    ParsedValue<OrganicAccumulationProfile> organicAccumulationProfile;
+    ParsedValue<OrganicAccumulationField> organicAccumulationField;
+    ParsedValue<double> organicAccumulationOutlineWidth;
+    ParsedValue<double> organicAccumulationInnerHighlightWidth;
+    ParsedValue<double> organicAccumulationInnerHighlightInset;
     ParsedValue<TextilePattern> textilePattern;
     ParsedValue<TextileField> textileField;
     ParsedValue<YarnProfile> textileYarnProfile;
@@ -929,6 +948,10 @@ std::optional<LeafField> parseLeafField(std::string_view value)
     if (value == "midrib") return LeafField::midrib;
     if (value == "veins") return LeafField::veins;
     if (value == "instance_random") return LeafField::instanceRandom;
+    if (value == "outline") return LeafField::outline;
+    if (value == "inner_highlight") return LeafField::innerHighlight;
+    if (value == "cluster_random") return LeafField::clusterRandom;
+    if (value == "population") return LeafField::population;
     return std::nullopt;
 }
 
@@ -938,6 +961,9 @@ std::optional<LeafProfile> parseLeafProfile(std::string_view value)
     if (value == "lanceolate") return LeafProfile::lanceolate;
     if (value == "cordate") return LeafProfile::cordate;
     if (value == "lobed") return LeafProfile::lobed;
+    if (value == "blob") return LeafProfile::blob;
+    if (value == "rosette") return LeafProfile::rosette;
+    if (value == "lichen") return LeafProfile::lichen;
     return std::nullopt;
 }
 
@@ -947,6 +973,7 @@ std::optional<LeafClusterPattern> parseLeafClusterPattern(std::string_view value
     if (value == "fan") return LeafClusterPattern::fan;
     if (value == "vine") return LeafClusterPattern::vine;
     if (value == "canopy") return LeafClusterPattern::canopy;
+    if (value == "ground_scatter") return LeafClusterPattern::groundScatter;
     return std::nullopt;
 }
 
@@ -966,6 +993,26 @@ std::optional<OrganicAccumulationSource> parseOrganicAccumulationSource(
     if (value == "boundary") return OrganicAccumulationSource::boundary;
     if (value == "low_height") return OrganicAccumulationSource::lowHeight;
     if (value == "authored_mask") return OrganicAccumulationSource::authoredMask;
+    return std::nullopt;
+}
+
+std::optional<OrganicAccumulationProfile> parseOrganicAccumulationProfile(
+    std::string_view value)
+{
+    if (value == "noise") return OrganicAccumulationProfile::noise;
+    if (value == "colonies") return OrganicAccumulationProfile::colonies;
+    if (value == "speckles") return OrganicAccumulationProfile::speckles;
+    return std::nullopt;
+}
+
+std::optional<OrganicAccumulationField> parseOrganicAccumulationField(
+    std::string_view value)
+{
+    if (value == "material") return OrganicAccumulationField::material;
+    if (value == "fill") return OrganicAccumulationField::fill;
+    if (value == "outline") return OrganicAccumulationField::outline;
+    if (value == "inner_highlight") return OrganicAccumulationField::innerHighlight;
+    if (value == "detail") return OrganicAccumulationField::detail;
     return std::nullopt;
 }
 
@@ -1581,6 +1628,24 @@ bool hasVersionTwentyOneFields(const LayerBuilder& builder)
         builder.attachmentSeedOffset.value;
 }
 
+bool hasVersionTwentyTwoFields(const LayerBuilder& builder)
+{
+    return builder.leafInnerHighlightWidth.value ||
+        builder.leafInnerHighlightInset.value ||
+        builder.leafClusterColourVariation.value ||
+        builder.leafInstanceColourVariation.value ||
+        builder.leafSecondaryProfile.value || builder.leafSecondaryWeight.value ||
+        builder.leafSecondaryScale.value || builder.leafSecondaryLowColour.value ||
+        builder.leafSecondaryHighColour.value || builder.leafTertiaryProfile.value ||
+        builder.leafTertiaryWeight.value || builder.leafTertiaryScale.value ||
+        builder.leafTertiaryLowColour.value || builder.leafTertiaryHighColour.value ||
+        builder.organicAccumulationProfile.value ||
+        builder.organicAccumulationField.value ||
+        builder.organicAccumulationOutlineWidth.value ||
+        builder.organicAccumulationInnerHighlightWidth.value ||
+        builder.organicAccumulationInnerHighlightInset.value;
+}
+
 bool hasStructuralFields(const LayerBuilder& builder)
 {
     return hasVersionFourFields(builder) || hasVersionFiveFields(builder) ||
@@ -1589,7 +1654,7 @@ bool hasStructuralFields(const LayerBuilder& builder)
         hasVersionTenFields(builder) || hasVersionElevenFields(builder) ||
         hasVersionTwelveFields(builder) || hasVersionThirteenFields(builder) ||
         hasVersionFourteenFields(builder) || hasVersionTwentyFields(builder) ||
-        hasVersionTwentyOneFields(builder);
+        hasVersionTwentyOneFields(builder) || hasVersionTwentyTwoFields(builder);
 }
 
 template<typename Value>
@@ -3422,17 +3487,25 @@ ParseResult parsePmat(std::string_view text)
                 } else if (property == "leaf.field") {
                     const auto parsed = parseLeafField(value);
                     if (!parsed || !storeValue(builder.leafField, *parsed, lineNumber, valueColumn)) {
-                        return parsed ? duplicate() : diagnostic(lineNumber, valueColumn, "leaf field must be 'material', 'fill', 'edge', 'midrib', 'veins', or 'instance_random'");
+                        return parsed ? duplicate() : diagnostic(lineNumber, valueColumn, "leaf field must be 'material', 'fill', 'edge', 'midrib', 'veins', 'instance_random', 'outline', 'inner_highlight', 'cluster_random', or 'population'");
                     }
                 } else if (property == "leaf.profile") {
                     const auto parsed = parseLeafProfile(value);
                     if (!parsed || !storeValue(builder.leafProfile, *parsed, lineNumber, valueColumn)) {
-                        return parsed ? duplicate() : diagnostic(lineNumber, valueColumn, "leaf profile must be 'ovate', 'lanceolate', 'cordate', or 'lobed'");
+                        return parsed ? duplicate() : diagnostic(lineNumber, valueColumn, "leaf profile must be 'ovate', 'lanceolate', 'cordate', 'lobed', 'blob', 'rosette', or 'lichen'");
                     }
                 } else if (property == "leaf.pattern") {
                     const auto parsed = parseLeafClusterPattern(value);
                     if (!parsed || !storeValue(builder.leafPattern, *parsed, lineNumber, valueColumn)) {
-                        return parsed ? duplicate() : diagnostic(lineNumber, valueColumn, "leaf pattern must be 'radial', 'fan', 'vine', or 'canopy'");
+                        return parsed ? duplicate() : diagnostic(lineNumber, valueColumn, "leaf pattern must be 'radial', 'fan', 'vine', 'canopy', or 'ground_scatter'");
+                    }
+                } else if (property == "leaf.secondary_profile" ||
+                           property == "leaf.tertiary_profile") {
+                    const auto parsed = parseLeafProfile(value);
+                    auto& destination = property == "leaf.secondary_profile"
+                        ? builder.leafSecondaryProfile : builder.leafTertiaryProfile;
+                    if (!parsed || !storeValue(destination, *parsed, lineNumber, valueColumn)) {
+                        return parsed ? duplicate() : diagnostic(lineNumber, valueColumn, "organic population profile is not supported");
                     }
                 } else if (property == "leaf.columns" || property == "leaf.rows" ||
                            property == "leaf.per_cluster" || property == "leaf.serration_count" ||
@@ -3446,11 +3519,20 @@ ParseResult parsePmat(std::string_view text)
                         : property == "leaf.lobe_count" ? &builder.leafLobeCount
                         : &builder.leafVeinPairs;
                     if (!storeValue(*destination, parsed, lineNumber, valueColumn)) return duplicate();
-                } else if (property == "leaf.colour_low" || property == "leaf.colour_high") {
+                } else if (property == "leaf.colour_low" || property == "leaf.colour_high" ||
+                           property == "leaf.secondary_colour_low" ||
+                           property == "leaf.secondary_colour_high" ||
+                           property == "leaf.tertiary_colour_low" ||
+                           property == "leaf.tertiary_colour_high") {
                     Rgba8 parsed{};
                     if (!parseColour(value, parsed)) return diagnostic(lineNumber, valueColumn, "leaf colour must use 0xRRGGBBAA hexadecimal notation");
-                    auto& destination = property == "leaf.colour_low" ? builder.leafLowColour : builder.leafHighColour;
-                    if (!storeValue(destination, parsed, lineNumber, valueColumn)) return duplicate();
+                    auto* destination = property == "leaf.colour_low" ? &builder.leafLowColour
+                        : property == "leaf.colour_high" ? &builder.leafHighColour
+                        : property == "leaf.secondary_colour_low" ? &builder.leafSecondaryLowColour
+                        : property == "leaf.secondary_colour_high" ? &builder.leafSecondaryHighColour
+                        : property == "leaf.tertiary_colour_low" ? &builder.leafTertiaryLowColour
+                        : &builder.leafTertiaryHighColour;
+                    if (!storeValue(*destination, parsed, lineNumber, valueColumn)) return duplicate();
                 } else if (property == "leaf.seed_offset") {
                     std::uint64_t parsed = 0;
                     if (!parseInteger(value, parsed)) return diagnostic(lineNumber, valueColumn, "leaf seed offset must be an unsigned integer");
@@ -3473,6 +3555,14 @@ ParseResult parsePmat(std::string_view text)
                         : property == "leaf.midrib_width" ? &builder.leafMidribWidth
                         : property == "leaf.vein_width" ? &builder.leafVeinWidth
                         : property == "leaf.edge_width" ? &builder.leafEdgeWidth
+                        : property == "leaf.inner_highlight_width" ? &builder.leafInnerHighlightWidth
+                        : property == "leaf.inner_highlight_inset" ? &builder.leafInnerHighlightInset
+                        : property == "leaf.cluster_colour_variation" ? &builder.leafClusterColourVariation
+                        : property == "leaf.instance_colour_variation" ? &builder.leafInstanceColourVariation
+                        : property == "leaf.secondary_weight" ? &builder.leafSecondaryWeight
+                        : property == "leaf.secondary_scale" ? &builder.leafSecondaryScale
+                        : property == "leaf.tertiary_weight" ? &builder.leafTertiaryWeight
+                        : property == "leaf.tertiary_scale" ? &builder.leafTertiaryScale
                         : property == "leaf.softness" ? &builder.leafSoftness
                         : property == "leaf.min_height" ? &builder.leafMinimumHeight
                         : property == "leaf.max_height" ? &builder.leafMaximumHeight
@@ -3490,6 +3580,16 @@ ParseResult parsePmat(std::string_view text)
                     const auto parsed = parseOrganicAccumulationSource(value);
                     if (!parsed || !storeValue(builder.organicAccumulationSource, *parsed, lineNumber, valueColumn)) {
                         return parsed ? duplicate() : diagnostic(lineNumber, valueColumn, "organic accumulation source must be 'cavity', 'boundary', 'low_height', or 'authored_mask'");
+                    }
+                } else if (property == "organic.accumulation.profile") {
+                    const auto parsed = parseOrganicAccumulationProfile(value);
+                    if (!parsed || !storeValue(builder.organicAccumulationProfile, *parsed, lineNumber, valueColumn)) {
+                        return parsed ? duplicate() : diagnostic(lineNumber, valueColumn, "organic accumulation profile must be 'noise', 'colonies', or 'speckles'");
+                    }
+                } else if (property == "organic.accumulation.field") {
+                    const auto parsed = parseOrganicAccumulationField(value);
+                    if (!parsed || !storeValue(builder.organicAccumulationField, *parsed, lineNumber, valueColumn)) {
+                        return parsed ? duplicate() : diagnostic(lineNumber, valueColumn, "organic accumulation field must be 'material', 'fill', 'outline', 'inner_highlight', or 'detail'");
                     }
                 } else if (property == "organic.accumulation.scale") {
                     std::uint32_t parsed = 0;
@@ -3520,6 +3620,9 @@ ParseResult parsePmat(std::string_view text)
                         : property == "organic.accumulation.moisture" ? &builder.organicAccumulationMoisture
                         : property == "organic.accumulation.breakup" ? &builder.organicAccumulationBreakup
                         : property == "organic.accumulation.variation" ? &builder.organicAccumulationVariation
+                        : property == "organic.accumulation.outline_width" ? &builder.organicAccumulationOutlineWidth
+                        : property == "organic.accumulation.inner_highlight_width" ? &builder.organicAccumulationInnerHighlightWidth
+                        : property == "organic.accumulation.inner_highlight_inset" ? &builder.organicAccumulationInnerHighlightInset
                         : nullptr;
                     if (destination == nullptr) return diagnostic(lineNumber, valueColumn, "invalid organic accumulation property");
                     if (!storeValue(*destination, parsed, lineNumber, valueColumn)) return duplicate();
@@ -4093,6 +4196,28 @@ ParseResult parsePmat(std::string_view text)
                     "region-attached detail and damage require .pmat version 21");
             }
 
+            const bool usesVersionTwentyTwoLeafProfile = builder.leafProfile.value &&
+                (*builder.leafProfile.value == LeafProfile::blob ||
+                 *builder.leafProfile.value == LeafProfile::rosette ||
+                 *builder.leafProfile.value == LeafProfile::lichen);
+            const bool usesVersionTwentyTwoLeafPattern = builder.leafPattern.value &&
+                *builder.leafPattern.value == LeafClusterPattern::groundScatter;
+            const bool usesVersionTwentyTwoLeafField = builder.leafField.value &&
+                (*builder.leafField.value == LeafField::outline ||
+                 *builder.leafField.value == LeafField::innerHighlight ||
+                 *builder.leafField.value == LeafField::clusterRandom ||
+                 *builder.leafField.value == LeafField::population);
+            if (formatVersion < 22 &&
+                (hasVersionTwentyTwoFields(builder) ||
+                 usesVersionTwentyTwoLeafProfile ||
+                 usesVersionTwentyTwoLeafPattern ||
+                 usesVersionTwentyTwoLeafField)) {
+                return diagnostic(
+                    lineNumber + 1,
+                    1,
+                    "organic silhouettes and hierarchical clusters require .pmat version 22");
+            }
+
             if (formatVersion < 4 &&
                 (hasVersionFourFields(builder) ||
                  isStructuralOperation(*builder.operation.value))) {
@@ -4298,7 +4423,8 @@ ParseResult parsePmat(std::string_view text)
             const bool hasShapeFields = hasVersionTwelveShapeFields(builder);
             const bool hasLatticeFields = hasVersionTwelveLatticeFields(builder);
             const bool hasScatterFields = hasVersionThirteenFields(builder);
-            const bool hasOrganicFields = hasVersionFourteenFields(builder);
+            const bool hasOrganicFields =
+                hasVersionFourteenFields(builder) || hasVersionTwentyTwoFields(builder);
             const bool hasTextileFields = hasVersionTwentyFields(builder);
             const bool hasAttachmentFields = hasVersionTwentyOneFields(builder);
             const bool shapeBelongsToScatter =
@@ -5220,6 +5346,22 @@ ParseResult parsePmat(std::string_view text)
                 if (!builder.leafMinimumRoughness.value) return missingLayerField(lineNumber + 1, index, "leaf.min_roughness");
                 if (!builder.leafMaximumRoughness.value) return missingLayerField(lineNumber + 1, index, "leaf.max_roughness");
                 if (!builder.leafSeedOffset.value) return missingLayerField(lineNumber + 1, index, "leaf.seed_offset");
+                if (formatVersion >= 22) {
+                    if (!builder.leafInnerHighlightWidth.value) return missingLayerField(lineNumber + 1, index, "leaf.inner_highlight_width");
+                    if (!builder.leafInnerHighlightInset.value) return missingLayerField(lineNumber + 1, index, "leaf.inner_highlight_inset");
+                    if (!builder.leafClusterColourVariation.value) return missingLayerField(lineNumber + 1, index, "leaf.cluster_colour_variation");
+                    if (!builder.leafInstanceColourVariation.value) return missingLayerField(lineNumber + 1, index, "leaf.instance_colour_variation");
+                    if (!builder.leafSecondaryProfile.value) return missingLayerField(lineNumber + 1, index, "leaf.secondary_profile");
+                    if (!builder.leafSecondaryWeight.value) return missingLayerField(lineNumber + 1, index, "leaf.secondary_weight");
+                    if (!builder.leafSecondaryScale.value) return missingLayerField(lineNumber + 1, index, "leaf.secondary_scale");
+                    if (!builder.leafSecondaryLowColour.value) return missingLayerField(lineNumber + 1, index, "leaf.secondary_colour_low");
+                    if (!builder.leafSecondaryHighColour.value) return missingLayerField(lineNumber + 1, index, "leaf.secondary_colour_high");
+                    if (!builder.leafTertiaryProfile.value) return missingLayerField(lineNumber + 1, index, "leaf.tertiary_profile");
+                    if (!builder.leafTertiaryWeight.value) return missingLayerField(lineNumber + 1, index, "leaf.tertiary_weight");
+                    if (!builder.leafTertiaryScale.value) return missingLayerField(lineNumber + 1, index, "leaf.tertiary_scale");
+                    if (!builder.leafTertiaryLowColour.value) return missingLayerField(lineNumber + 1, index, "leaf.tertiary_colour_low");
+                    if (!builder.leafTertiaryHighColour.value) return missingLayerField(lineNumber + 1, index, "leaf.tertiary_colour_high");
+                }
                 if (hasClassicFields || operationGroupCount != 1) return crossOperationError();
                 layer.operation = LeafClusterOperation{
                     *builder.leafField.value,
@@ -5254,6 +5396,20 @@ ParseResult parsePmat(std::string_view text)
                     *builder.leafMinimumRoughness.value,
                     *builder.leafMaximumRoughness.value,
                     *builder.leafSeedOffset.value,
+                    builder.leafInnerHighlightWidth.value.value_or(LeafClusterOperation{}.innerHighlightWidth),
+                    builder.leafInnerHighlightInset.value.value_or(LeafClusterOperation{}.innerHighlightInset),
+                    builder.leafClusterColourVariation.value.value_or(LeafClusterOperation{}.clusterColourVariation),
+                    builder.leafInstanceColourVariation.value.value_or(LeafClusterOperation{}.instanceColourVariation),
+                    builder.leafSecondaryProfile.value.value_or(LeafClusterOperation{}.secondaryProfile),
+                    builder.leafSecondaryWeight.value.value_or(LeafClusterOperation{}.secondaryWeight),
+                    builder.leafSecondaryScale.value.value_or(LeafClusterOperation{}.secondaryScale),
+                    builder.leafSecondaryLowColour.value.value_or(LeafClusterOperation{}.secondaryLowColour),
+                    builder.leafSecondaryHighColour.value.value_or(LeafClusterOperation{}.secondaryHighColour),
+                    builder.leafTertiaryProfile.value.value_or(LeafClusterOperation{}.tertiaryProfile),
+                    builder.leafTertiaryWeight.value.value_or(LeafClusterOperation{}.tertiaryWeight),
+                    builder.leafTertiaryScale.value.value_or(LeafClusterOperation{}.tertiaryScale),
+                    builder.leafTertiaryLowColour.value.value_or(LeafClusterOperation{}.tertiaryLowColour),
+                    builder.leafTertiaryHighColour.value.value_or(LeafClusterOperation{}.tertiaryHighColour),
                 };
                 break;
             case OperationKind::organicAccumulation:
@@ -5269,6 +5425,13 @@ ParseResult parsePmat(std::string_view text)
                 if (!builder.organicAccumulationHighColour.value) return missingLayerField(lineNumber + 1, index, "organic.accumulation.colour_high");
                 if (!builder.organicAccumulationSeedOffset.value) return missingLayerField(lineNumber + 1, index, "organic.accumulation.seed_offset");
                 if (!builder.organicAccumulationTarget.value) return missingLayerField(lineNumber + 1, index, "organic.accumulation.target");
+                if (formatVersion >= 22) {
+                    if (!builder.organicAccumulationProfile.value) return missingLayerField(lineNumber + 1, index, "organic.accumulation.profile");
+                    if (!builder.organicAccumulationField.value) return missingLayerField(lineNumber + 1, index, "organic.accumulation.field");
+                    if (!builder.organicAccumulationOutlineWidth.value) return missingLayerField(lineNumber + 1, index, "organic.accumulation.outline_width");
+                    if (!builder.organicAccumulationInnerHighlightWidth.value) return missingLayerField(lineNumber + 1, index, "organic.accumulation.inner_highlight_width");
+                    if (!builder.organicAccumulationInnerHighlightInset.value) return missingLayerField(lineNumber + 1, index, "organic.accumulation.inner_highlight_inset");
+                }
                 if (hasClassicFields || operationGroupCount != 1) return crossOperationError();
                 layer.operation = OrganicAccumulationOperation{
                     *builder.organicAccumulationKind.value,
@@ -5283,6 +5446,11 @@ ParseResult parsePmat(std::string_view text)
                     *builder.organicAccumulationHighColour.value,
                     *builder.organicAccumulationSeedOffset.value,
                     *builder.organicAccumulationTarget.value,
+                    builder.organicAccumulationProfile.value.value_or(OrganicAccumulationOperation{}.profile),
+                    builder.organicAccumulationField.value.value_or(OrganicAccumulationOperation{}.field),
+                    builder.organicAccumulationOutlineWidth.value.value_or(OrganicAccumulationOperation{}.outlineWidth),
+                    builder.organicAccumulationInnerHighlightWidth.value.value_or(OrganicAccumulationOperation{}.innerHighlightWidth),
+                    builder.organicAccumulationInnerHighlightInset.value.value_or(OrganicAccumulationOperation{}.innerHighlightInset),
                 };
                 break;
             case OperationKind::textile:
@@ -6687,7 +6855,7 @@ SerialisationResult serialisePmat(const Material& material)
                 std::to_string(cracks->seedOffset) + "\n";
         } else if (const auto* leaves =
                        std::get_if<LeafClusterOperation>(&layer.operation)) {
-            const std::array<std::pair<std::string_view, double>, 19> values{{
+            const std::array<std::pair<std::string_view, double>, 27> values{{
                 {"density", leaves->density},
                 {"cluster_spread", leaves->clusterSpread},
                 {"length", leaves->leafLength},
@@ -6707,6 +6875,14 @@ SerialisationResult serialisePmat(const Material& material)
                 {"min_height", leaves->minimumHeight},
                 {"max_height", leaves->maximumHeight},
                 {"min_roughness", leaves->minimumRoughness},
+                {"inner_highlight_width", leaves->innerHighlightWidth},
+                {"inner_highlight_inset", leaves->innerHighlightInset},
+                {"cluster_colour_variation", leaves->clusterColourVariation},
+                {"instance_colour_variation", leaves->instanceColourVariation},
+                {"secondary_weight", leaves->secondaryWeight},
+                {"secondary_scale", leaves->secondaryScale},
+                {"tertiary_weight", leaves->tertiaryWeight},
+                {"tertiary_scale", leaves->tertiaryScale},
             }};
             output += prefix + "leaf.field = " + std::string(leafFieldName(leaves->field)) + "\n";
             output += prefix + "leaf.profile = " + std::string(leafProfileName(leaves->profile)) + "\n";
@@ -6730,20 +6906,39 @@ SerialisationResult serialisePmat(const Material& material)
             output += prefix + "leaf.vein_pairs = " + std::to_string(leaves->veinPairs) + "\n";
             output += prefix + "leaf.colour_low = " + formatColour(leaves->lowColour) + "\n";
             output += prefix + "leaf.colour_high = " + formatColour(leaves->highColour) + "\n";
+            output += prefix + "leaf.secondary_profile = " +
+                std::string(leafProfileName(leaves->secondaryProfile)) + "\n";
+            output += prefix + "leaf.secondary_colour_low = " +
+                formatColour(leaves->secondaryLowColour) + "\n";
+            output += prefix + "leaf.secondary_colour_high = " +
+                formatColour(leaves->secondaryHighColour) + "\n";
+            output += prefix + "leaf.tertiary_profile = " +
+                std::string(leafProfileName(leaves->tertiaryProfile)) + "\n";
+            output += prefix + "leaf.tertiary_colour_low = " +
+                formatColour(leaves->tertiaryLowColour) + "\n";
+            output += prefix + "leaf.tertiary_colour_high = " +
+                formatColour(leaves->tertiaryHighColour) + "\n";
             output += prefix + "leaf.seed_offset = " + std::to_string(leaves->seedOffset) + "\n";
         } else if (const auto* growth =
                        std::get_if<OrganicAccumulationOperation>(&layer.operation)) {
-            const std::array<std::pair<std::string_view, double>, 5> values{{
+            const std::array<std::pair<std::string_view, double>, 8> values{{
                 {"coverage", growth->coverage},
                 {"softness", growth->softness},
                 {"moisture", growth->moistureBias},
                 {"breakup", growth->breakup},
                 {"variation", growth->variation},
+                {"outline_width", growth->outlineWidth},
+                {"inner_highlight_width", growth->innerHighlightWidth},
+                {"inner_highlight_inset", growth->innerHighlightInset},
             }};
             output += prefix + "organic.accumulation.kind = " +
                 std::string(organicAccumulationKindName(growth->kind)) + "\n";
             output += prefix + "organic.accumulation.source = " +
                 std::string(organicAccumulationSourceName(growth->source)) + "\n";
+            output += prefix + "organic.accumulation.profile = " +
+                std::string(organicAccumulationProfileName(growth->profile)) + "\n";
+            output += prefix + "organic.accumulation.field = " +
+                std::string(organicAccumulationFieldName(growth->field)) + "\n";
             output += prefix + "organic.accumulation.scale = " +
                 std::to_string(growth->scale) + "\n";
             for (const auto& [name, value] : values) {

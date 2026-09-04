@@ -26,7 +26,7 @@ namespace {
 
 using Clock = std::chrono::steady_clock;
 
-constexpr std::array<std::string_view, 49> materialNames{
+constexpr std::array<std::string_view, 59> materialNames{
     "default",
     "brick-wall",
     "cobblestone",
@@ -76,6 +76,16 @@ constexpr std::array<std::string_view, 49> materialNames{
     "woven-upholstery",
     "alternating-carpet",
     "heraldic-banner-cloth",
+    "radial-target",
+    "arc-and-crescent-motifs",
+    "attached-paving",
+    "arch-stone-panel",
+    "damaged-crate",
+    "detailed-target-panel",
+    "hierarchical-foliage",
+    "hierarchical-ground",
+    "rich-moss-colonies",
+    "rich-lichen-stamps",
 };
 
 constexpr auto materialOutputs = paperweight::materialOutputs;

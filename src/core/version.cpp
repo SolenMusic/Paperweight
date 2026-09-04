@@ -4,7 +4,7 @@ namespace paperweight {
 
 std::string_view versionString() noexcept
 {
-    return "0.0.29";
+    return "0.0.30";
 }
 
 } // namespace paperweight
