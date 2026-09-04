@@ -52,6 +52,7 @@ enum class Field : std::size_t {
     emissiveIntensity,
     anisotropyStrength,
     anisotropyRotation,
+    groupCount,
     layerCount,
     count,
 };
@@ -91,6 +92,7 @@ constexpr std::array<std::string_view, static_cast<std::size_t>(Field::count)> f
     "emissive.intensity",
     "anisotropy.strength",
     "anisotropy.rotation",
+    "groups.count",
     "layers.count",
 };
 
@@ -166,6 +168,8 @@ struct ScatterMaskBuilder {
 };
 
 struct LayerBuilder {
+    ParsedValue<std::string> identity;
+    ParsedValue<std::string> parentGroupIdentity;
     ParsedValue<bool> enabled;
     ParsedValue<double> opacity;
     ParsedValue<CompositeMode> compositeMode;
@@ -478,6 +482,30 @@ struct LayerBuilder {
     ParsedValue<std::uint64_t> attachmentSeedOffset;
 };
 
+struct GroupBuilder {
+    ParsedValue<std::string> identity;
+    ParsedValue<std::string> parentGroupIdentity;
+    ParsedValue<std::string> name;
+    ParsedValue<bool> enabled;
+    ParsedValue<double> opacity;
+    ParsedValue<CompositeMode> compositeMode;
+    ParsedValue<LayerOutputRouting> outputs;
+    ParsedValue<std::uint32_t> scaleX;
+    ParsedValue<std::uint32_t> scaleY;
+    ParsedValue<double> offsetX;
+    ParsedValue<double> offsetY;
+    ParsedValue<QuarterTurn> rotation;
+    ParsedValue<bool> warpEnabled;
+    ParsedValue<double> warpStrength;
+    ParsedValue<std::uint32_t> warpFrequency;
+    ParsedValue<std::uint64_t> warpSeedOffset;
+    ParsedValue<bool> maskEnabled;
+    ParsedValue<bool> maskInverted;
+    ParsedValue<std::uint64_t> maskSeedOffset;
+    ParsedValue<double> maskLow;
+    ParsedValue<double> maskHigh;
+};
+
 std::string_view trim(std::string_view value)
 {
     const auto first = value.find_first_not_of(" \t");
@@ -516,6 +544,27 @@ std::optional<std::pair<std::size_t, std::string_view>> parseLayerKey(std::strin
         indexText.data() + indexText.size(),
         index,
         10);
+    if (result.ec != std::errc{} || result.ptr != indexText.data() + indexText.size()) {
+        return std::nullopt;
+    }
+    return std::pair{index, remainder.substr(dot + 1)};
+}
+
+std::optional<std::pair<std::size_t, std::string_view>> parseGroupKey(std::string_view key)
+{
+    constexpr std::string_view prefix = "group.";
+    if (!key.starts_with(prefix)) {
+        return std::nullopt;
+    }
+    const auto remainder = key.substr(prefix.size());
+    const auto dot = remainder.find('.');
+    if (dot == std::string_view::npos || dot == 0 || dot + 1 >= remainder.size()) {
+        return std::nullopt;
+    }
+    std::size_t index = 0;
+    const auto indexText = remainder.substr(0, dot);
+    const auto result = std::from_chars(
+        indexText.data(), indexText.data() + indexText.size(), index, 10);
     if (result.ec != std::errc{} || result.ptr != indexText.data() + indexText.size()) {
         return std::nullopt;
     }
@@ -1702,16 +1751,30 @@ std::optional<ParseDiagnostic> unexpectedLayerField(
             " is not valid for operation '" + std::string(operation) + "'");
 }
 
+ParseDiagnostic missingGroupField(
+    std::size_t line,
+    std::size_t index,
+    std::string_view property)
+{
+    return diagnostic(
+        line,
+        1,
+        "missing required key 'group." + std::to_string(index) + "." +
+            std::string(property) + "'");
+}
+
 } // namespace
 
 ParseResult parsePmat(std::string_view text)
 {
     Material material;
     std::uint32_t formatVersion = 0;
+    std::uint32_t groupCount = 0;
     std::uint32_t layerCount = 0;
     std::array<bool, static_cast<std::size_t>(Field::count)> seen{};
     std::array<std::size_t, static_cast<std::size_t>(Field::count)> valueLines{};
     std::array<std::size_t, static_cast<std::size_t>(Field::count)> valueColumns{};
+    std::vector<GroupBuilder> groupBuilders;
     std::vector<LayerBuilder> layerBuilders;
     std::size_t lineNumber = 0;
     std::size_t offset = 0;
@@ -1976,6 +2039,14 @@ ParseResult parsePmat(std::string_view text)
                         return diagnostic(lineNumber, valueColumn, "anisotropy.rotation must be decimal degrees");
                     }
                     break;
+                case Field::groupCount:
+                    if (!parseInteger(value, groupCount)) {
+                        return diagnostic(lineNumber, valueColumn, "groups.count must be an integer");
+                    }
+                    if (groupCount > LayerLimits::maximumGroups) {
+                        return diagnostic(lineNumber, valueColumn, "groups.count must not exceed 32");
+                    }
+                    break;
                 case Field::layerCount:
                     if (!parseInteger(value, layerCount)) {
                         return diagnostic(lineNumber, valueColumn, "layers.count must be an integer");
@@ -1986,6 +2057,138 @@ ParseResult parsePmat(std::string_view text)
                     break;
                 case Field::count:
                     break;
+                }
+            } else if (key.starts_with("group.")) {
+                const auto parsedKey = parseGroupKey(key);
+                if (!parsedKey) {
+                    return diagnostic(lineNumber, 1, "invalid group key '" + std::string(key) + "'");
+                }
+                const auto [groupIndex, property] = *parsedKey;
+                if (groupIndex >= LayerLimits::maximumGroups) {
+                    return diagnostic(lineNumber, 1, "group index must be between 0 and 31");
+                }
+                if (groupBuilders.size() <= groupIndex) {
+                    groupBuilders.resize(groupIndex + 1);
+                }
+                auto& builder = groupBuilders[groupIndex];
+                const auto duplicate = [&] {
+                    return diagnostic(lineNumber, 1, "duplicate key '" + std::string(key) + "'");
+                };
+                const auto storeText = [&](ParsedValue<std::string>& destination,
+                                           std::string_view parsed) {
+                    return storeValue(
+                        destination,
+                        std::string(parsed),
+                        lineNumber,
+                        valueColumn);
+                };
+
+                if (property == "id") {
+                    if (!storeText(builder.identity, value)) {
+                        return duplicate();
+                    }
+                } else if (property == "parent") {
+                    if (!storeText(
+                            builder.parentGroupIdentity,
+                            value == "none" ? std::string_view{} : value)) {
+                        return duplicate();
+                    }
+                } else if (property == "name") {
+                    if (!storeText(builder.name, value)) {
+                        return duplicate();
+                    }
+                } else if (property == "enabled") {
+                    bool parsed = false;
+                    if (!parseBoolean(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "group enabled must be true or false");
+                    }
+                    if (!storeValue(builder.enabled, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "opacity") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "group opacity must be a decimal number");
+                    }
+                    if (!storeValue(builder.opacity, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "composite") {
+                    const auto parsed = parseCompositeMode(value);
+                    if (!parsed) {
+                        return diagnostic(lineNumber, valueColumn, "group composite mode is not supported");
+                    }
+                    if (!storeValue(builder.compositeMode, *parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "outputs") {
+                    const auto parsed = parseLayerOutputs(value);
+                    if (!parsed) {
+                        return diagnostic(lineNumber, valueColumn, "group outputs contain an unsupported channel");
+                    }
+                    if (!storeValue(builder.outputs, *parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "transform.scale_x" || property == "transform.scale_y" ||
+                           property == "warp.frequency") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "group scale or warp frequency must be an integer");
+                    }
+                    auto* destination = property == "transform.scale_x" ? &builder.scaleX
+                        : property == "transform.scale_y" ? &builder.scaleY
+                        : &builder.warpFrequency;
+                    if (!storeValue(*destination, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "transform.offset_x" || property == "transform.offset_y" ||
+                           property == "warp.strength" || property == "mask.input_low" ||
+                           property == "mask.input_high") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "group transform or mask value must be decimal");
+                    }
+                    auto* destination = property == "transform.offset_x" ? &builder.offsetX
+                        : property == "transform.offset_y" ? &builder.offsetY
+                        : property == "warp.strength" ? &builder.warpStrength
+                        : property == "mask.input_low" ? &builder.maskLow
+                        : &builder.maskHigh;
+                    if (!storeValue(*destination, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "transform.rotation") {
+                    const auto parsed = parseRotation(value);
+                    if (!parsed) {
+                        return diagnostic(lineNumber, valueColumn, "group rotation must be 0, 90, 180, or 270");
+                    }
+                    if (!storeValue(builder.rotation, *parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "warp.enabled" || property == "mask.enabled" ||
+                           property == "mask.inverted") {
+                    bool parsed = false;
+                    if (!parseBoolean(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "group warp or mask flag must be true or false");
+                    }
+                    auto* destination = property == "warp.enabled" ? &builder.warpEnabled
+                        : property == "mask.enabled" ? &builder.maskEnabled
+                        : &builder.maskInverted;
+                    if (!storeValue(*destination, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "warp.seed_offset" || property == "mask.seed_offset") {
+                    std::uint64_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "group seed offset must be an unsigned integer");
+                    }
+                    auto* destination = property == "warp.seed_offset"
+                        ? &builder.warpSeedOffset
+                        : &builder.maskSeedOffset;
+                    if (!storeValue(*destination, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else {
+                    return diagnostic(lineNumber, 1, "unknown group key '" + std::string(key) + "'");
                 }
             } else if (key.starts_with("layer.")) {
                 const auto parsedKey = parseLayerKey(key);
@@ -2004,7 +2207,23 @@ ParseResult parsePmat(std::string_view text)
                     return diagnostic(lineNumber, 1, "duplicate key '" + std::string(key) + "'");
                 };
 
-                if (property == "enabled") {
+                if (property == "id") {
+                    if (!storeValue(
+                            builder.identity,
+                            std::string(value),
+                            lineNumber,
+                            valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "parent") {
+                    if (!storeValue(
+                            builder.parentGroupIdentity,
+                            value == "none" ? std::string{} : std::string(value),
+                            lineNumber,
+                            valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "enabled") {
                     bool parsed = false;
                     if (!parseBoolean(value, parsed)) {
                         return diagnostic(lineNumber, valueColumn, "layer enabled must be true or false");
@@ -3926,8 +4145,10 @@ ParseResult parsePmat(std::string_view text)
             field == Field::clearCoatRoughnessHigh ||
             field == Field::emissiveIntensity || field == Field::anisotropyStrength ||
             field == Field::anisotropyRotation;
+        const bool introducedInVersionTwentyThree = field == Field::groupCount;
         if (!seen[index] && !optionalInVersionOne &&
             !optionalMetadata && !optionalSurfaceAuthoring &&
+            !(formatVersion < 23 && introducedInVersionTwentyThree) &&
             !(formatVersion < 18 && introducedInVersionEighteen) &&
             !(formatVersion < 17 && introducedInVersionSeventeen) &&
             !(formatVersion < 6 && introducedInVersionSix)) {
@@ -4000,6 +4221,85 @@ ParseResult parsePmat(std::string_view text)
         }
     }
 
+    bool hasLayerHierarchyFields = false;
+    for (const auto& builder : layerBuilders) {
+        hasLayerHierarchyFields = hasLayerHierarchyFields || builder.identity.value.has_value() ||
+            builder.parentGroupIdentity.value.has_value();
+    }
+    if (formatVersion < 23 &&
+        (seen[static_cast<std::size_t>(Field::groupCount)] || !groupBuilders.empty() ||
+         hasLayerHierarchyFields)) {
+        return diagnostic(
+            lineNumber + 1,
+            1,
+            "layer groups and stable layer identities require .pmat version 23");
+    }
+    if (formatVersion >= 23) {
+        if (groupBuilders.size() > groupCount) {
+            return diagnostic(lineNumber + 1, 1, "group index exceeds groups.count");
+        }
+        material.layerGroups.reserve(groupCount);
+        for (std::size_t index = 0; index < groupCount; ++index) {
+            if (index >= groupBuilders.size()) {
+                return missingGroupField(lineNumber + 1, index, "id");
+            }
+            const auto& builder = groupBuilders[index];
+#define PW_REQUIRE_GROUP(field, key) \
+            if (!builder.field.value) { \
+                return missingGroupField(lineNumber + 1, index, key); \
+            }
+            PW_REQUIRE_GROUP(identity, "id")
+            PW_REQUIRE_GROUP(parentGroupIdentity, "parent")
+            PW_REQUIRE_GROUP(name, "name")
+            PW_REQUIRE_GROUP(enabled, "enabled")
+            PW_REQUIRE_GROUP(opacity, "opacity")
+            PW_REQUIRE_GROUP(compositeMode, "composite")
+            PW_REQUIRE_GROUP(outputs, "outputs")
+            PW_REQUIRE_GROUP(scaleX, "transform.scale_x")
+            PW_REQUIRE_GROUP(scaleY, "transform.scale_y")
+            PW_REQUIRE_GROUP(offsetX, "transform.offset_x")
+            PW_REQUIRE_GROUP(offsetY, "transform.offset_y")
+            PW_REQUIRE_GROUP(rotation, "transform.rotation")
+            PW_REQUIRE_GROUP(warpEnabled, "warp.enabled")
+            PW_REQUIRE_GROUP(warpStrength, "warp.strength")
+            PW_REQUIRE_GROUP(warpFrequency, "warp.frequency")
+            PW_REQUIRE_GROUP(warpSeedOffset, "warp.seed_offset")
+            PW_REQUIRE_GROUP(maskEnabled, "mask.enabled")
+            PW_REQUIRE_GROUP(maskInverted, "mask.inverted")
+            PW_REQUIRE_GROUP(maskSeedOffset, "mask.seed_offset")
+            PW_REQUIRE_GROUP(maskLow, "mask.input_low")
+            PW_REQUIRE_GROUP(maskHigh, "mask.input_high")
+#undef PW_REQUIRE_GROUP
+            material.layerGroups.push_back(MaterialLayerGroup{
+                *builder.identity.value,
+                *builder.parentGroupIdentity.value,
+                *builder.name.value,
+                *builder.enabled.value,
+                *builder.opacity.value,
+                *builder.compositeMode.value,
+                CoordinateTransform{
+                    *builder.scaleX.value,
+                    *builder.scaleY.value,
+                    *builder.offsetX.value,
+                    *builder.offsetY.value,
+                    *builder.rotation.value,
+                    *builder.warpEnabled.value,
+                    *builder.warpStrength.value,
+                    *builder.warpFrequency.value,
+                    *builder.warpSeedOffset.value,
+                },
+                LayerMask{
+                    *builder.maskEnabled.value,
+                    *builder.maskInverted.value,
+                    *builder.maskSeedOffset.value,
+                    *builder.maskLow.value,
+                    *builder.maskHigh.value,
+                },
+                *builder.outputs.value,
+            });
+        }
+    }
+
     if (formatVersion == 1) {
         if (seen[static_cast<std::size_t>(Field::layerCount)] || !layerBuilders.empty()) {
             return diagnostic(lineNumber + 1, 1, "layer stacks require .pmat version 2");
@@ -4009,11 +4309,22 @@ ParseResult parsePmat(std::string_view text)
             return diagnostic(lineNumber + 1, 1, "layer index exceeds layers.count");
         }
         material.layers.reserve(layerCount);
+        const bool carriesHierarchy = formatVersion >= 23 &&
+            (groupCount != 0 || hasLayerHierarchyFields);
+        if (carriesHierarchy) {
+            material.layerHierarchy.reserve(layerCount);
+        }
         for (std::size_t index = 0; index < layerCount; ++index) {
             if (index >= layerBuilders.size()) {
                 return missingLayerField(lineNumber + 1, index, "enabled");
             }
             const auto& builder = layerBuilders[index];
+            if (carriesHierarchy && !builder.identity.value) {
+                return missingLayerField(lineNumber + 1, index, "id");
+            }
+            if (carriesHierarchy && !builder.parentGroupIdentity.value) {
+                return missingLayerField(lineNumber + 1, index, "parent");
+            }
             if (!builder.enabled.value) {
                 return missingLayerField(lineNumber + 1, index, "enabled");
             }
@@ -6121,6 +6432,12 @@ ParseResult parsePmat(std::string_view text)
                 break;
             }
             material.layers.push_back(std::move(layer));
+            if (carriesHierarchy) {
+                material.layerHierarchy.push_back(MaterialLayerHierarchy{
+                    *builder.identity.value,
+                    *builder.parentGroupIdentity.value,
+                });
+            }
         }
     }
 
@@ -6268,7 +6585,8 @@ SerialisationResult serialisePmat(const Material& material)
     }
 
     std::string output;
-    output.reserve(320 + material.layers.size() * 800);
+    output.reserve(
+        360 + material.layers.size() * 800 + material.layerGroups.size() * 560);
     output += "# Paperweight procedural material\n";
     output += "pmat.version = " + std::to_string(currentPmatVersion) + "\n";
     output += "material.type = fbm\n";
@@ -6329,6 +6647,54 @@ SerialisationResult serialisePmat(const Material& material)
     output += "emissive.intensity = " + emissiveIntensity + "\n";
     output += "anisotropy.strength = " + anisotropyStrength + "\n";
     output += "anisotropy.rotation = " + anisotropyRotation + "\n";
+    output += "groups.count = " + std::to_string(material.layerGroups.size()) + "\n";
+    for (std::size_t index = 0; index < material.layerGroups.size(); ++index) {
+        const auto& group = material.layerGroups[index];
+        const auto prefix = "group." + std::to_string(index) + ".";
+        const auto opacity = formatDouble(group.opacity);
+        const auto offsetX = formatDouble(group.transform.offsetX);
+        const auto offsetY = formatDouble(group.transform.offsetY);
+        const auto warpStrength = formatDouble(group.transform.warpStrength);
+        const auto maskLow = formatDouble(group.mask.inputLow);
+        const auto maskHigh = formatDouble(group.mask.inputHigh);
+        if (opacity.empty() || offsetX.empty() || offsetY.empty() ||
+            warpStrength.empty() || maskLow.empty() || maskHigh.empty()) {
+            return SerialisationError{"could not format layer group parameters"};
+        }
+        output += prefix + "id = " + group.identity + "\n";
+        output += prefix + "parent = " +
+            (group.parentGroupIdentity.empty() ? std::string{"none"}
+                                               : group.parentGroupIdentity) + "\n";
+        output += prefix + "name = " + group.name + "\n";
+        output += prefix + "enabled = " + (group.enabled ? "true\n" : "false\n");
+        output += prefix + "outputs = " + formatLayerOutputs(group.outputs) + "\n";
+        output += prefix + "composite = " +
+            std::string(compositeModeName(group.compositeMode)) + "\n";
+        output += prefix + "opacity = " + opacity + "\n";
+        output += prefix + "transform.scale_x = " +
+            std::to_string(group.transform.scaleX) + "\n";
+        output += prefix + "transform.scale_y = " +
+            std::to_string(group.transform.scaleY) + "\n";
+        output += prefix + "transform.offset_x = " + offsetX + "\n";
+        output += prefix + "transform.offset_y = " + offsetY + "\n";
+        output += prefix + "transform.rotation = " +
+            std::to_string(rotationDegrees(group.transform.rotation)) + "\n";
+        output += prefix + "warp.enabled = " +
+            (group.transform.warpEnabled ? "true\n" : "false\n");
+        output += prefix + "warp.strength = " + warpStrength + "\n";
+        output += prefix + "warp.frequency = " +
+            std::to_string(group.transform.warpFrequency) + "\n";
+        output += prefix + "warp.seed_offset = " +
+            std::to_string(group.transform.warpSeedOffset) + "\n";
+        output += prefix + "mask.enabled = " +
+            (group.mask.enabled ? "true\n" : "false\n");
+        output += prefix + "mask.inverted = " +
+            (group.mask.inverted ? "true\n" : "false\n");
+        output += prefix + "mask.seed_offset = " +
+            std::to_string(group.mask.seedOffset) + "\n";
+        output += prefix + "mask.input_low = " + maskLow + "\n";
+        output += prefix + "mask.input_high = " + maskHigh + "\n";
+    }
     output += "layers.count = " + std::to_string(material.layers.size()) + "\n";
 
     for (std::size_t index = 0; index < material.layers.size(); ++index) {
@@ -6337,6 +6703,13 @@ SerialisationResult serialisePmat(const Material& material)
         const auto opacity = formatDouble(layer.opacity);
         if (opacity.empty()) {
             return SerialisationError{"could not format layer opacity"};
+        }
+        if (!material.layerHierarchy.empty()) {
+            const auto& hierarchy = material.layerHierarchy[index];
+            output += prefix + "id = " + hierarchy.identity + "\n";
+            output += prefix + "parent = " +
+                (hierarchy.parentGroupIdentity.empty() ? std::string{"none"}
+                                                       : hierarchy.parentGroupIdentity) + "\n";
         }
         output += prefix + "enabled = " + (layer.enabled ? "true\n" : "false\n");
         output += prefix + "operation = " + std::string(operationName(layer.operation)) + "\n";

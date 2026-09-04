@@ -13,19 +13,26 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-v0.0.31 is the current Layer Stack Workflow release. The AppKit editor now uses
-a native multi-select layer table with drag sorting, Option-arrow movement, and
-focus-aware Cut, Copy, Paste, Duplicate, Delete, Select All, Undo, and Redo.
-Selections retain evaluation order when copied or moved, and a versioned
-portable text fragment preserves every authored layer field across tabs and
-documents. Pasted and duplicated layers receive fresh editor identities while
-the destination material keeps its own seed.
+v0.0.32 is the current Layer Groups and Reusable Overlays release. The AppKit
+layer stack is now a collapsible native outline. Contiguous sibling layers can
+be grouped and groups can be nested, renamed, enabled, masked, routed, and
+composited with one coherent opacity across colour, height, roughness,
+metalness, coating, occlusion, clear coat, coat roughness, and emissive output.
+A default unmasked blend group is pass-through and preserves every output byte.
 
-All structural edits participate in layer-stack undo and immediately cancel and
-replace obsolete preview work. The inspector clearly reports multi-selection,
-native insertion feedback and table auto-scroll support long stacks, and row,
-checkbox, selection-count, and command labels are exposed to accessibility.
-`.pmat` remains format 22 and generated output is unchanged.
+Group hierarchy and stable identities are readable `.pmat` 23 source data;
+collapse state remains editor-only. Copy, paste, duplicate, delete, and undo
+operate on a selected group as a complete subtree and remap identities when it
+crosses a document boundary. The portable version-2 layer fragment carries
+nested groups without importing the source material seed.
+
+Reusable `.pwoverlay` files wrap those fragments in a small, versioned,
+human-readable, seedless format. The editor can save any selected group, import
+an overlay, or insert the bundled Polished Moss and Polished Lichen overlays.
+The destination material's seed remains authoritative.
+
+The v0.0.31 Layer Stack Workflow remains available, including multi-selection,
+drag sorting, focus-aware Edit commands, and structural undo/redo.
 
 The v0.0.30 Organic Silhouettes and Hierarchical Clusters work remains available.
 The portable organic-cluster operation now combines primary, secondary, and
@@ -232,6 +239,7 @@ See [docs/architecture.md](docs/architecture.md),
 [docs/organic-structures.md](docs/organic-structures.md),
 [docs/organic-silhouettes-and-clusters.md](docs/organic-silhouettes-and-clusters.md),
 [docs/layer-stack-workflow.md](docs/layer-stack-workflow.md),
+[docs/layer-groups-and-overlays.md](docs/layer-groups-and-overlays.md),
 [docs/reference-materials.md](docs/reference-materials.md),
 [docs/material-wizard.md](docs/material-wizard.md),
 [docs/material-library.md](docs/material-library.md),

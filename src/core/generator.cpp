@@ -639,7 +639,9 @@ MaterialOutputSelection affectedMaterialOutputs(
     if (before.seed != after.seed || before.frequency != after.frequency ||
         before.octaves != after.octaves || before.lacunarity != after.lacunarity ||
         before.gain != after.gain || before.physicalSize != after.physicalSize ||
-        before.layers.size() != after.layers.size()) {
+        before.layers.size() != after.layers.size() ||
+        before.layerGroups.size() != after.layerGroups.size() ||
+        before.layerHierarchy != after.layerHierarchy) {
         return allMaterialOutputsSelected;
     }
 
@@ -683,6 +685,23 @@ MaterialOutputSelection affectedMaterialOutputs(
         if (before.layers[index] != after.layers[index]) {
             includeRouting(before.layers[index].outputs);
             includeRouting(after.layers[index].outputs);
+        }
+    }
+    for (std::size_t index = 0; index < before.layerGroups.size(); ++index) {
+        const auto& oldGroup = before.layerGroups[index];
+        const auto& newGroup = after.layerGroups[index];
+        if (oldGroup.identity != newGroup.identity ||
+            oldGroup.parentGroupIdentity != newGroup.parentGroupIdentity) {
+            return allMaterialOutputsSelected;
+        }
+        if (oldGroup.enabled != newGroup.enabled ||
+            oldGroup.opacity != newGroup.opacity ||
+            oldGroup.compositeMode != newGroup.compositeMode ||
+            oldGroup.transform != newGroup.transform ||
+            oldGroup.mask != newGroup.mask ||
+            oldGroup.outputs != newGroup.outputs) {
+            includeRouting(oldGroup.outputs);
+            includeRouting(newGroup.outputs);
         }
     }
     return affected;

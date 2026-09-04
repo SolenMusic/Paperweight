@@ -5,6 +5,8 @@
 #include <cmath>
 #include <limits>
 #include <type_traits>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace paperweight {
 namespace {
@@ -914,6 +916,210 @@ std::optional<std::string> validateMaterial(const Material& material)
     if (material.layers.size() > LayerLimits::maximumLayers) {
         return "a material may contain at most 32 layers";
     }
+    if (material.layerGroups.size() > LayerLimits::maximumGroups) {
+        return "a material may contain at most 32 layer groups";
+    }
+    if (!material.layerHierarchy.empty() &&
+        material.layerHierarchy.size() != material.layers.size()) {
+        return "layer hierarchy must contain one identity entry per layer";
+    }
+
+    const auto validIdentity = [](std::string_view identity) {
+        if (identity.empty() || identity.size() > LayerLimits::maximumIdentityLength) {
+            return false;
+        }
+        return std::all_of(identity.begin(), identity.end(), [](char value) {
+            const auto character = static_cast<unsigned char>(value);
+            return std::isalnum(character) != 0 || value == '-' || value == '_' ||
+                value == '.' || value == ':';
+        });
+    };
+    const auto validGroupName = [](std::string_view name) {
+        if (name.empty() || name.size() > LayerLimits::maximumGroupNameLength ||
+            std::isspace(static_cast<unsigned char>(name.front())) != 0 ||
+            std::isspace(static_cast<unsigned char>(name.back())) != 0) {
+            return false;
+        }
+        return std::none_of(name.begin(), name.end(), [](char value) {
+            const auto character = static_cast<unsigned char>(value);
+            return character < 0x20 || character == 0x7f || value == '#' || value == '=';
+        });
+    };
+    const auto validateScope = [](double opacity,
+                                  CompositeMode compositeMode,
+                                  const CoordinateTransform& transform,
+                                  const LayerMask& mask,
+                                  const LayerOutputRouting& outputs,
+                                  std::string_view prefix) -> std::optional<std::string> {
+        if (!std::isfinite(opacity) || opacity < LayerLimits::minimumOpacity ||
+            opacity > LayerLimits::maximumOpacity) {
+            return std::string(prefix) + "opacity must be finite and between 0 and 1";
+        }
+        switch (compositeMode) {
+        case CompositeMode::blend:
+        case CompositeMode::add:
+        case CompositeMode::multiply:
+        case CompositeMode::minimum:
+        case CompositeMode::maximum:
+        case CompositeMode::detail:
+            break;
+        default:
+            return std::string(prefix) + "composite mode is not supported";
+        }
+        if (!outputs.colour && !outputs.height && !outputs.roughness &&
+            !outputs.metalness && !outputs.coating && !outputs.occlusion &&
+            !outputs.clearCoat && !outputs.clearCoatRoughness && !outputs.emissive) {
+            return std::string(prefix) + "must target at least one output channel";
+        }
+        if (transform.scaleX < LayerLimits::minimumScale ||
+            transform.scaleX > LayerLimits::maximumScale ||
+            transform.scaleY < LayerLimits::minimumScale ||
+            transform.scaleY > LayerLimits::maximumScale) {
+            return std::string(prefix) +
+                "coordinate scale must be an integer between 1 and 16";
+        }
+        switch (transform.rotation) {
+        case QuarterTurn::none:
+        case QuarterTurn::clockwise90:
+        case QuarterTurn::clockwise180:
+        case QuarterTurn::clockwise270:
+            break;
+        default:
+            return std::string(prefix) +
+                "coordinate rotation must be 0, 90, 180, or 270 degrees";
+        }
+        if (!std::isfinite(transform.offsetX) || !std::isfinite(transform.offsetY) ||
+            std::abs(transform.offsetX) > LayerLimits::maximumOffsetMagnitude ||
+            std::abs(transform.offsetY) > LayerLimits::maximumOffsetMagnitude) {
+            return std::string(prefix) +
+                "coordinate offsets must be finite and between -1024 and 1024";
+        }
+        if (!std::isfinite(transform.warpStrength) ||
+            transform.warpStrength < LayerLimits::minimumWarpStrength ||
+            transform.warpStrength > LayerLimits::maximumWarpStrength) {
+            return std::string(prefix) + "warp strength must be finite and between 0 and 1";
+        }
+        if (transform.warpFrequency < LayerLimits::minimumWarpFrequency ||
+            transform.warpFrequency > LayerLimits::maximumWarpFrequency) {
+            return std::string(prefix) +
+                "warp frequency must be an integer between 1 and 16";
+        }
+        if (!std::isfinite(mask.inputLow) || !std::isfinite(mask.inputHigh) ||
+            mask.inputLow < LayerLimits::minimumLevel ||
+            mask.inputHigh > LayerLimits::maximumLevel ||
+            mask.inputLow >= mask.inputHigh) {
+            return std::string(prefix) +
+                "mask input range must be finite, within 0 to 1, and increasing";
+        }
+        return std::nullopt;
+    };
+
+    std::unordered_map<std::string, std::size_t> groupIndices;
+    groupIndices.reserve(material.layerGroups.size());
+    std::unordered_set<std::string> identities;
+    identities.reserve(material.layerGroups.size() + material.layers.size());
+    for (std::size_t index = 0; index < material.layerGroups.size(); ++index) {
+        const auto& group = material.layerGroups[index];
+        const auto prefix = "layer group " + std::to_string(index) + ": ";
+        if (!validIdentity(group.identity)) {
+            return prefix + "identity must contain 1 to 96 letters, digits, '.', '_', ':', or '-'";
+        }
+        if (!identities.insert(group.identity).second) {
+            return prefix + "identity is duplicated";
+        }
+        groupIndices.emplace(group.identity, index);
+        if (!validGroupName(group.name)) {
+            return prefix + "name must contain 1 to 128 trimmed, single-line characters";
+        }
+        if (const auto error = validateScope(
+                group.opacity,
+                group.compositeMode,
+                group.transform,
+                group.mask,
+                group.outputs,
+                prefix)) {
+            return error;
+        }
+    }
+    for (std::size_t index = 0; index < material.layerGroups.size(); ++index) {
+        const auto& group = material.layerGroups[index];
+        if (!group.parentGroupIdentity.empty() &&
+            !groupIndices.contains(group.parentGroupIdentity)) {
+            return "layer group " + std::to_string(index) +
+                ": parent group does not exist";
+        }
+        std::unordered_set<std::string> ancestors;
+        auto parent = group.parentGroupIdentity;
+        std::size_t depth = 1;
+        ancestors.insert(group.identity);
+        while (!parent.empty()) {
+            if (!ancestors.insert(parent).second) {
+                return "layer group " + std::to_string(index) +
+                    ": parent hierarchy contains a cycle";
+            }
+            if (++depth > LayerLimits::maximumGroupDepth) {
+                return "layer group " + std::to_string(index) +
+                    ": nesting exceeds the maximum depth of 8";
+            }
+            parent = material.layerGroups[groupIndices.at(parent)].parentGroupIdentity;
+        }
+    }
+    std::vector<std::vector<std::string>> layerAncestors(material.layers.size());
+    for (std::size_t index = 0; index < material.layers.size(); ++index) {
+        const MaterialLayerHierarchy emptyHierarchy;
+        const auto& hierarchy = material.layerHierarchy.empty()
+            ? emptyHierarchy
+            : material.layerHierarchy[index];
+        if (!hierarchy.identity.empty()) {
+            if (!validIdentity(hierarchy.identity)) {
+                return "layer " + std::to_string(index) +
+                    ": identity must contain 1 to 96 letters, digits, '.', '_', ':', or '-'";
+            }
+            if (!identities.insert(hierarchy.identity).second) {
+                return "layer " + std::to_string(index) + ": identity is duplicated";
+            }
+        }
+        if (!hierarchy.parentGroupIdentity.empty()) {
+            if (hierarchy.identity.empty()) {
+                return "layer " + std::to_string(index) +
+                    ": grouped layers must have a stable identity";
+            }
+            if (!groupIndices.contains(hierarchy.parentGroupIdentity)) {
+                return "layer " + std::to_string(index) +
+                    ": parent group does not exist";
+            }
+            auto parent = hierarchy.parentGroupIdentity;
+            while (!parent.empty()) {
+                layerAncestors[index].push_back(parent);
+                parent = material.layerGroups[groupIndices.at(parent)].parentGroupIdentity;
+            }
+        }
+    }
+    for (const auto& group : material.layerGroups) {
+        std::optional<std::size_t> first;
+        std::size_t last{};
+        for (std::size_t layerIndex = 0; layerIndex < layerAncestors.size(); ++layerIndex) {
+            if (std::find(layerAncestors[layerIndex].begin(),
+                          layerAncestors[layerIndex].end(),
+                          group.identity) != layerAncestors[layerIndex].end()) {
+                if (!first) {
+                    first = layerIndex;
+                }
+                last = layerIndex;
+            }
+        }
+        if (!first) {
+            continue;
+        }
+        for (std::size_t layerIndex = *first; layerIndex <= last; ++layerIndex) {
+            if (std::find(layerAncestors[layerIndex].begin(),
+                          layerAncestors[layerIndex].end(),
+                          group.identity) == layerAncestors[layerIndex].end()) {
+                return "layer group '" + group.identity +
+                    "' must occupy one contiguous range in the layer stack";
+            }
+        }
+    }
     for (std::size_t index = 0; index < material.layers.size(); ++index) {
         const auto& layer = material.layers[index];
         const auto prefix = "layer " + std::to_string(index) + ": ";
@@ -1545,6 +1751,8 @@ std::optional<std::string> validateMaterialSettings(const Material& material)
 {
     auto settingsOnly = material;
     settingsOnly.layers.clear();
+    settingsOnly.layerGroups.clear();
+    settingsOnly.layerHierarchy.clear();
     return validateMaterial(settingsOnly);
 }
 
