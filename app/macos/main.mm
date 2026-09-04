@@ -13,6 +13,7 @@
 #include <paperweight/hash.hpp>
 #include <paperweight/layer.hpp>
 #include <paperweight/layer_fragment.hpp>
+#include <paperweight/material_overlay.hpp>
 #include <paperweight/material_template.hpp>
 #include <paperweight/material_wizard.hpp>
 #include <paperweight/organic.hpp>
@@ -31,6 +32,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <variant>
 
 @interface MaterialPreviewView : NSView
@@ -52,10 +54,10 @@
 }
 @end
 
-@interface PWLayerTableView : NSTableView <NSMenuItemValidation>
+@interface PWLayerOutlineView : NSOutlineView <NSMenuItemValidation>
 @end
 
-@implementation PWLayerTableView
+@implementation PWLayerOutlineView
 
 - (void)forwardLayerCommand:(SEL)action sender:(id)sender
 {
@@ -95,13 +97,34 @@
 
 @end
 
+typedef NS_ENUM(NSInteger, PWLayerOutlineItemKind) {
+    PWLayerOutlineItemKindLayer,
+    PWLayerOutlineItemKindGroup,
+};
+
+@interface PWLayerOutlineItem : NSObject
+
+@property(nonatomic) PWLayerOutlineItemKind kind;
+@property(nonatomic) NSInteger modelIndex;
+@property(nonatomic, copy) NSString* identity;
+@property(nonatomic, weak) PWLayerOutlineItem* parentItem;
+@property(nonatomic, strong) NSMutableArray<PWLayerOutlineItem*>* children;
+
+@end
+
+@implementation PWLayerOutlineItem
+@end
+
 @interface PWLayerStackSnapshot : NSObject {
 @public
     std::vector<paperweight::MaterialLayer> layers;
+    std::vector<paperweight::MaterialLayerGroup> groups;
+    std::vector<paperweight::MaterialLayerHierarchy> hierarchy;
 }
 
 @property(nonatomic, strong) NSArray<NSString*>* identities;
 @property(nonatomic, strong) NSIndexSet* selection;
+@property(nonatomic, copy) NSString* selectedGroupIdentity;
 
 @end
 
@@ -188,7 +211,7 @@
 @end
 
 @interface AppDelegate : NSObject <NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation,
-    NSTableViewDataSource, NSTableViewDelegate>
+    NSOutlineViewDataSource, NSOutlineViewDelegate, NSTextFieldDelegate>
 
 @property(nonatomic, strong) NSWindow* window;
 @property(nonatomic, strong) BenchmarkWindowController* benchmarkWindowController;
@@ -327,16 +350,21 @@
 @property(nonatomic, strong) MaterialLibraryNavigatorController* libraryNavigatorController;
 @property(nonatomic, strong) NSLayoutConstraint* libraryNavigatorWidthConstraint;
 @property(nonatomic) BOOL libraryNavigatorVisible;
-@property(nonatomic, strong) NSTableView* layerTableView;
+@property(nonatomic, strong) NSOutlineView* layerTableView;
 @property(nonatomic, strong) NSScrollView* layerScrollView;
 @property(nonatomic, strong) NSIndexSet* selectedLayerIndexes;
 @property(nonatomic, strong) NSMutableArray<NSString*>* layerIdentities;
+@property(nonatomic, copy) NSString* selectedGroupIdentity;
+@property(nonatomic, strong) NSMutableArray<PWLayerOutlineItem*>* layerOutlineRoots;
+@property(nonatomic, strong) NSMutableDictionary<NSString*, PWLayerOutlineItem*>* layerOutlineItems;
+@property(nonatomic, strong) NSMutableSet<NSString*>* collapsedGroupIdentities;
 @property(nonatomic, strong) NSUndoManager* layerUndoManager;
 @property(nonatomic, copy) NSString* layerDragIdentifier;
 @property(nonatomic) BOOL updatingLayerSelection;
 @property(nonatomic, strong) NSPopUpButton* addOperationPopup;
 @property(nonatomic, strong) NSButton* removeLayerButton;
 @property(nonatomic, strong) NSButton* duplicateLayerButton;
+@property(nonatomic, strong) NSButton* groupLayersButton;
 @property(nonatomic, strong) NSTextField* layerTypeLabel;
 @property(nonatomic, strong) NSSegmentedControl* layerInspectorTabs;
 @property(nonatomic, strong) NSStackView* layerSettingsGroup;
@@ -1062,6 +1090,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     selectedLayer_ = 0;
     self.selectedLayerIndexes = [NSIndexSet indexSetWithIndex:0];
     self.layerIdentities = [NSMutableArray arrayWithObject:NSUUID.UUID.UUIDString];
+    self.layerOutlineRoots = [NSMutableArray array];
+    self.layerOutlineItems = [NSMutableDictionary dictionary];
+    self.collapsedGroupIdentities = [NSMutableSet set];
     self.layerUndoManager = [[NSUndoManager alloc] init];
     self.layerUndoManager.levelsOfUndo = 100;
     self.layerDragIdentifier = NSUUID.UUID.UUIDString;
@@ -1441,6 +1472,12 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     [editMenu addItemWithTitle:@"Duplicate Layers"
                         action:@selector(duplicateLayers:)
                  keyEquivalent:@"d"];
+    [editMenu addItemWithTitle:@"Group Selection"
+                        action:@selector(groupSelectedLayers:)
+                 keyEquivalent:@"g"];
+    [editMenu addItemWithTitle:@"Ungroup"
+                        action:@selector(ungroupSelectedGroup:)
+                 keyEquivalent:@""];
     [editMenu addItemWithTitle:@"Delete Layers"
                         action:@selector(deleteSelectedLayers:)
                  keyEquivalent:@""];
@@ -1489,6 +1526,26 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     materialInformationItem.target = self;
     materialInformationItem.keyEquivalentModifierMask =
         NSEventModifierFlagCommand | NSEventModifierFlagOption;
+    [toolsMenu addItem:[NSMenuItem separatorItem]];
+    auto* overlaysItem = [[NSMenuItem alloc] initWithTitle:@"Material Overlays"
+                                                    action:nil
+                                             keyEquivalent:@""];
+    auto* overlaysMenu = [[NSMenu alloc] initWithTitle:@"Material Overlays"];
+    [overlaysMenu addItemWithTitle:@"Insert Polished Moss"
+                            action:@selector(insertPolishedMossOverlay:)
+                     keyEquivalent:@""];
+    [overlaysMenu addItemWithTitle:@"Insert Polished Lichen"
+                            action:@selector(insertPolishedLichenOverlay:)
+                     keyEquivalent:@""];
+    [overlaysMenu addItemWithTitle:@"Insert Overlay from File…"
+                            action:@selector(insertOverlayFromFile:)
+                     keyEquivalent:@""];
+    [overlaysMenu addItem:[NSMenuItem separatorItem]];
+    [overlaysMenu addItemWithTitle:@"Save Selected Group as Overlay…"
+                            action:@selector(saveSelectedGroupAsOverlay:)
+                     keyEquivalent:@""];
+    overlaysItem.submenu = overlaysMenu;
+    [toolsMenu addItem:overlaysItem];
     toolsMenuItem.submenu = toolsMenu;
 
     auto* windowMenuItem = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
@@ -1526,6 +1583,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         menuItem.action == @selector(cut:) || menuItem.action == @selector(copy:) ||
         menuItem.action == @selector(paste:) || menuItem.action == @selector(selectAll:) ||
         menuItem.action == @selector(duplicateLayers:) ||
+        menuItem.action == @selector(groupSelectedLayers:) ||
+        menuItem.action == @selector(ungroupSelectedGroup:) ||
         menuItem.action == @selector(deleteSelectedLayers:) ||
         menuItem.action == @selector(moveSelectedLayersUp:) ||
         menuItem.action == @selector(moveSelectedLayersDown:)) {
@@ -1534,6 +1593,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
             return NO;
         }
         const NSUInteger selected = editor.selectedLayerIndexes.count;
+        const BOOL selectedGroup = editor.selectedGroupIdentity.length != 0;
         if (menuItem.action == @selector(undo:)) {
             menuItem.title = editor.layerUndoManager.undoMenuItemTitle;
             return editor.layerUndoManager.canUndo;
@@ -1547,20 +1607,34 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         }
         if (menuItem.action == @selector(cut:) ||
             menuItem.action == @selector(deleteSelectedLayers:)) {
-            return selected > 0 && selected < editor->material_.layers.size();
+            return selectedGroup || (selected > 0 && selected < editor->material_.layers.size());
         }
         if (menuItem.action == @selector(duplicateLayers:)) {
-            return selected > 0 && editor->material_.layers.size() + selected <=
+            return (selected > 0 || selectedGroup) &&
+                editor->material_.layers.size() + selected <=
                 paperweight::LayerLimits::maximumLayers;
         }
+        if (menuItem.action == @selector(groupSelectedLayers:)) {
+            return selected > 0 && editor->material_.layerGroups.size() <
+                paperweight::LayerLimits::maximumGroups;
+        }
+        if (menuItem.action == @selector(ungroupSelectedGroup:)) {
+            return selectedGroup;
+        }
         if (menuItem.action == @selector(moveSelectedLayersUp:)) {
-            return selected > 0 && editor.layerTableView.selectedRowIndexes.firstIndex > 0;
+            return editor->material_.layerGroups.empty() && selected > 0 &&
+                editor.layerTableView.selectedRowIndexes.firstIndex > 0;
         }
         if (menuItem.action == @selector(moveSelectedLayersDown:)) {
-            return selected > 0 && editor.layerTableView.selectedRowIndexes.lastIndex + 1 <
+            return editor->material_.layerGroups.empty() && selected > 0 &&
+                editor.layerTableView.selectedRowIndexes.lastIndex + 1 <
                 editor->material_.layers.size();
         }
-        return selected > 0;
+        return selected > 0 || selectedGroup;
+    }
+    if (menuItem.action == @selector(saveSelectedGroupAsOverlay:)) {
+        AppDelegate* editor = [self activeMaterialEditor];
+        return editor != nil && editor.selectedGroupIdentity.length != 0;
     }
     if (menuItem.action == @selector(toggleLibraryNavigator:)) {
         AppDelegate* editor = [self activeMaterialEditor];
@@ -2669,7 +2743,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     auto* layersSubtitle = makeLabel(@"Evaluated from bottom to top");
     layersSubtitle.textColor = NSColor.secondaryLabelColor;
 
-    self.layerTableView = [[PWLayerTableView alloc] initWithFrame:NSZeroRect];
+    self.layerTableView = [[PWLayerOutlineView alloc] initWithFrame:NSZeroRect];
     self.layerTableView.dataSource = self;
     self.layerTableView.delegate = self;
     self.layerTableView.headerView = nil;
@@ -2681,10 +2755,12 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.layerTableView.selectionHighlightStyle = NSTableViewSelectionHighlightStyleRegular;
     self.layerTableView.accessibilityLabel = @"Material layer stack";
     self.layerTableView.accessibilityHelp =
-        @"Use Shift or Command to select layers. Drag selected layers to reorder them.";
+        @"Expand groups, use Shift or Command to select layers, and drag layers to reorder them.";
     auto* layerColumn = [[NSTableColumn alloc] initWithIdentifier:@"layer"];
     layerColumn.resizingMask = NSTableColumnAutoresizingMask;
     [self.layerTableView addTableColumn:layerColumn];
+    self.layerTableView.outlineTableColumn = layerColumn;
+    self.layerTableView.indentationPerLevel = 16.0;
     [self.layerTableView registerForDraggedTypes:@[layerReorderPasteboardType]];
     [self.layerTableView setDraggingSourceOperationMask:NSDragOperationMove forLocal:YES];
 
@@ -2749,7 +2825,11 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.duplicateLayerButton = [NSButton buttonWithTitle:@"Duplicate"
                                                    target:self
                                                    action:@selector(duplicateLayers:)];
+    self.groupLayersButton = [NSButton buttonWithTitle:@"Group"
+                                                target:self
+                                                action:@selector(groupSelectedLayers:)];
     auto* arrangeRow = [NSStackView stackViewWithViews:@[
+        self.groupLayersButton,
         self.duplicateLayerButton,
         self.removeLayerButton,
     ]];
@@ -2757,7 +2837,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     arrangeRow.distribution = NSStackViewDistributionFillEqually;
     arrangeRow.spacing = 6.0;
 
-    auto* inspectorLabel = makeLabel(@"Selected Layer");
+    auto* inspectorLabel = makeLabel(@"Selected Layer or Group");
     inspectorLabel.font = [NSFont systemFontOfSize:15.0 weight:NSFontWeightSemibold];
     self.layerTypeLabel = makeLabel(@"");
     self.layerTypeLabel.textColor = NSColor.secondaryLabelColor;
@@ -3499,6 +3579,13 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     if (self.layerIdentities == nil) {
         self.layerIdentities = [NSMutableArray array];
     }
+    if (material_.layerHierarchy.size() == material_.layers.size()) {
+        [self.layerIdentities removeAllObjects];
+        for (const auto& hierarchy : material_.layerHierarchy) {
+            [self.layerIdentities addObject:[NSString
+                stringWithUTF8String:hierarchy.identity.c_str()]];
+        }
+    }
     while (self.layerIdentities.count < material_.layers.size()) {
         [self.layerIdentities addObject:NSUUID.UUID.UUIDString];
     }
@@ -3514,87 +3601,220 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
                 [validSelection addIndex:index];
             }
         }];
-    if (validSelection.count == 0 && !material_.layers.empty()) {
+    if (validSelection.count == 0 && self.selectedGroupIdentity.length == 0 &&
+        !material_.layers.empty()) {
         const auto fallback = static_cast<NSUInteger>(std::clamp<NSInteger>(
             selectedLayer_, 0, static_cast<NSInteger>(material_.layers.size() - 1)));
         [validSelection addIndex:fallback];
     }
     self.selectedLayerIndexes = validSelection;
 
+    self.layerOutlineRoots = [NSMutableArray array];
+    self.layerOutlineItems = [NSMutableDictionary dictionary];
+    NSMutableArray<PWLayerOutlineItem*>* groupItems = [NSMutableArray array];
+    for (std::size_t index = 0; index < material_.layerGroups.size(); ++index) {
+        const auto& group = material_.layerGroups[index];
+        auto* item = [[PWLayerOutlineItem alloc] init];
+        item.kind = PWLayerOutlineItemKindGroup;
+        item.modelIndex = static_cast<NSInteger>(index);
+        item.identity = [NSString stringWithUTF8String:group.identity.c_str()];
+        item.children = [NSMutableArray array];
+        self.layerOutlineItems[item.identity] = item;
+        [groupItems addObject:item];
+    }
+    for (PWLayerOutlineItem* item in groupItems) {
+        const auto& group = material_.layerGroups[static_cast<std::size_t>(item.modelIndex)];
+        NSString* parentIdentity = [NSString
+            stringWithUTF8String:group.parentGroupIdentity.c_str()];
+        PWLayerOutlineItem* parent = self.layerOutlineItems[parentIdentity];
+        if (parent != nil && parent != item) {
+            item.parentItem = parent;
+            [parent.children addObject:item];
+        } else {
+            [self.layerOutlineRoots addObject:item];
+        }
+    }
+    for (std::size_t index = 0; index < material_.layers.size(); ++index) {
+        auto* item = [[PWLayerOutlineItem alloc] init];
+        item.kind = PWLayerOutlineItemKindLayer;
+        item.modelIndex = static_cast<NSInteger>(index);
+        item.identity = self.layerIdentities[index];
+        item.children = [NSMutableArray array];
+        self.layerOutlineItems[item.identity] = item;
+        NSString* parentIdentity = @"";
+        if (material_.layerHierarchy.size() == material_.layers.size()) {
+            parentIdentity = [NSString stringWithUTF8String:
+                material_.layerHierarchy[index].parentGroupIdentity.c_str()];
+        }
+        PWLayerOutlineItem* parent = self.layerOutlineItems[parentIdentity];
+        if (parent != nil && parent.kind == PWLayerOutlineItemKindGroup) {
+            item.parentItem = parent;
+            [parent.children addObject:item];
+        } else {
+            [self.layerOutlineRoots addObject:item];
+        }
+    }
+    std::unordered_map<std::string, NSInteger> groupDisplayOrder;
+    for (const auto& group : material_.layerGroups) {
+        groupDisplayOrder.emplace(group.identity, -1);
+    }
+    if (material_.layerHierarchy.size() == material_.layers.size()) {
+        std::unordered_map<std::string, std::string> groupParents;
+        for (const auto& group : material_.layerGroups) {
+            groupParents.emplace(group.identity, group.parentGroupIdentity);
+        }
+        for (std::size_t layerIndex = 0; layerIndex < material_.layerHierarchy.size(); ++layerIndex) {
+            std::string parent = material_.layerHierarchy[layerIndex].parentGroupIdentity;
+            std::size_t guard = 0;
+            while (!parent.empty() && guard++ <= paperweight::LayerLimits::maximumGroupDepth) {
+                groupDisplayOrder[parent] = std::max(
+                    groupDisplayOrder[parent], static_cast<NSInteger>(layerIndex));
+                const auto found = groupParents.find(parent);
+                if (found == groupParents.end()) break;
+                parent = found->second;
+            }
+        }
+    }
+    const auto sortChildren = [&groupDisplayOrder](NSMutableArray<PWLayerOutlineItem*>* children) {
+        [children sortUsingComparator:^NSComparisonResult(
+            PWLayerOutlineItem* left, PWLayerOutlineItem* right) {
+            const NSInteger leftOrder = left.kind == PWLayerOutlineItemKindLayer
+                ? left.modelIndex : groupDisplayOrder[left.identity.UTF8String];
+            const NSInteger rightOrder = right.kind == PWLayerOutlineItemKindLayer
+                ? right.modelIndex : groupDisplayOrder[right.identity.UTF8String];
+            if (leftOrder > rightOrder) return NSOrderedAscending;
+            if (leftOrder < rightOrder) return NSOrderedDescending;
+            return [left.identity compare:right.identity];
+        }];
+    };
+    for (PWLayerOutlineItem* group in groupItems) sortChildren(group.children);
+    sortChildren(self.layerOutlineRoots);
+
     [self.layerTableView reloadData];
+    for (std::size_t pass = 0; pass <= paperweight::LayerLimits::maximumGroupDepth; ++pass) {
+        for (PWLayerOutlineItem* group in groupItems) {
+            if (![self.collapsedGroupIdentities containsObject:group.identity] &&
+                [self.layerTableView rowForItem:group] >= 0) {
+                [self.layerTableView expandItem:group];
+            }
+        }
+    }
     auto* displayRows = [NSMutableIndexSet indexSet];
     [validSelection enumerateIndexesUsingBlock:^(NSUInteger index, BOOL* stop) {
         static_cast<void>(stop);
-        [displayRows addIndex:material_.layers.size() - 1 - index];
+        if (index < self.layerIdentities.count) {
+            PWLayerOutlineItem* item = self.layerOutlineItems[self.layerIdentities[index]];
+            const NSInteger row = [self.layerTableView rowForItem:item];
+            if (row >= 0) {
+                [displayRows addIndex:static_cast<NSUInteger>(row)];
+            }
+        }
     }];
+    if (self.selectedGroupIdentity.length != 0) {
+        PWLayerOutlineItem* item = self.layerOutlineItems[self.selectedGroupIdentity];
+        const NSInteger row = [self.layerTableView rowForItem:item];
+        if (row >= 0) {
+            [displayRows removeAllIndexes];
+            [displayRows addIndex:static_cast<NSUInteger>(row)];
+        } else {
+            self.selectedGroupIdentity = nil;
+        }
+    }
     self.updatingLayerSelection = YES;
     [self.layerTableView selectRowIndexes:displayRows byExtendingSelection:NO];
     self.updatingLayerSelection = NO;
     self.layerTableView.accessibilityLabel = [NSString stringWithFormat:
-        @"Material layer stack, %zu layers, %lu selected",
+        @"Material layer outline, %zu layers, %zu groups, %lu selected",
         material_.layers.size(),
+        material_.layerGroups.size(),
         static_cast<unsigned long>(validSelection.count)];
     if (displayRows.count == 1) {
         [self.layerTableView scrollRowToVisible:static_cast<NSInteger>(displayRows.firstIndex)];
     }
 }
 
-- (NSInteger)numberOfRowsInTableView:(NSTableView*)tableView
+- (NSInteger)outlineView:(NSOutlineView*)outlineView
+    numberOfChildrenOfItem:(id)item
 {
-    static_cast<void>(tableView);
-    return static_cast<NSInteger>(material_.layers.size());
+    static_cast<void>(outlineView);
+    NSArray<PWLayerOutlineItem*>* children = item == nil
+        ? self.layerOutlineRoots
+        : static_cast<PWLayerOutlineItem*>(item).children;
+    return static_cast<NSInteger>(children.count);
 }
 
-- (std::optional<std::size_t>)layerIndexForDisplayRow:(NSInteger)row
+- (id)outlineView:(NSOutlineView*)outlineView
+            child:(NSInteger)index
+           ofItem:(id)item
 {
-    if (row < 0 || static_cast<std::size_t>(row) >= material_.layers.size()) {
-        return std::nullopt;
-    }
-    return material_.layers.size() - 1 - static_cast<std::size_t>(row);
+    static_cast<void>(outlineView);
+    NSArray<PWLayerOutlineItem*>* children = item == nil
+        ? self.layerOutlineRoots
+        : static_cast<PWLayerOutlineItem*>(item).children;
+    return index >= 0 && static_cast<NSUInteger>(index) < children.count
+        ? children[static_cast<NSUInteger>(index)]
+        : nil;
 }
 
-- (NSIndexSet*)modelLayerIndexesForDisplayRows:(NSIndexSet*)displayRows
+- (BOOL)outlineView:(NSOutlineView*)outlineView isItemExpandable:(id)item
 {
-    auto* indexes = [NSMutableIndexSet indexSet];
-    [displayRows enumerateIndexesUsingBlock:^(NSUInteger row, BOOL* stop) {
-        static_cast<void>(stop);
-        if (row < material_.layers.size()) {
-            [indexes addIndex:material_.layers.size() - 1 - row];
-        }
-    }];
-    return indexes;
+    static_cast<void>(outlineView);
+    return static_cast<PWLayerOutlineItem*>(item).kind == PWLayerOutlineItemKindGroup;
 }
 
-- (NSView*)tableView:(NSTableView*)tableView
+- (NSView*)outlineView:(NSOutlineView*)outlineView
     viewForTableColumn:(NSTableColumn*)tableColumn
-                  row:(NSInteger)row
+                  item:(id)value
 {
-    static_cast<void>(tableView);
+    static_cast<void>(outlineView);
     static_cast<void>(tableColumn);
-    const auto index = [self layerIndexForDisplayRow:row];
-    if (!index) {
+    auto* item = static_cast<PWLayerOutlineItem*>(value);
+    if (item == nil || item.modelIndex < 0) {
         return nil;
     }
-    const auto& layer = material_.layers[*index];
+    const BOOL isGroup = item.kind == PWLayerOutlineItemKindGroup;
+    const auto index = static_cast<std::size_t>(item.modelIndex);
+    if ((isGroup && index >= material_.layerGroups.size()) ||
+        (!isGroup && index >= material_.layers.size())) {
+        return nil;
+    }
+    const bool enabledValue = isGroup
+        ? material_.layerGroups[index].enabled
+        : material_.layers[index].enabled;
 
     auto* cell = [[NSTableCellView alloc] initWithFrame:NSZeroRect];
     auto* enabled = [NSButton checkboxWithTitle:@""
                                          target:self
-                                         action:@selector(layerListEnabledChanged:)];
+                                         action:@selector(outlineEnabledChanged:)];
     enabled.translatesAutoresizingMaskIntoConstraints = NO;
-    enabled.tag = static_cast<NSInteger>(*index);
-    enabled.state = layer.enabled ? NSControlStateValueOn : NSControlStateValueOff;
+    enabled.tag = isGroup ? -item.modelIndex - 1 : item.modelIndex;
+    enabled.state = enabledValue ? NSControlStateValueOn : NSControlStateValueOff;
     enabled.accessibilityLabel = [NSString
-        stringWithFormat:@"Enable layer %zu", *index + 1];
+        stringWithFormat:@"Enable %@", isGroup ? @"group" : @"layer"];
 
-    auto* label = [NSTextField labelWithString:[NSString
-        stringWithFormat:@"%zu  %@", *index + 1, operationDisplayName(layer.operation)]];
+    NSString* title = isGroup
+        ? [NSString stringWithUTF8String:material_.layerGroups[index].name.c_str()]
+        : [NSString stringWithFormat:@"%zu  %@", index + 1,
+            operationDisplayName(material_.layers[index].operation)];
+    auto* label = isGroup
+        ? [NSTextField textFieldWithString:title]
+        : [NSTextField labelWithString:title];
     label.translatesAutoresizingMaskIntoConstraints = NO;
     label.lineBreakMode = NSLineBreakByTruncatingTail;
-    label.font = [NSFont systemFontOfSize:13.0 weight:NSFontWeightRegular];
-    label.accessibilityLabel = [NSString stringWithFormat:
-        @"Layer %zu, %@, %@", *index + 1, operationDisplayName(layer.operation),
-        layer.enabled ? @"enabled" : @"disabled"];
+    label.font = [NSFont systemFontOfSize:13.0
+                                  weight:isGroup ? NSFontWeightSemibold : NSFontWeightRegular];
+    if (isGroup) {
+        label.bezeled = NO;
+        label.drawsBackground = NO;
+        label.target = self;
+        label.action = @selector(groupNameChanged:);
+        label.delegate = self;
+        label.identifier = @"paperweight.group-name";
+        label.tag = item.modelIndex;
+        label.toolTip = @"Edit the group name. The name does not affect generated pixels.";
+    }
+    label.accessibilityLabel = [NSString stringWithFormat:@"%@, %@",
+        title, enabledValue ? @"enabled" : @"disabled"];
     cell.textField = label;
     [cell addSubview:enabled];
     [cell addSubview:label];
@@ -3609,16 +3829,45 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     return cell;
 }
 
-- (void)tableViewSelectionDidChange:(NSNotification*)notification
+- (void)outlineViewSelectionDidChange:(NSNotification*)notification
 {
     if (self.updatingLayerSelection || notification.object != self.layerTableView) {
         return;
     }
-    self.selectedLayerIndexes = [self
-        modelLayerIndexesForDisplayRows:self.layerTableView.selectedRowIndexes];
-    const auto selected = [self layerIndexForDisplayRow:self.layerTableView.selectedRow];
-    selectedLayer_ = selected ? static_cast<NSInteger>(*selected) : -1;
+    auto* indexes = [NSMutableIndexSet indexSet];
+    self.selectedGroupIdentity = nil;
+    [self.layerTableView.selectedRowIndexes enumerateIndexesUsingBlock:
+        ^(NSUInteger row, BOOL* stop) {
+            static_cast<void>(stop);
+            auto* item = static_cast<PWLayerOutlineItem*>(
+                [self.layerTableView itemAtRow:static_cast<NSInteger>(row)]);
+            if (item.kind == PWLayerOutlineItemKindLayer) {
+                [indexes addIndex:static_cast<NSUInteger>(item.modelIndex)];
+            } else if (self.layerTableView.selectedRowIndexes.count == 1) {
+                self.selectedGroupIdentity = item.identity;
+            }
+        }];
+    self.selectedLayerIndexes = indexes;
+    selectedLayer_ = indexes.count == 0
+        ? -1
+        : static_cast<NSInteger>(indexes.lastIndex);
     [self refreshLayerInspector];
+}
+
+- (void)outlineViewItemDidCollapse:(NSNotification*)notification
+{
+    auto* item = static_cast<PWLayerOutlineItem*>(notification.userInfo[@"NSObject"]);
+    if (item.kind == PWLayerOutlineItemKindGroup) {
+        [self.collapsedGroupIdentities addObject:item.identity];
+    }
+}
+
+- (void)outlineViewItemDidExpand:(NSNotification*)notification
+{
+    auto* item = static_cast<PWLayerOutlineItem*>(notification.userInfo[@"NSObject"]);
+    if (item.kind == PWLayerOutlineItemKindGroup) {
+        [self.collapsedGroupIdentities removeObject:item.identity];
+    }
 }
 
 - (void)updateLayerInspectorLiveValueLabels
@@ -3686,17 +3935,109 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     const NSUInteger selectedCount = self.selectedLayerIndexes.count;
     auto* layer = layerAt(material_, selectedLayer_);
     const BOOL hasLayer = selectedCount == 1 && layer != nullptr;
-    self.removeLayerButton.enabled = selectedCount > 0 &&
-        selectedCount < material_.layers.size();
-    self.duplicateLayerButton.enabled = selectedCount > 0 &&
-        material_.layers.size() + selectedCount <= paperweight::LayerLimits::maximumLayers;
-    self.layerEnabledCheckbox.enabled = hasLayer;
-    self.layerCompositeControl.enabled = hasLayer;
+    auto* group = [self selectedLayerGroup];
+    const BOOL hasGroup = group != nullptr;
+    const BOOL hasScope = hasLayer || hasGroup;
+    self.removeLayerButton.enabled = hasGroup || (selectedCount > 0 &&
+        selectedCount < material_.layers.size());
+    self.duplicateLayerButton.enabled = hasGroup || (selectedCount > 0 &&
+        material_.layers.size() + selectedCount <= paperweight::LayerLimits::maximumLayers);
+    self.groupLayersButton.enabled = selectedCount > 0 &&
+        material_.layerGroups.size() < paperweight::LayerLimits::maximumGroups;
+    self.layerEnabledCheckbox.enabled = hasScope;
+    self.layerCompositeControl.enabled = hasScope;
     for (NSButton* button in self.layerOutputButtons) {
-        button.enabled = hasLayer;
+        button.enabled = hasScope;
     }
-    self.layerOpacitySlider.enabled = hasLayer;
-    self.layerInspectorTabs.enabled = hasLayer;
+    self.layerOpacitySlider.enabled = hasScope;
+    self.layerInspectorTabs.enabled = hasScope;
+    if (hasGroup) {
+        self.layerTypeLabel.stringValue = [NSString stringWithFormat:@"Group: %@",
+            [NSString stringWithUTF8String:group->name.c_str()]];
+        self.layerEnabledCheckbox.state = group->enabled
+            ? NSControlStateValueOn : NSControlStateValueOff;
+        constexpr std::array<bool paperweight::LayerOutputRouting::*, 9> groupRoutes{
+            &paperweight::LayerOutputRouting::colour,
+            &paperweight::LayerOutputRouting::height,
+            &paperweight::LayerOutputRouting::roughness,
+            &paperweight::LayerOutputRouting::metalness,
+            &paperweight::LayerOutputRouting::coating,
+            &paperweight::LayerOutputRouting::occlusion,
+            &paperweight::LayerOutputRouting::clearCoat,
+            &paperweight::LayerOutputRouting::clearCoatRoughness,
+            &paperweight::LayerOutputRouting::emissive,
+        };
+        for (std::size_t index = 0; index < groupRoutes.size(); ++index) {
+            self.layerOutputButtons[index].state = group->outputs.*groupRoutes[index]
+                ? NSControlStateValueOn : NSControlStateValueOff;
+        }
+        self.layerCompositeControl.selectedSegment = static_cast<NSInteger>(group->compositeMode);
+        self.layerOpacitySlider.doubleValue = group->opacity;
+        self.layerOpacityValue.stringValue = [NSString stringWithFormat:@"%.2f", group->opacity];
+
+        for (NSView* view in @[
+                 self.noiseSeedRow, self.solidColourRow, self.surfaceValueRow,
+                 self.levelsLowRow, self.levelsHighRow, self.levelsGammaRow,
+                 self.thresholdRow, self.patternCountXRow, self.patternCountYRow,
+                 self.patternValueOneRow, self.patternValueTwoRow,
+                 self.patternValueThreeRow, self.patternValueFourRow,
+                 self.surfaceKindRow, self.courseFieldRow, self.courseGapRow,
+                 self.courseSoftnessRow, self.courseOverlapRow,
+                 self.organicPopulationRow, self.organicPopulationWeightRow,
+                 self.organicPopulationScaleRow, self.organicClusterColourRow,
+                 self.organicInstanceColourRow, self.organicOutlineRow,
+                 self.organicHighlightRow, self.organicHighlightInsetRow,
+                 self.equalMortarWidthCheckbox, self.physicalBrickCheckbox,
+                 self.physicalBrickWidthRow, self.physicalBrickHeightRow,
+                 self.physicalBrickMortarRow, self.physicalCourseOverlapRow,
+                 self.physicalBrickSummary, self.patternDirectionRow,
+                 self.patternSeedRow, self.processingTargetRow,
+                 self.filterSensitivityRow, self.posteriseBandsRow,
+                 self.rampModeRow, self.colourEntriesGroup, self.inkColourRow,
+                 self.inkRadiusRow, self.inkThresholdRow, self.inkSoftnessRow,
+                 self.inkStrengthRow, self.inkInvertedCheckbox,
+                 self.facetedNormalsCheckbox,
+             ]) {
+            view.hidden = YES;
+        }
+
+        const auto& transform = group->transform;
+        self.transformScaleXSlider.doubleValue = transform.scaleX;
+        self.transformScaleYSlider.doubleValue = transform.scaleY;
+        self.transformOffsetXSlider.doubleValue = transform.offsetX;
+        self.transformOffsetYSlider.doubleValue = transform.offsetY;
+        self.transformRotationControl.selectedSegment = static_cast<NSInteger>(transform.rotation);
+        self.warpEnabledCheckbox.state = transform.warpEnabled
+            ? NSControlStateValueOn : NSControlStateValueOff;
+        self.warpStrengthSlider.doubleValue = transform.warpStrength;
+        self.warpFrequencySlider.doubleValue = transform.warpFrequency;
+        self.warpSeedOffsetField.stringValue = [NSString
+            stringWithFormat:@"%llu", transform.warpSeedOffset];
+        self.transformScaleXValue.stringValue = [NSString stringWithFormat:@"%u", transform.scaleX];
+        self.transformScaleYValue.stringValue = [NSString stringWithFormat:@"%u", transform.scaleY];
+        self.transformOffsetXValue.stringValue = [NSString stringWithFormat:@"%.2f", transform.offsetX];
+        self.transformOffsetYValue.stringValue = [NSString stringWithFormat:@"%.2f", transform.offsetY];
+        self.warpStrengthValue.stringValue = [NSString stringWithFormat:@"%.2f", transform.warpStrength];
+        self.warpFrequencyValue.stringValue = [NSString stringWithFormat:@"%u", transform.warpFrequency];
+        self.warpStrengthSlider.enabled = transform.warpEnabled;
+        self.warpFrequencySlider.enabled = transform.warpEnabled;
+        self.warpSeedOffsetField.enabled = transform.warpEnabled;
+
+        const auto& mask = group->mask;
+        self.maskEnabledCheckbox.state = mask.enabled ? NSControlStateValueOn : NSControlStateValueOff;
+        self.maskInvertedCheckbox.state = mask.inverted ? NSControlStateValueOn : NSControlStateValueOff;
+        self.maskSeedOffsetField.stringValue = [NSString stringWithFormat:@"%llu", mask.seedOffset];
+        self.maskLowSlider.doubleValue = mask.inputLow;
+        self.maskHighSlider.doubleValue = mask.inputHigh;
+        self.maskLowValue.stringValue = [NSString stringWithFormat:@"%.2f", mask.inputLow];
+        self.maskHighValue.stringValue = [NSString stringWithFormat:@"%.2f", mask.inputHigh];
+        self.maskInvertedCheckbox.enabled = mask.enabled;
+        self.maskSeedOffsetField.enabled = mask.enabled;
+        self.maskLowSlider.enabled = mask.enabled;
+        self.maskHighSlider.enabled = mask.enabled;
+        [self updateLayerInspectorTabVisibility];
+        return;
+    }
     if (!hasLayer) {
         self.layerTypeLabel.stringValue = selectedCount > 1
             ? [NSString stringWithFormat:@"%lu layers selected",
@@ -5442,8 +5783,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 
 - (void)updateLayerInspectorTabVisibility
 {
-    const BOOL hasLayer = self.selectedLayerIndexes.count == 1 &&
-        layerAt(material_, selectedLayer_) != nullptr;
+    const BOOL hasLayer = (self.selectedLayerIndexes.count == 1 &&
+        layerAt(material_, selectedLayer_) != nullptr) || [self selectedLayerGroup] != nullptr;
     const NSInteger tab = self.layerInspectorTabs.selectedSegment;
     self.layerSettingsGroup.hidden = !hasLayer || tab != 0;
     self.transformSettingsGroup.hidden = !hasLayer || tab != 1;
@@ -5456,17 +5797,26 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     [self updateLayerInspectorTabVisibility];
 }
 
-- (void)layerListEnabledChanged:(NSButton*)sender
+- (void)outlineEnabledChanged:(NSButton*)sender
 {
     const auto before = material_;
-    auto* layer = layerAt(material_, sender.tag);
-    if (layer == nullptr) {
-        return;
+    if (sender.tag < 0) {
+        const auto groupIndex = static_cast<std::size_t>(-sender.tag - 1);
+        if (groupIndex >= material_.layerGroups.size()) return;
+        material_.layerGroups[groupIndex].enabled = sender.state == NSControlStateValueOn;
+        self.selectedLayerIndexes = [NSIndexSet indexSet];
+        selectedLayer_ = -1;
+        self.selectedGroupIdentity = [NSString stringWithUTF8String:
+            material_.layerGroups[groupIndex].identity.c_str()];
+    } else {
+        auto* layer = layerAt(material_, sender.tag);
+        if (layer == nullptr) return;
+        layer->enabled = sender.state == NSControlStateValueOn;
+        selectedLayer_ = sender.tag;
+        self.selectedGroupIdentity = nil;
+        self.selectedLayerIndexes = [NSIndexSet indexSetWithIndex:
+            static_cast<NSUInteger>(selectedLayer_)];
     }
-    layer->enabled = sender.state == NSControlStateValueOn;
-    selectedLayer_ = sender.tag;
-    self.selectedLayerIndexes = [NSIndexSet indexSetWithIndex:
-        static_cast<NSUInteger>(selectedLayer_)];
     [self rebuildLayerList];
     [self refreshLayerInspector];
     [self regeneratePreviewForOutputs:paperweight::affectedMaterialOutputs(before, material_)];
@@ -5488,13 +5838,51 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 - (void)resetLayerIdentities
 {
     self.layerIdentities = [NSMutableArray arrayWithCapacity:material_.layers.size()];
-    for (std::size_t index = 0; index < material_.layers.size(); ++index) {
+    if (material_.layerHierarchy.size() == material_.layers.size()) {
+        for (const auto& hierarchy : material_.layerHierarchy) {
+            [self.layerIdentities addObject:[NSString
+                stringWithUTF8String:hierarchy.identity.c_str()]];
+        }
+    } else {
+        for (std::size_t index = 0; index < material_.layers.size(); ++index) {
+            [self.layerIdentities addObject:NSUUID.UUID.UUIDString];
+        }
+    }
+    self.selectedGroupIdentity = nil;
+}
+
+- (void)ensurePersistentLayerHierarchy
+{
+    while (self.layerIdentities.count < material_.layers.size()) {
         [self.layerIdentities addObject:NSUUID.UUID.UUIDString];
     }
+    const auto oldHierarchy = material_.layerHierarchy;
+    material_.layerHierarchy.resize(material_.layers.size());
+    for (std::size_t index = 0; index < material_.layers.size(); ++index) {
+        material_.layerHierarchy[index].identity = self.layerIdentities[index].UTF8String;
+        if (index >= oldHierarchy.size()) {
+            material_.layerHierarchy[index].parentGroupIdentity.clear();
+        }
+    }
+}
+
+- (paperweight::MaterialLayerGroup*)selectedLayerGroup
+{
+    if (self.selectedGroupIdentity.length == 0) {
+        return nullptr;
+    }
+    const std::string identity = self.selectedGroupIdentity.UTF8String;
+    auto iterator = std::find_if(
+        material_.layerGroups.begin(), material_.layerGroups.end(),
+        [&identity](const paperweight::MaterialLayerGroup& group) {
+            return group.identity == identity;
+        });
+    return iterator == material_.layerGroups.end() ? nullptr : &*iterator;
 }
 
 - (void)setSelectedModelLayerIndexes:(NSIndexSet*)indexes
 {
+    self.selectedGroupIdentity = nil;
     self.selectedLayerIndexes = [indexes copy];
     if (indexes.count == 0) {
         selectedLayer_ = -1;
@@ -5510,8 +5898,11 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     }
     auto* snapshot = [[PWLayerStackSnapshot alloc] init];
     snapshot->layers = material_.layers;
+    snapshot->groups = material_.layerGroups;
+    snapshot->hierarchy = material_.layerHierarchy;
     snapshot.identities = [self.layerIdentities copy];
     snapshot.selection = [self.selectedLayerIndexes copy];
+    snapshot.selectedGroupIdentity = self.selectedGroupIdentity;
     [self.layerUndoManager registerUndoWithTarget:self handler:
         ^(AppDelegate* target) {
             [target restoreLayerStackSnapshot:snapshot actionName:actionName];
@@ -5536,8 +5927,11 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     const auto before = material_;
     [self registerLayerStackUndoWithName:actionName];
     material_.layers = snapshot->layers;
+    material_.layerGroups = snapshot->groups;
+    material_.layerHierarchy = snapshot->hierarchy;
     self.layerIdentities = [snapshot.identities mutableCopy];
     [self setSelectedModelLayerIndexes:snapshot.selection];
+    self.selectedGroupIdentity = snapshot.selectedGroupIdentity;
     [self finishLayerStructureChangeForOutputs:
         paperweight::affectedMaterialOutputs(before, material_)];
 }
@@ -5556,10 +5950,65 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     return layers;
 }
 
+- (paperweight::LayerFragment)selectedLayerFragment
+{
+    paperweight::LayerFragment fragment;
+    if (self.selectedGroupIdentity.length == 0) {
+        const auto layers = [self selectedLayersInEvaluationOrder];
+        fragment.layers = layers;
+        fragment.hierarchy.reserve(layers.size());
+        for (NSUInteger index = self.selectedLayerIndexes.firstIndex;
+             index != NSNotFound;
+             index = [self.selectedLayerIndexes indexGreaterThanIndex:index]) {
+            if (index < self.layerIdentities.count) {
+                fragment.hierarchy.push_back({self.layerIdentities[index].UTF8String, {}});
+            }
+        }
+        return fragment;
+    }
+
+    const std::string rootIdentity = self.selectedGroupIdentity.UTF8String;
+    std::unordered_map<std::string, std::string> groupParents;
+    for (const auto& group : material_.layerGroups) {
+        groupParents.emplace(group.identity, group.parentGroupIdentity);
+    }
+    const auto belongsToRoot = [&groupParents, &rootIdentity](std::string identity) {
+        std::size_t guard = 0;
+        while (!identity.empty() && guard++ <= paperweight::LayerLimits::maximumGroupDepth) {
+            if (identity == rootIdentity) {
+                return true;
+            }
+            const auto parent = groupParents.find(identity);
+            if (parent == groupParents.end()) {
+                return false;
+            }
+            identity = parent->second;
+        }
+        return false;
+    };
+    for (const auto& group : material_.layerGroups) {
+        if (belongsToRoot(group.identity)) {
+            fragment.groups.push_back(group);
+            if (group.identity == rootIdentity) {
+                fragment.groups.back().parentGroupIdentity.clear();
+            }
+        }
+    }
+    if (material_.layerHierarchy.size() == material_.layers.size()) {
+        for (std::size_t index = 0; index < material_.layers.size(); ++index) {
+            if (belongsToRoot(material_.layerHierarchy[index].parentGroupIdentity)) {
+                fragment.layers.push_back(material_.layers[index]);
+                fragment.hierarchy.push_back(material_.layerHierarchy[index]);
+            }
+        }
+    }
+    return fragment;
+}
+
 - (BOOL)writeSelectedLayersToPasteboard:(NSPasteboard*)pasteboard
 {
-    const auto layers = [self selectedLayersInEvaluationOrder];
-    const auto encoded = paperweight::serialiseLayerFragment(layers);
+    const auto fragment = [self selectedLayerFragment];
+    const auto encoded = paperweight::serialiseLayerFragment(fragment);
     if (const auto* error = std::get_if<paperweight::SerialisationError>(&encoded)) {
         self.statusLabel.stringValue = [NSString stringWithUTF8String:error->message.c_str()];
         self.statusLabel.textColor = NSColor.systemRedColor;
@@ -5576,8 +6025,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     [pasteboard setString:value forType:layerFragmentPasteboardType];
     [pasteboard setString:value forType:NSPasteboardTypeString];
     self.statusLabel.stringValue = [NSString stringWithFormat:
-        @"Copied %lu %@", static_cast<unsigned long>(layers.size()),
-        layers.size() == 1 ? @"layer" : @"layers"];
+        @"Copied %lu %@", static_cast<unsigned long>(fragment.layers.size()),
+        fragment.layers.size() == 1 ? @"layer" : @"layers"];
     self.statusLabel.textColor = NSColor.secondaryLabelColor;
     return YES;
 }
@@ -5593,7 +6042,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     const auto* fragment = std::get_if<paperweight::LayerFragment>(&decoded);
     return fragment != nullptr && !fragment->layers.empty() &&
         material_.layers.size() + fragment->layers.size() <=
-            paperweight::LayerLimits::maximumLayers;
+            paperweight::LayerLimits::maximumLayers &&
+        material_.layerGroups.size() + fragment->groups.size() <=
+            paperweight::LayerLimits::maximumGroups;
 }
 
 - (void)copy:(id)sender
@@ -5614,6 +6065,23 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 - (BOOL)deleteSelectedLayersWithActionName:(NSString*)actionName
 {
     NSIndexSet* selection = self.selectedLayerIndexes;
+    if (self.selectedGroupIdentity.length != 0) {
+        const auto fragment = [self selectedLayerFragment];
+        auto* indexes = [NSMutableIndexSet indexSet];
+        std::unordered_map<std::string, std::size_t> layerIndexes;
+        if (material_.layerHierarchy.size() == material_.layers.size()) {
+            for (std::size_t index = 0; index < material_.layerHierarchy.size(); ++index) {
+                layerIndexes.emplace(material_.layerHierarchy[index].identity, index);
+            }
+            for (const auto& hierarchy : fragment.hierarchy) {
+                if (const auto found = layerIndexes.find(hierarchy.identity);
+                    found != layerIndexes.end()) {
+                    [indexes addIndex:found->second];
+                }
+            }
+        }
+        selection = indexes;
+    }
     if (selection.count == 0 || selection.count >= material_.layers.size()) {
         self.statusLabel.stringValue = @"A material must retain at least one layer.";
         self.statusLabel.textColor = NSColor.systemRedColor;
@@ -5629,9 +6097,110 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
                                 usingBlock:^(NSUInteger index, BOOL* stop) {
         static_cast<void>(stop);
         material_.layers.erase(material_.layers.begin() + static_cast<std::ptrdiff_t>(index));
+        if (material_.layerHierarchy.size() > index) {
+            material_.layerHierarchy.erase(
+                material_.layerHierarchy.begin() + static_cast<std::ptrdiff_t>(index));
+        }
         [self.layerIdentities removeObjectAtIndex:index];
     }];
+    if (self.selectedGroupIdentity.length != 0) {
+        const auto fragment = [self selectedLayerFragment];
+        std::unordered_map<std::string, bool> removedGroups;
+        for (const auto& group : fragment.groups) {
+            removedGroups.emplace(group.identity, true);
+        }
+        std::erase_if(material_.layerGroups,
+            [&removedGroups](const paperweight::MaterialLayerGroup& group) {
+                return removedGroups.contains(group.identity);
+            });
+    }
     [self setSelectedModelLayerIndexes:[NSIndexSet indexSetWithIndex:nextIndex]];
+    [self finishLayerStructureChangeForOutputs:
+        paperweight::affectedMaterialOutputs(before, material_)];
+    return YES;
+}
+
+- (BOOL)insertLayerFragment:(const paperweight::LayerFragment&)fragment
+                 actionName:(NSString*)actionName
+{
+    if (fragment.layers.empty() ||
+        material_.layers.size() + fragment.layers.size() > paperweight::LayerLimits::maximumLayers ||
+        material_.layerGroups.size() + fragment.groups.size() > paperweight::LayerLimits::maximumGroups) {
+        self.statusLabel.stringValue = @"The overlay exceeds the material's layer or group limit.";
+        self.statusLabel.textColor = NSColor.systemRedColor;
+        return NO;
+    }
+
+    const auto before = material_;
+    [self registerLayerStackUndoWithName:actionName];
+    [self ensurePersistentLayerHierarchy];
+
+    std::unordered_map<std::string, std::string> remapped;
+    for (const auto& group : fragment.groups) {
+        remapped.emplace(group.identity, NSUUID.UUID.UUIDString.UTF8String);
+    }
+    for (const auto& hierarchy : fragment.hierarchy) {
+        remapped.emplace(hierarchy.identity, NSUUID.UUID.UUIDString.UTF8String);
+    }
+
+    NSString* insertedRootIdentity = nil;
+    for (const auto& source : fragment.groups) {
+        auto group = source;
+        group.identity = remapped.at(source.identity);
+        if (source.parentGroupIdentity.empty()) {
+            group.parentGroupIdentity.clear();
+            if (insertedRootIdentity == nil) {
+                insertedRootIdentity = [NSString stringWithUTF8String:group.identity.c_str()];
+            }
+        } else if (const auto parent = remapped.find(source.parentGroupIdentity);
+                   parent != remapped.end()) {
+            group.parentGroupIdentity = parent->second;
+        }
+        material_.layerGroups.push_back(std::move(group));
+    }
+
+    const std::size_t insertionIndex = fragment.groups.empty() &&
+            self.selectedLayerIndexes.count != 0
+        ? std::min<std::size_t>(self.selectedLayerIndexes.lastIndex + 1,
+              material_.layers.size())
+        : material_.layers.size();
+    material_.layers.insert(
+        material_.layers.begin() + static_cast<std::ptrdiff_t>(insertionIndex),
+        fragment.layers.begin(), fragment.layers.end());
+
+    std::vector<paperweight::MaterialLayerHierarchy> insertedHierarchy;
+    insertedHierarchy.reserve(fragment.layers.size());
+    for (std::size_t offset = 0; offset < fragment.layers.size(); ++offset) {
+        paperweight::MaterialLayerHierarchy hierarchy;
+        if (fragment.hierarchy.size() == fragment.layers.size()) {
+            const auto& source = fragment.hierarchy[offset];
+            hierarchy.identity = remapped.at(source.identity);
+            if (const auto parent = remapped.find(source.parentGroupIdentity);
+                parent != remapped.end()) {
+                hierarchy.parentGroupIdentity = parent->second;
+            }
+        } else {
+            hierarchy.identity = NSUUID.UUID.UUIDString.UTF8String;
+        }
+        insertedHierarchy.push_back(std::move(hierarchy));
+    }
+    material_.layerHierarchy.insert(
+        material_.layerHierarchy.begin() + static_cast<std::ptrdiff_t>(insertionIndex),
+        insertedHierarchy.begin(), insertedHierarchy.end());
+    for (std::size_t offset = 0; offset < insertedHierarchy.size(); ++offset) {
+        [self.layerIdentities insertObject:[NSString stringWithUTF8String:
+            insertedHierarchy[offset].identity.c_str()]
+                                   atIndex:insertionIndex + offset];
+    }
+
+    if (insertedRootIdentity != nil) {
+        self.selectedLayerIndexes = [NSIndexSet indexSet];
+        selectedLayer_ = -1;
+        self.selectedGroupIdentity = insertedRootIdentity;
+    } else {
+        [self setSelectedModelLayerIndexes:[NSIndexSet indexSetWithIndexesInRange:
+            NSMakeRange(insertionIndex, fragment.layers.size())]];
+    }
     [self finishLayerStructureChangeForOutputs:
         paperweight::affectedMaterialOutputs(before, material_)];
     return YES;
@@ -5679,31 +6248,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.statusLabel.textColor = NSColor.systemRedColor;
         return;
     }
-    const auto& pasted = std::get<paperweight::LayerFragment>(decoded).layers;
-    if (material_.layers.size() + pasted.size() > paperweight::LayerLimits::maximumLayers) {
-        self.statusLabel.stringValue = [NSString stringWithFormat:
-            @"Pasting %zu layers would exceed the 32-layer limit.", pasted.size()];
-        self.statusLabel.textColor = NSColor.systemRedColor;
-        return;
-    }
-
-    const auto before = material_;
-    [self registerLayerStackUndoWithName:@"Paste Layers"];
-    const std::size_t insertionIndex = self.selectedLayerIndexes.count == 0
-        ? material_.layers.size()
-        : std::min<std::size_t>(self.selectedLayerIndexes.lastIndex + 1,
-              material_.layers.size());
-    material_.layers.insert(
-        material_.layers.begin() + static_cast<std::ptrdiff_t>(insertionIndex),
-        pasted.begin(), pasted.end());
-    for (std::size_t offset = 0; offset < pasted.size(); ++offset) {
-        [self.layerIdentities insertObject:NSUUID.UUID.UUIDString
-                                   atIndex:insertionIndex + offset];
-    }
-    [self setSelectedModelLayerIndexes:[NSIndexSet indexSetWithIndexesInRange:
-        NSMakeRange(insertionIndex, pasted.size())]];
-    [self finishLayerStructureChangeForOutputs:
-        paperweight::affectedMaterialOutputs(before, material_)];
+    [self insertLayerFragment:std::get<paperweight::LayerFragment>(decoded)
+                   actionName:@"Paste Layers"];
 }
 
 - (void)duplicateLayers:(id)sender
@@ -5716,25 +6262,228 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         return;
     }
     static_cast<void>(sender);
-    const auto selected = [self selectedLayersInEvaluationOrder];
-    if (selected.empty() ||
-        material_.layers.size() + selected.size() > paperweight::LayerLimits::maximumLayers) {
+    const auto fragment = [self selectedLayerFragment];
+    if (fragment.layers.empty()) {
         return;
     }
-    const auto before = material_;
-    [self registerLayerStackUndoWithName:@"Duplicate Layers"];
-    const std::size_t insertionIndex = self.selectedLayerIndexes.lastIndex + 1;
-    material_.layers.insert(
-        material_.layers.begin() + static_cast<std::ptrdiff_t>(insertionIndex),
-        selected.begin(), selected.end());
-    for (std::size_t offset = 0; offset < selected.size(); ++offset) {
-        [self.layerIdentities insertObject:NSUUID.UUID.UUIDString
-                                   atIndex:insertionIndex + offset];
+    [self insertLayerFragment:fragment actionName:@"Duplicate Layers"];
+}
+
+- (void)groupSelectedLayers:(id)sender
+{
+    if (self.applicationCoordinatorMode) {
+        AppDelegate* editor = [self activeMaterialEditor];
+        if (editor != nil) [editor groupSelectedLayers:sender];
+        return;
     }
-    [self setSelectedModelLayerIndexes:[NSIndexSet indexSetWithIndexesInRange:
-        NSMakeRange(insertionIndex, selected.size())]];
+    static_cast<void>(sender);
+    NSIndexSet* selection = self.selectedLayerIndexes;
+    if (selection.count == 0 ||
+        material_.layerGroups.size() >= paperweight::LayerLimits::maximumGroups) {
+        return;
+    }
+    if (selection.lastIndex - selection.firstIndex + 1 != selection.count) {
+        self.statusLabel.stringValue = @"A group must contain a contiguous range of layers.";
+        self.statusLabel.textColor = NSColor.systemOrangeColor;
+        return;
+    }
+
+    const bool hasHierarchy = material_.layerHierarchy.size() == material_.layers.size();
+    const std::string parent = hasHierarchy
+        ? material_.layerHierarchy[selection.firstIndex].parentGroupIdentity
+        : std::string{};
+    __block bool sharedParent = true;
+    [selection enumerateIndexesUsingBlock:^(NSUInteger index, BOOL* stop) {
+        if (hasHierarchy && material_.layerHierarchy[index].parentGroupIdentity != parent) {
+            sharedParent = false;
+            *stop = YES;
+        }
+    }];
+    if (!sharedParent) {
+        self.statusLabel.stringValue = @"Selected layers must be siblings before they can be grouped.";
+        self.statusLabel.textColor = NSColor.systemOrangeColor;
+        return;
+    }
+
+    const auto before = material_;
+    [self registerLayerStackUndoWithName:@"Group Layers"];
+    [self ensurePersistentLayerHierarchy];
+    const std::string identity = NSUUID.UUID.UUIDString.UTF8String;
+    paperweight::MaterialLayerGroup group;
+    group.identity = identity;
+    group.parentGroupIdentity = parent;
+    group.name = "Group " + std::to_string(material_.layerGroups.size() + 1);
+    material_.layerGroups.push_back(std::move(group));
+    [selection enumerateIndexesUsingBlock:^(NSUInteger index, BOOL* stop) {
+        static_cast<void>(stop);
+        material_.layerHierarchy[index].parentGroupIdentity = identity;
+    }];
+    self.selectedLayerIndexes = [NSIndexSet indexSet];
+    selectedLayer_ = -1;
+    self.selectedGroupIdentity = [NSString stringWithUTF8String:identity.c_str()];
     [self finishLayerStructureChangeForOutputs:
         paperweight::affectedMaterialOutputs(before, material_)];
+}
+
+- (void)ungroupSelectedGroup:(id)sender
+{
+    if (self.applicationCoordinatorMode) {
+        AppDelegate* editor = [self activeMaterialEditor];
+        if (editor != nil) [editor ungroupSelectedGroup:sender];
+        return;
+    }
+    static_cast<void>(sender);
+    auto* selected = [self selectedLayerGroup];
+    if (selected == nullptr) return;
+    const auto before = material_;
+    [self registerLayerStackUndoWithName:@"Ungroup"];
+    const std::string identity = selected->identity;
+    const std::string parent = selected->parentGroupIdentity;
+    auto* revealed = [NSMutableIndexSet indexSet];
+    for (std::size_t index = 0; index < material_.layerHierarchy.size(); ++index) {
+        if (material_.layerHierarchy[index].parentGroupIdentity == identity) {
+            material_.layerHierarchy[index].parentGroupIdentity = parent;
+            [revealed addIndex:index];
+        }
+    }
+    for (auto& group : material_.layerGroups) {
+        if (group.parentGroupIdentity == identity) group.parentGroupIdentity = parent;
+    }
+    std::erase_if(material_.layerGroups,
+        [&identity](const paperweight::MaterialLayerGroup& group) {
+            return group.identity == identity;
+        });
+    [self setSelectedModelLayerIndexes:revealed.count == 0
+        ? [NSIndexSet indexSetWithIndex:0]
+        : revealed];
+    [self finishLayerStructureChangeForOutputs:
+        paperweight::affectedMaterialOutputs(before, material_)];
+}
+
+- (void)groupNameChanged:(NSTextField*)sender
+{
+    if (sender.tag < 0 || static_cast<std::size_t>(sender.tag) >= material_.layerGroups.size()) {
+        return;
+    }
+    NSString* trimmed = [sender.stringValue
+        stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if (trimmed.length == 0 || trimmed.length > paperweight::LayerLimits::maximumGroupNameLength ||
+        [trimmed containsString:@"#"] || [trimmed containsString:@"="]) {
+        [self rebuildLayerList];
+        self.statusLabel.stringValue = @"Group names must be 1–128 plain characters.";
+        self.statusLabel.textColor = NSColor.systemRedColor;
+        return;
+    }
+    material_.layerGroups[static_cast<std::size_t>(sender.tag)].name = trimmed.UTF8String;
+    self.layerTypeLabel.stringValue = [NSString stringWithFormat:@"Group: %@", trimmed];
+    [self markDirty];
+}
+
+- (void)controlTextDidEndEditing:(NSNotification*)notification
+{
+    auto* field = [notification.object isKindOfClass:NSTextField.class]
+        ? static_cast<NSTextField*>(notification.object)
+        : nil;
+    if ([field.identifier isEqualToString:@"paperweight.group-name"]) {
+        [self groupNameChanged:field];
+    }
+}
+
+- (void)insertBuiltInOverlay:(std::string_view)identifier
+{
+    const auto* overlay = paperweight::findBuiltInMaterialOverlay(identifier);
+    if (overlay != nullptr && [self insertLayerFragment:overlay->fragment
+                                           actionName:@"Insert Overlay"]) {
+        self.statusLabel.stringValue = [NSString stringWithFormat:@"Inserted %@.",
+            [NSString stringWithUTF8String:overlay->name.c_str()]];
+        self.statusLabel.textColor = NSColor.secondaryLabelColor;
+    }
+}
+
+- (void)insertPolishedMossOverlay:(id)sender
+{
+    if (self.applicationCoordinatorMode) {
+        [[self activeMaterialEditor] insertPolishedMossOverlay:sender];
+        return;
+    }
+    [self insertBuiltInOverlay:"polished-moss"];
+}
+
+- (void)insertPolishedLichenOverlay:(id)sender
+{
+    if (self.applicationCoordinatorMode) {
+        [[self activeMaterialEditor] insertPolishedLichenOverlay:sender];
+        return;
+    }
+    [self insertBuiltInOverlay:"polished-lichen"];
+}
+
+- (void)insertOverlayFromFile:(id)sender
+{
+    if (self.applicationCoordinatorMode) {
+        [[self activeMaterialEditor] insertOverlayFromFile:sender];
+        return;
+    }
+    static_cast<void>(sender);
+    auto* panel = [NSOpenPanel openPanel];
+    panel.allowedFileTypes = @[ @"pwoverlay" ];
+    if ([panel runModal] != NSModalResponseOK) return;
+    NSError* error = nil;
+    NSString* text = [NSString stringWithContentsOfURL:panel.URL
+                                              encoding:NSUTF8StringEncoding
+                                                 error:&error];
+    if (text == nil) {
+        self.statusLabel.stringValue = error.localizedDescription;
+        self.statusLabel.textColor = NSColor.systemRedColor;
+        return;
+    }
+    const auto decoded = paperweight::parseMaterialOverlay(text.UTF8String);
+    if (const auto* diagnostic = std::get_if<paperweight::ParseDiagnostic>(&decoded)) {
+        self.statusLabel.stringValue = [NSString stringWithFormat:
+            @"Overlay import failed at line %zu: %s", diagnostic->line,
+            diagnostic->message.c_str()];
+        self.statusLabel.textColor = NSColor.systemRedColor;
+        return;
+    }
+    const auto& overlay = std::get<paperweight::MaterialOverlay>(decoded);
+    [self insertLayerFragment:overlay.fragment actionName:@"Insert Overlay"];
+}
+
+- (void)saveSelectedGroupAsOverlay:(id)sender
+{
+    if (self.applicationCoordinatorMode) {
+        [[self activeMaterialEditor] saveSelectedGroupAsOverlay:sender];
+        return;
+    }
+    static_cast<void>(sender);
+    auto* group = [self selectedLayerGroup];
+    if (group == nullptr) return;
+    paperweight::MaterialOverlay overlay;
+    overlay.identifier = group->identity;
+    overlay.name = group->name;
+    overlay.description = "Reusable seedless overlay created in Paperweight.";
+    overlay.fragment = [self selectedLayerFragment];
+    const auto encoded = paperweight::serialiseMaterialOverlay(overlay);
+    if (const auto* error = std::get_if<paperweight::SerialisationError>(&encoded)) {
+        self.statusLabel.stringValue = [NSString stringWithUTF8String:error->message.c_str()];
+        self.statusLabel.textColor = NSColor.systemRedColor;
+        return;
+    }
+    auto* panel = [NSSavePanel savePanel];
+    panel.allowedFileTypes = @[ @"pwoverlay" ];
+    panel.nameFieldStringValue = [NSString stringWithFormat:@"%@.pwoverlay",
+        [NSString stringWithUTF8String:group->name.c_str()]];
+    if ([panel runModal] != NSModalResponseOK) return;
+    const auto& contents = std::get<std::string>(encoded);
+    NSData* data = [NSData dataWithBytes:contents.data() length:contents.size()];
+    NSError* error = nil;
+    if (![data writeToURL:panel.URL options:NSDataWritingAtomic error:&error]) {
+        self.statusLabel.stringValue = error.localizedDescription;
+        self.statusLabel.textColor = NSColor.systemRedColor;
+        return;
+    }
+    self.statusLabel.stringValue = @"Reusable overlay saved.";
+    self.statusLabel.textColor = NSColor.secondaryLabelColor;
 }
 
 - (void)deleteSelectedLayers:(id)sender
@@ -5849,7 +6598,26 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 
     const auto before = material_;
     [self registerLayerStackUndoWithName:@"Reorder Layers"];
+    std::vector<paperweight::MaterialLayerHierarchy> reorderedHierarchy;
+    if (material_.layerHierarchy.size() == material_.layers.size()) {
+        std::vector<paperweight::MaterialLayerHierarchy> displayHierarchy(
+            material_.layerHierarchy.rbegin(), material_.layerHierarchy.rend());
+        std::vector<paperweight::MaterialLayerHierarchy> movingHierarchy;
+        std::vector<paperweight::MaterialLayerHierarchy> remainingHierarchy;
+        for (std::size_t row = 0; row < displayHierarchy.size(); ++row) {
+            ([displaySelection containsIndex:row] ? movingHierarchy : remainingHierarchy)
+                .push_back(displayHierarchy[row]);
+        }
+        remainingHierarchy.insert(
+            remainingHierarchy.begin() + static_cast<std::ptrdiff_t>(insertionRow),
+            movingHierarchy.begin(), movingHierarchy.end());
+        reorderedHierarchy.assign(
+            remainingHierarchy.rbegin(), remainingHierarchy.rend());
+    }
     material_.layers = std::move(reordered);
+    if (!reorderedHierarchy.empty()) {
+        material_.layerHierarchy = std::move(reorderedHierarchy);
+    }
     self.layerIdentities =
         [remainingIdentities.reverseObjectEnumerator.allObjects mutableCopy];
     auto* newModelSelection = [NSMutableIndexSet indexSet];
@@ -5902,58 +6670,111 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     }
 }
 
-- (BOOL)tableView:(NSTableView*)tableView
-    writeRowsWithIndexes:(NSIndexSet*)rowIndexes
-            toPasteboard:(NSPasteboard*)pasteboard
+- (BOOL)outlineView:(NSOutlineView*)outlineView
+         writeItems:(NSArray*)items
+       toPasteboard:(NSPasteboard*)pasteboard
 {
-    if (tableView != self.layerTableView || rowIndexes.count == 0) {
-        return NO;
+    if (outlineView != self.layerTableView || items.count == 0) return NO;
+    auto* indexes = [NSMutableIndexSet indexSet];
+    for (PWLayerOutlineItem* item in items) {
+        if (item.kind != PWLayerOutlineItemKindLayer) return NO;
+        [indexes addIndex:static_cast<NSUInteger>(item.modelIndex)];
     }
-    [self setSelectedModelLayerIndexes:
-        [self modelLayerIndexesForDisplayRows:rowIndexes]];
+    [self setSelectedModelLayerIndexes:indexes];
     [pasteboard declareTypes:@[layerReorderPasteboardType] owner:nil];
     return [pasteboard setString:self.layerDragIdentifier
                          forType:layerReorderPasteboardType];
 }
 
-- (NSDragOperation)tableView:(NSTableView*)tableView
+- (NSDragOperation)outlineView:(NSOutlineView*)outlineView
                  validateDrop:(id<NSDraggingInfo>)draggingInfo
-                  proposedRow:(NSInteger)row
-        proposedDropOperation:(NSTableViewDropOperation)dropOperation
+                  proposedItem:(id)proposedItem
+            proposedChildIndex:(NSInteger)childIndex
 {
-    static_cast<void>(dropOperation);
-    if (tableView != self.layerTableView || row < 0 ||
-        static_cast<std::size_t>(row) > material_.layers.size()) {
-        return NSDragOperationNone;
-    }
+    if (outlineView != self.layerTableView || childIndex < 0) return NSDragOperationNone;
     NSString* source = [draggingInfo.draggingPasteboard
         stringForType:layerReorderPasteboardType];
-    if (![source isEqualToString:self.layerDragIdentifier]) {
-        return NSDragOperationNone;
+    if (![source isEqualToString:self.layerDragIdentifier]) return NSDragOperationNone;
+    auto* parent = static_cast<PWLayerOutlineItem*>(proposedItem);
+    if (parent != nil && parent.kind != PWLayerOutlineItemKindGroup) return NSDragOperationNone;
+    NSArray<PWLayerOutlineItem*>* siblings = parent == nil
+        ? self.layerOutlineRoots : parent.children;
+    if (static_cast<NSUInteger>(childIndex) > siblings.count) return NSDragOperationNone;
+    for (PWLayerOutlineItem* sibling in siblings) {
+        if (sibling.kind != PWLayerOutlineItemKindLayer) return NSDragOperationNone;
     }
-    [tableView setDropRow:row dropOperation:NSTableViewDropAbove];
     return NSDragOperationMove;
 }
 
-- (BOOL)tableView:(NSTableView*)tableView
-        acceptDrop:(id<NSDraggingInfo>)draggingInfo
-               row:(NSInteger)row
-     dropOperation:(NSTableViewDropOperation)dropOperation
+- (BOOL)outlineView:(NSOutlineView*)outlineView
+         acceptDrop:(id<NSDraggingInfo>)draggingInfo
+                item:(id)value
+          childIndex:(NSInteger)childIndex
 {
     static_cast<void>(draggingInfo);
-    static_cast<void>(dropOperation);
-    return tableView == self.layerTableView &&
-        [self moveSelectedLayersToDisplayRow:row];
+    if (outlineView != self.layerTableView || childIndex < 0) return NO;
+    auto* parent = static_cast<PWLayerOutlineItem*>(value);
+    NSArray<PWLayerOutlineItem*>* siblings = parent == nil
+        ? self.layerOutlineRoots : parent.children;
+    if (static_cast<NSUInteger>(childIndex) > siblings.count) return NO;
+
+    NSMutableArray<PWLayerOutlineItem*>* moving = [NSMutableArray array];
+    NSMutableArray<PWLayerOutlineItem*>* remaining = [NSMutableArray array];
+    NSUInteger removedBeforeDrop = 0;
+    for (NSUInteger index = 0; index < siblings.count; ++index) {
+        PWLayerOutlineItem* item = siblings[index];
+        if ([self.selectedLayerIndexes containsIndex:static_cast<NSUInteger>(item.modelIndex)]) {
+            [moving addObject:item];
+            if (index < static_cast<NSUInteger>(childIndex)) ++removedBeforeDrop;
+        } else {
+            [remaining addObject:item];
+        }
+    }
+    if (moving.count == 0) return NO;
+    const NSUInteger insertion = static_cast<NSUInteger>(childIndex) - removedBeforeDrop;
+    NSIndexSet* insertIndexes = [NSIndexSet indexSetWithIndexesInRange:
+        NSMakeRange(insertion, moving.count)];
+    [remaining insertObjects:moving atIndexes:insertIndexes];
+
+    std::vector<std::size_t> positions;
+    positions.reserve(siblings.count);
+    for (PWLayerOutlineItem* item in siblings) {
+        positions.push_back(static_cast<std::size_t>(item.modelIndex));
+    }
+    std::sort(positions.begin(), positions.end());
+    const auto before = material_;
+    [self registerLayerStackUndoWithName:@"Reorder Layers"];
+    [self ensurePersistentLayerHierarchy];
+    const auto oldLayers = material_.layers;
+    const auto oldHierarchy = material_.layerHierarchy;
+    auto* newSelection = [NSMutableIndexSet indexSet];
+    for (std::size_t index = 0; index < positions.size(); ++index) {
+        const auto source = static_cast<std::size_t>(
+            remaining[positions.size() - 1 - index].modelIndex);
+        material_.layers[positions[index]] = oldLayers[source];
+        material_.layerHierarchy[positions[index]] = oldHierarchy[source];
+        if ([moving containsObject:remaining[positions.size() - 1 - index]]) {
+            [newSelection addIndex:positions[index]];
+        }
+    }
+    [self resetLayerIdentities];
+    [self setSelectedModelLayerIndexes:newSelection];
+    [self finishLayerStructureChangeForOutputs:
+        paperweight::affectedMaterialOutputs(before, material_)];
+    return YES;
 }
 
 - (void)layerEnabledChanged:(NSButton*)sender
 {
     const auto before = material_;
     auto* layer = layerAt(material_, selectedLayer_);
-    if (layer == nullptr) {
+    if (layer != nullptr) {
+        layer->enabled = sender.state == NSControlStateValueOn;
+    } else if (auto* group = [self selectedLayerGroup]; group != nullptr) {
+        group->enabled = sender.state == NSControlStateValueOn;
+    } else {
         return;
     }
-    layer->enabled = sender.state == NSControlStateValueOn;
     [self rebuildLayerList];
     [self regeneratePreviewForOutputs:paperweight::affectedMaterialOutputs(before, material_)];
     [self markDirty];
@@ -6086,7 +6907,11 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         return;
     }
     selectedLayer_ = static_cast<NSInteger>(material_.layers.size() - 1);
-    [self.layerIdentities addObject:NSUUID.UUID.UUIDString];
+    NSString* identity = NSUUID.UUID.UUIDString;
+    [self.layerIdentities addObject:identity];
+    if (!material_.layerGroups.empty() || !material_.layerHierarchy.empty()) {
+        material_.layerHierarchy.push_back({identity.UTF8String, {}});
+    }
     [self setSelectedModelLayerIndexes:[NSIndexSet indexSetWithIndex:
         static_cast<NSUInteger>(selectedLayer_)]];
     [self finishLayerStructureChangeForOutputs:
@@ -6590,6 +7415,35 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     const auto before = material_;
     auto* layer = layerAt(material_, selectedLayer_);
     if (layer == nullptr) {
+        auto* group = [self selectedLayerGroup];
+        if (group == nullptr) return;
+        group->compositeMode = static_cast<paperweight::CompositeMode>(
+            std::max<NSInteger>(0, self.layerCompositeControl.selectedSegment));
+        group->opacity = self.layerOpacitySlider.doubleValue;
+        if ([self.layerOutputButtons containsObject:sender]) {
+            group->outputs = {
+                self.layerOutputButtons[0].state == NSControlStateValueOn,
+                self.layerOutputButtons[1].state == NSControlStateValueOn,
+                self.layerOutputButtons[2].state == NSControlStateValueOn,
+                self.layerOutputButtons[3].state == NSControlStateValueOn,
+                self.layerOutputButtons[4].state == NSControlStateValueOn,
+                self.layerOutputButtons[5].state == NSControlStateValueOn,
+                self.layerOutputButtons[6].state == NSControlStateValueOn,
+                self.layerOutputButtons[7].state == NSControlStateValueOn,
+                self.layerOutputButtons[8].state == NSControlStateValueOn,
+            };
+            if (!group->outputs.colour && !group->outputs.height &&
+                !group->outputs.roughness && !group->outputs.metalness &&
+                !group->outputs.coating && !group->outputs.occlusion &&
+                !group->outputs.clearCoat && !group->outputs.clearCoatRoughness &&
+                !group->outputs.emissive) {
+                group->outputs.colour = true;
+                self.layerOutputButtons[0].state = NSControlStateValueOn;
+            }
+        }
+        [self updateLayerInspectorLiveValueLabels];
+        [self regeneratePreviewForOutputs:paperweight::affectedMaterialOutputs(before, material_)];
+        [self markDirty];
         return;
     }
 
@@ -6769,11 +7623,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 {
     const auto before = material_;
     auto* layer = layerAt(material_, selectedLayer_);
-    if (layer == nullptr) {
-        return;
-    }
-
-    auto& transform = layer->transform;
+    auto* group = [self selectedLayerGroup];
+    if (layer == nullptr && group == nullptr) return;
+    auto& transform = layer != nullptr ? layer->transform : group->transform;
     transform.scaleX = static_cast<std::uint32_t>(
         std::llround(self.transformScaleXSlider.doubleValue));
     transform.scaleY = static_cast<std::uint32_t>(
@@ -7525,11 +8377,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 {
     const auto before = material_;
     auto* layer = layerAt(material_, selectedLayer_);
-    if (layer == nullptr) {
-        return;
-    }
-
-    auto& mask = layer->mask;
+    auto* group = [self selectedLayerGroup];
+    if (layer == nullptr && group == nullptr) return;
+    auto& mask = layer != nullptr ? layer->mask : group->mask;
     mask.enabled = self.maskEnabledCheckbox.state == NSControlStateValueOn;
     mask.inverted = self.maskInvertedCheckbox.state == NSControlStateValueOn;
     if (sender == self.maskSeedOffsetField) {

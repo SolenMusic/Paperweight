@@ -623,6 +623,117 @@ GraphCompilationResult compileMaterialGraph(const Material& material)
                 layerIndex);
     };
 
+    struct StackItem {
+        std::optional<std::size_t> layerIndex;
+        std::optional<std::size_t> groupIndex;
+        std::vector<StackItem> children;
+    };
+    StackItem stackRoot;
+    std::unordered_map<std::string, std::size_t> groupIndices;
+    groupIndices.reserve(material.layerGroups.size());
+    for (std::size_t index = 0; index < material.layerGroups.size(); ++index) {
+        groupIndices.emplace(material.layerGroups[index].identity, index);
+    }
+    for (std::size_t layerIndex = 0; layerIndex < material.layers.size(); ++layerIndex) {
+        std::vector<std::size_t> path;
+        auto parent = material.layerHierarchy.empty()
+            ? std::string{}
+            : material.layerHierarchy[layerIndex].parentGroupIdentity;
+        while (!parent.empty()) {
+            const auto groupIndex = groupIndices.at(parent);
+            path.push_back(groupIndex);
+            parent = material.layerGroups[groupIndex].parentGroupIdentity;
+        }
+        std::reverse(path.begin(), path.end());
+
+        auto* container = &stackRoot;
+        for (const auto groupIndex : path) {
+            if (container->children.empty() ||
+                container->children.back().groupIndex != groupIndex) {
+                StackItem groupItem;
+                groupItem.groupIndex = groupIndex;
+                container->children.push_back(std::move(groupItem));
+            }
+            container = &container->children.back();
+        }
+        StackItem layerItem;
+        layerItem.layerIndex = layerIndex;
+        container->children.push_back(std::move(layerItem));
+    }
+
+    struct StackCompilation {
+        GraphNodeId accumulated{invalidGraphNodeId};
+        bool contributed{};
+    };
+    using StackCompilationResult = std::variant<StackCompilation, GraphError>;
+    std::function<StackCompilationResult(
+        const StackItem&,
+        GraphNodeId,
+        std::optional<MaterialOutput>)>
+        compileStack;
+    compileStack = [&](const StackItem& container,
+                       GraphNodeId initial,
+                       std::optional<MaterialOutput> route) -> StackCompilationResult {
+        StackCompilation result{initial, false};
+        for (const auto& item : container.children) {
+            if (item.layerIndex) {
+                const auto layerIndex = *item.layerIndex;
+                const auto& layer = material.layers[layerIndex];
+                if (!layer.enabled || (route && !layer.outputs.includes(*route))) {
+                    continue;
+                }
+                auto compiled = compileLayer(result.accumulated, layer, layerIndex);
+                if (const auto* error = std::get_if<GraphError>(&compiled)) {
+                    return *error;
+                }
+                result.accumulated = std::get<GraphNodeId>(compiled);
+                result.contributed = true;
+                continue;
+            }
+
+            const auto& group = material.layerGroups[*item.groupIndex];
+            if (!group.enabled || (route && !group.outputs.includes(*route))) {
+                continue;
+            }
+            // Groups are pass-through by default: their processing layers see
+            // the accumulated material below the group. Therefore wrapping a
+            // contiguous layer range in a 100%-opaque, unmasked blend group is
+            // pixel-preserving. Opacity and masks blend the complete before/
+            // after group result coherently for every routed output.
+            auto childResultVariant = compileStack(item, result.accumulated, route);
+            if (const auto* error = std::get_if<GraphError>(&childResultVariant)) {
+                return *error;
+            }
+            const auto childResult = std::get<StackCompilation>(childResultVariant);
+            if (!childResult.contributed) {
+                continue;
+            }
+
+            std::optional<GraphNodeId> mask;
+            if (group.mask.enabled) {
+                const auto maskId = nextId++;
+                graph.nodes.emplace_back(MaskNode{
+                    maskId,
+                    std::nullopt,
+                    group.transform,
+                    group.mask,
+                });
+                mask = maskId;
+            }
+            result.accumulated = addProcessing(
+                CompositeProcessing{
+                    result.accumulated,
+                    childResult.accumulated,
+                    mask,
+                    group.compositeMode,
+                    group.opacity,
+                },
+                std::nullopt);
+            result.contributed = true;
+        }
+        return result;
+    };
+
     GraphNodeId colourInput = invalidGraphNodeId;
     GraphNodeId heightInput = invalidGraphNodeId;
     GraphNodeId roughnessInput = invalidGraphNodeId;
@@ -653,22 +764,18 @@ GraphCompilationResult compileMaterialGraph(const Material& material)
             material.layers.end(),
             [](const MaterialLayer& layer) {
                 return !layer.enabled || layer.outputs.isLegacyAll();
-            });
+            }) && std::all_of(
+                material.layerGroups.begin(),
+                material.layerGroups.end(),
+                [](const MaterialLayerGroup& group) {
+                    return !group.enabled || group.outputs.isLegacyAll();
+                });
         if (useLegacySharedGraph) {
-            GraphNodeId accumulated = base;
-            for (std::size_t layerIndex = 0;
-                 layerIndex < material.layers.size();
-                 ++layerIndex) {
-                const auto& layer = material.layers[layerIndex];
-                if (!layer.enabled) {
-                    continue;
-                }
-                auto compiled = compileLayer(accumulated, layer, layerIndex);
-                if (const auto* error = std::get_if<GraphError>(&compiled)) {
-                    return *error;
-                }
-                accumulated = std::get<GraphNodeId>(compiled);
+            auto compiled = compileStack(stackRoot, base, std::nullopt);
+            if (const auto* error = std::get_if<GraphError>(&compiled)) {
+                return *error;
             }
+            const auto accumulated = std::get<StackCompilation>(compiled).accumulated;
             colourInput = accumulated;
             heightInput = accumulated;
             roughnessInput = accumulated;
@@ -692,26 +799,15 @@ GraphCompilationResult compileMaterialGraph(const Material& material)
                 MaterialOutput::clearCoatRoughness,
                 MaterialOutput::emissive,
             };
-            for (std::size_t layerIndex = 0;
-                 layerIndex < material.layers.size();
-                 ++layerIndex) {
-                const auto& layer = material.layers[layerIndex];
-                if (!layer.enabled) {
-                    continue;
+            for (std::size_t route = 0; route < routedOutputs.size(); ++route) {
+                auto compiled = compileStack(
+                    stackRoot,
+                    accumulated[route],
+                    routedOutputs[route]);
+                if (const auto* error = std::get_if<GraphError>(&compiled)) {
+                    return *error;
                 }
-                for (std::size_t route = 0; route < routedOutputs.size(); ++route) {
-                    if (!layer.outputs.includes(routedOutputs[route])) {
-                        continue;
-                    }
-                    auto compiled = compileLayer(
-                        accumulated[route],
-                        layer,
-                        layerIndex);
-                    if (const auto* error = std::get_if<GraphError>(&compiled)) {
-                        return *error;
-                    }
-                    accumulated[route] = std::get<GraphNodeId>(compiled);
-                }
+                accumulated[route] = std::get<StackCompilation>(compiled).accumulated;
             }
             colourInput = accumulated[0];
             heightInput = accumulated[1];

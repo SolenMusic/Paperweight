@@ -52,6 +52,10 @@ struct Material {
     double emissiveIntensity{0.0};
     double anisotropyStrength{0.0};
     double anisotropyRotationDegrees{0.0};
+    // Appended for source compatibility with aggregate initialisers from the
+    // original flat material model.
+    std::vector<MaterialLayerGroup> layerGroups{};
+    std::vector<MaterialLayerHierarchy> layerHierarchy{};
 
     friend bool operator==(const Material&, const Material&) = default;
 };

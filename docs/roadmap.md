@@ -493,6 +493,29 @@ the conservatively affected output set and supersedes obsolete preview work.
 `.pmat` stays at format 22 and every generated output remains byte-identical.
 Tracked by [roadmap issue #307](https://github.com/SolenMusic/Paperweight/issues/307).
 
+## v0.0.32 - Layer Groups and Reusable Overlays
+
+Implemented: replace the flat presentation with a native collapsible AppKit
+outline backed by portable, stable group and layer identities. Contiguous
+sibling layers can form a group, and selecting descendants inside an existing
+group creates a nested group. Group names, enabled state, output routing,
+composite mode, opacity, periodic mask, and mask transform are ordinary authored
+material properties; disclosure state is UI-only.
+
+Groups use pass-through semantics. An enabled, unmasked, 100%-opaque blend group
+does not change a flat recipe's output, including when it contains processing
+layers. Authored opacity or a mask blends the complete before/after subtree once
+and uses the same deterministic coverage sample for every routed material
+channel. Disabled groups skip the complete subtree.
+
+PMAT format 23 stores the hierarchy readably and rejects missing parents,
+duplicate identities, cycles, excessive nesting, and split/non-contiguous group
+ranges. Version-22 and older documents remain flat and retain every output byte.
+Layer-fragment version 2 copies a complete group subtree and remaps identities on
+paste. The seedless `.pwoverlay` envelope supports reusable source overlays;
+Polished Moss and Polished Lichen ship as editable examples. Tracked by
+[roadmap issue #308](https://github.com/SolenMusic/Paperweight/issues/308).
+
 ## v0.1.0 - Game Library
 
 Stabilise the embedding API and add material-definition versioning, generator

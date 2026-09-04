@@ -44,7 +44,7 @@ LayerFragmentParseResult parseLayerFragment(std::string_view text)
     if (result.ec != std::errc{} || result.ptr != versionText.data() + versionText.size()) {
         return ParseDiagnostic{2, versionPrefix.size() + 1, "invalid layer fragment version"};
     }
-    if (version != currentLayerFragmentVersion) {
+    if (version < minimumLayerFragmentVersion || version > currentLayerFragmentVersion) {
         return ParseDiagnostic{2, versionPrefix.size() + 1, "unsupported layer fragment version"};
     }
     if (pmatText.empty()) {
@@ -61,12 +61,29 @@ LayerFragmentParseResult parseLayerFragment(std::string_view text)
     if (material.layers.empty()) {
         return ParseDiagnostic{3, 1, "layer fragment contains no layers"};
     }
-    return LayerFragment{std::move(material.layers)};
+    if (version == 1 &&
+        (!material.layerGroups.empty() || !material.layerHierarchy.empty())) {
+        return ParseDiagnostic{3, 1, "version-1 layer fragments cannot contain groups"};
+    }
+    return LayerFragment{
+        std::move(material.layers),
+        std::move(material.layerGroups),
+        std::move(material.layerHierarchy),
+    };
 }
 
 LayerFragmentSerialisationResult serialiseLayerFragment(
     std::span<const MaterialLayer> layers)
 {
+    LayerFragment fragment;
+    fragment.layers.assign(layers.begin(), layers.end());
+    return serialiseLayerFragment(fragment);
+}
+
+LayerFragmentSerialisationResult serialiseLayerFragment(
+    const LayerFragment& fragment)
+{
+    const auto& layers = fragment.layers;
     if (layers.empty()) {
         return SerialisationError{"cannot copy an empty layer selection"};
     }
@@ -76,6 +93,8 @@ LayerFragmentSerialisationResult serialiseLayerFragment(
 
     Material carrier;
     carrier.layers.assign(layers.begin(), layers.end());
+    carrier.layerGroups = fragment.groups;
+    carrier.layerHierarchy = fragment.hierarchy;
     const auto encoded = serialisePmat(carrier);
     if (const auto* error = std::get_if<SerialisationError>(&encoded)) {
         return *error;

@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <variant>
 #include <vector>
@@ -1017,8 +1018,40 @@ struct MaterialLayer {
     friend constexpr bool operator==(const MaterialLayer&, const MaterialLayer&) = default;
 };
 
+// Groups are compositing scopes, not a second evaluation model. Their direct
+// and nested children remain in Material::layers in evaluation order and refer
+// to their immediate parent by identity.
+struct MaterialLayerGroup {
+    std::string identity;
+    std::string parentGroupIdentity;
+    std::string name{"Group"};
+    bool enabled{true};
+    double opacity{1.0};
+    CompositeMode compositeMode{CompositeMode::blend};
+    CoordinateTransform transform;
+    LayerMask mask;
+    LayerOutputRouting outputs;
+
+    friend bool operator==(
+        const MaterialLayerGroup&,
+        const MaterialLayerGroup&) = default;
+};
+
+struct MaterialLayerHierarchy {
+    std::string identity;
+    std::string parentGroupIdentity;
+
+    friend bool operator==(
+        const MaterialLayerHierarchy&,
+        const MaterialLayerHierarchy&) = default;
+};
+
 struct LayerLimits {
     static constexpr std::size_t maximumLayers = 32;
+    static constexpr std::size_t maximumGroups = 32;
+    static constexpr std::size_t maximumGroupDepth = 8;
+    static constexpr std::size_t maximumIdentityLength = 96;
+    static constexpr std::size_t maximumGroupNameLength = 128;
     static constexpr double minimumOpacity = 0.0;
     static constexpr double maximumOpacity = 1.0;
     static constexpr double minimumLevel = 0.0;
