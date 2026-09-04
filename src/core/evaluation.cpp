@@ -8,6 +8,7 @@
 #include <paperweight/shape.hpp>
 #include <paperweight/structural.hpp>
 #include <paperweight/surface.hpp>
+#include <paperweight/textile.hpp>
 
 #include "graph_evaluator.hpp"
 #include "noise_internal.hpp"
@@ -726,6 +727,64 @@ EvaluatedSample evaluateOperation(
                     leaves,
                     buildLeafClusterLayout(leaves, context.material.seed),
                     context);
+            },
+            [&context](const TextileOperation& textile) {
+                const auto textileSample = evaluateTextile(
+                    textile,
+                    context.u,
+                    context.v,
+                    context.material.seed);
+                double value = textileSample.coverage;
+                switch (textile.field) {
+                case TextileField::material:
+                case TextileField::height:
+                    value = textileSample.height;
+                    break;
+                case TextileField::warp:
+                    value = textileSample.warp;
+                    break;
+                case TextileField::weft:
+                    value = textileSample.weft;
+                    break;
+                case TextileField::overUnder:
+                    value = textileSample.overUnder;
+                    break;
+                case TextileField::fibres:
+                    value = textileSample.fibres;
+                    break;
+                case TextileField::pile:
+                    value = textileSample.pile;
+                    break;
+                case TextileField::damage:
+                    value = textileSample.damage;
+                    break;
+                case TextileField::colourVariation:
+                    value = textileSample.colourVariation;
+                    break;
+                case TextileField::direction:
+                    value = textileSample.direction;
+                    break;
+                }
+                if (textile.field != TextileField::material) {
+                    auto result = sampleFromScalar(context.material, value);
+                    result.region = textileSample.region;
+                    return result;
+                }
+                const auto yarn = sampleFromColour(textileSample.colour);
+                const auto backing = sampleFromColour(textile.damageColour);
+                const double coverage = std::clamp(textileSample.coverage, 0.0, 1.0);
+                auto result = EvaluatedSample{
+                    textileSample.height,
+                    backing.red + (yarn.red - backing.red) * coverage,
+                    backing.green + (yarn.green - backing.green) * coverage,
+                    backing.blue + (yarn.blue - backing.blue) * coverage,
+                    backing.alpha + (yarn.alpha - backing.alpha) * coverage,
+                    textileSample.region,
+                };
+                result.scalar = context.output == MaterialOutput::roughness
+                    ? textileSample.roughness
+                    : textileSample.height;
+                return result;
             },
             [&input, &context](const OrganicAccumulationOperation& organic) {
                 const auto growth = evaluateOrganicAccumulation(

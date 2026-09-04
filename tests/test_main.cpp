@@ -19,6 +19,7 @@
 #include <paperweight/structural.hpp>
 #include <paperweight/surface.hpp>
 #include <paperweight/stylised_lighting.hpp>
+#include <paperweight/textile.hpp>
 #include <paperweight/version.hpp>
 
 #include <algorithm>
@@ -173,9 +174,9 @@ paperweight::Material materialWithNoiseParameters(
 
 void testVersion()
 {
-    constexpr paperweight::Version expected{0, 0, 27};
+    constexpr paperweight::Version expected{0, 0, 28};
     static_assert(paperweight::currentVersion == expected);
-    expect(paperweight::versionString() == "0.0.27", "version string is 0.0.27");
+    expect(paperweight::versionString() == "0.0.28", "version string is 0.0.28");
 }
 
 void testImage()
@@ -989,7 +990,7 @@ void testRegionAttributes()
 
     const auto serialised = paperweight::serialisePmat(layered);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 19") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 20") != std::string::npos &&
                text->find("operation = region_field") != std::string::npos,
            "region fields introduced in version 9 serialise canonically as current .pmat");
     if (text != nullptr) {
@@ -1172,7 +1173,7 @@ void testCourseLayouts()
 
     const auto serialised = paperweight::serialisePmat(physicalMaterial);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 19") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 20") != std::string::npos &&
                text->find("operation = course_layout") != std::string::npos &&
                text->find("course.sizing = physical") != std::string::npos,
            "physical course layouts serialise explicitly in .pmat version 10");
@@ -1397,7 +1398,7 @@ void testRegionSurfaceSculpting()
 
     const auto serialised = paperweight::serialisePmat(material);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 19") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 20") != std::string::npos &&
                text->find("operation = region_surface") != std::string::npos &&
                text->find("sculpt.faceted_normals = true") != std::string::npos,
            "region sculpture serialises explicitly in .pmat version 11");
@@ -1690,7 +1691,7 @@ void testShapePrimitivesAndLattices()
 
     const auto serialised = paperweight::serialisePmat(graphMaterial);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 19") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 20") != std::string::npos &&
                text->find("operation = shape_boolean") != std::string::npos &&
                text->find("shape.vertex.5.y") != std::string::npos &&
                text->find("shape.radial_copies = 4") != std::string::npos &&
@@ -1703,11 +1704,11 @@ void testShapePrimitivesAndLattices()
                std::get<paperweight::Material>(reparsed) == graphMaterial,
                "shape, lattice, and radial motif materials round-trip exactly");
         auto versionEighteen = *text;
-        const auto currentMarker = versionEighteen.find("pmat.version = 19");
+        const auto currentMarker = versionEighteen.find("pmat.version = 20");
         if (currentMarker != std::string::npos) {
             versionEighteen.replace(
                 currentMarker,
-                std::string("pmat.version = 19").size(),
+                std::string("pmat.version = 20").size(),
                 "pmat.version = 18");
         }
         const auto radialRejected = paperweight::parsePmat(versionEighteen);
@@ -1944,7 +1945,7 @@ void testDeterministicScatter()
     const auto serialised = paperweight::serialisePmat(material);
     const auto* scatterText = std::get_if<std::string>(&serialised);
     expect(scatterText != nullptr &&
-               scatterText->find("pmat.version = 19") != std::string::npos &&
+               scatterText->find("pmat.version = 20") != std::string::npos &&
                scatterText->find("scatter.population.1.colour_high") != std::string::npos &&
                scatterText->find("scatter.exclusion_mask.enabled") != std::string::npos,
            "scatter populations, attributes, and masks serialise explicitly in .pmat version 13");
@@ -2198,7 +2199,7 @@ void testOrganicStructures()
     const auto serialised = paperweight::serialisePmat(material);
     const auto* organicText = std::get_if<std::string>(&serialised);
     expect(organicText != nullptr &&
-               organicText->find("pmat.version = 19") != std::string::npos &&
+               organicText->find("pmat.version = 20") != std::string::npos &&
                organicText->find("leaf.vein_pairs") != std::string::npos &&
                organicText->find("organic.accumulation.kind") != std::string::npos,
            "organic structures serialise explicitly in .pmat version 14");
@@ -2411,7 +2412,7 @@ void testAdvancedSurfaceOperations()
                    std::get<paperweight::Material>(reparsed) == material,
                "advanced surface recipes round-trip through .pmat version 8 exactly");
         auto premature = *text;
-        const auto marker = premature.find("pmat.version = 19");
+        const auto marker = premature.find("pmat.version = 20");
         if (marker != std::string::npos) {
             premature = downgradeCurrentPmat(std::move(premature), 7);
         }
@@ -2581,7 +2582,7 @@ void testStylisedOperations()
 
     const auto serialised = paperweight::serialisePmat(stylised);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 19") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 20") != std::string::npos &&
                text->find("operation = colour_ramp") != std::string::npos &&
                text->find("operation = ink_contour") != std::string::npos,
            "stylisation serialises in the human-readable .pmat v9 format");
@@ -3495,7 +3496,7 @@ void testPmat()
 {
     constexpr std::string_view canonical =
         "# Paperweight procedural material\n"
-        "pmat.version = 19\n"
+        "pmat.version = 20\n"
         "material.type = fbm\n"
         "material.seed = 18431\n"
         "material.width = 1m\n"
@@ -3723,6 +3724,18 @@ void testPmat()
             "arc-and-crescent-motifs.pmat",
             {10038252009876605427ULL, 6417824936101105443ULL,
              14081587268663535817ULL, 7130900674626673123ULL}},
+        ShowcaseGolden{
+            "woven-upholstery.pmat",
+            {202589064041873769ULL, 11213567237836684220ULL,
+             14315434485330782466ULL, 18079641169648406595ULL}},
+        ShowcaseGolden{
+            "alternating-carpet.pmat",
+            {14785652829194717461ULL, 12118325290182222723ULL,
+             5179415732358359939ULL, 13018653927931753347ULL}},
+        ShowcaseGolden{
+            "heraldic-banner-cloth.pmat",
+            {9006135550421082957ULL, 14630579878054693309ULL,
+             15396739948278339414ULL, 16059683881342001910ULL}},
     };
     constexpr std::array outputs{
         paperweight::MaterialOutput::colour,
@@ -3783,7 +3796,7 @@ void testPmat()
         legacyBrickMaterial.layers = {paperweight::makeBrickGridLayer()};
         auto versionFourBrick = std::get<std::string>(
             paperweight::serialisePmat(legacyBrickMaterial));
-        const auto versionMarkerPosition = versionFourBrick.find("pmat.version = 19");
+        const auto versionMarkerPosition = versionFourBrick.find("pmat.version = 20");
         expect(versionMarkerPosition != std::string::npos,
                "current brick fixture declares format version 12");
         if (versionMarkerPosition != std::string::npos) {
@@ -4114,7 +4127,7 @@ void testPmat()
         }
     };
 
-    expectDiagnostic("pmat.version = 20\n", 1, "unsupported");
+    expectDiagnostic("pmat.version = 21\n", 1, "unsupported");
     expectDiagnostic("unknown.key = 1\n", 1, "unknown key");
     expectDiagnostic("pmat.version = 1\npmat.version = 1\n", 2, "duplicate");
     expectDiagnostic("pmat.version = nope\n", 1, "integer");
@@ -4336,7 +4349,7 @@ void testSurfaceChannelAuthoring()
     material.layers[1].compositeMode = paperweight::CompositeMode::maximum;
     const auto serialised = paperweight::serialisePmat(material);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 19") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 20") != std::string::npos &&
                text->find("surface.relief_depth = 0.003m") != std::string::npos &&
                text->find("outputs = height") != std::string::npos &&
                text->find("operation = surface_value") != std::string::npos &&
@@ -4455,7 +4468,7 @@ void testMetalnessAndOptics()
 
     const auto serialised = paperweight::serialisePmat(material);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 19") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 20") != std::string::npos &&
                text->find("metalness.low = 0") != std::string::npos &&
                text->find("metalness.high = 1") != std::string::npos &&
                text->find("surface.ior = 1.52") != std::string::npos &&
@@ -4468,10 +4481,10 @@ void testMetalnessAndOptics()
                "PMAT 17 metalness and optical state round-trip exactly");
 
         auto falselyVersioned = *text;
-        const auto marker = falselyVersioned.find("pmat.version = 19");
+        const auto marker = falselyVersioned.find("pmat.version = 20");
         falselyVersioned.replace(
             marker,
-            std::string("pmat.version = 19").size(),
+            std::string("pmat.version = 20").size(),
             "pmat.version = 16");
         const auto rejected = paperweight::parsePmat(falselyVersioned);
         expect(std::holds_alternative<paperweight::ParseDiagnostic>(rejected) &&
@@ -4634,7 +4647,7 @@ void testCoatingsAndSpecialSurfaces()
     const auto serialised = paperweight::serialisePmat(material);
     const auto* text = std::get_if<std::string>(&serialised);
     const bool storesSpecialSurfaceState =
-        text != nullptr && text->find("pmat.version = 19") != std::string::npos &&
+        text != nullptr && text->find("pmat.version = 20") != std::string::npos &&
                text->find("coating.low = 1") != std::string::npos &&
                text->find("occlusion.low = 0.3") != std::string::npos &&
                text->find("clearcoat.roughness_high = 0.04") != std::string::npos &&
@@ -5170,7 +5183,7 @@ void testMaterialIdentityAndLibrary()
 
     const auto serialised = paperweight::serialisePmat(identified);
     const auto* text = std::get_if<std::string>(&serialised);
-    expect(text != nullptr && text->find("pmat.version = 19") != std::string::npos &&
+    expect(text != nullptr && text->find("pmat.version = 20") != std::string::npos &&
                text->find("material.uid = 01234567-89ab-cdef-0123-456789abcdef") !=
                    std::string::npos &&
                text->find("material.name = Dungeon Flagstone") != std::string::npos &&
@@ -5300,11 +5313,11 @@ void testPackedMaterialLibrary()
     if (library == nullptr) {
         return;
     }
-    if (library->checksum() != 14292551224305811098ULL) {
-        std::cerr << "Expected packed-library checksum 14292551224305811098, got "
+    if (library->checksum() != 5909985339506817168ULL) {
+        std::cerr << "Expected packed-library checksum 5909985339506817168, got "
                   << library->checksum() << '\n';
     }
-    expect(library->checksum() == 14292551224305811098ULL,
+    expect(library->checksum() == 5909985339506817168ULL,
            "packed library matches its cross-architecture golden checksum");
     expect(library->entries()[0].uid == noise.metadata->uid &&
                library->entries()[0].name == noise.metadata->name &&
@@ -5451,6 +5464,153 @@ void testPackedMaterialLibrary()
            "packer rejects malformed source material definitions");
 }
 
+void testTextilesAndFibres()
+{
+    paperweight::TextileOperation textile;
+    textile.pattern = paperweight::TextilePattern::twillWeave;
+    textile.field = paperweight::TextileField::material;
+    textile.yarnProfile = paperweight::YarnProfile::twisted;
+    textile.tileOrientation = paperweight::TextileTileOrientation::checkerboard;
+    textile.columns = 18;
+    textile.rows = 14;
+    textile.tileColumns = 2;
+    textile.tileRows = 2;
+    textile.weaveSpan = 3;
+    textile.twillStep = 2;
+    textile.yarnWidth = 0.91;
+    textile.yarnRoundness = 0.72;
+    textile.crossingHeight = 0.24;
+    textile.jitter = 0.16;
+    textile.fibreFrequency = 17;
+    textile.fibreStrength = 0.21;
+    textile.twist = 0.43;
+    textile.missingAmount = 0.04;
+    textile.damageAmount = 0.08;
+    textile.differentColourAmount = 0.07;
+    textile.colourVariation = 0.35;
+    textile.seedOffset = 2819;
+
+    for (const auto pattern : {
+             paperweight::TextilePattern::plainWeave,
+             paperweight::TextilePattern::basketWeave,
+             paperweight::TextilePattern::twillWeave,
+             paperweight::TextilePattern::loopPile,
+             paperweight::TextilePattern::cutPile,
+         }) {
+        textile.pattern = pattern;
+        const auto sample = paperweight::evaluateTextile(textile, 0.173, 0.619, 280028);
+        const auto repeatX = paperweight::evaluateTextile(textile, 1.173, 0.619, 280028);
+        const auto repeatY = paperweight::evaluateTextile(textile, 0.173, -0.381, 280028);
+        const auto sameSample = [&sample](const paperweight::TextileSample& repeated) {
+            return std::abs(sample.coverage - repeated.coverage) <= 1.0e-12 &&
+                std::abs(sample.height - repeated.height) <= 1.0e-12 &&
+                std::abs(sample.fibres - repeated.fibres) <= 1.0e-12 &&
+                std::abs(sample.damage - repeated.damage) <= 1.0e-12 &&
+                sample.colour == repeated.colour && sample.region.key == repeated.region.key;
+        };
+        expect(sameSample(repeatX) && sameSample(repeatY),
+               "every textile and pile pattern is mathematically periodic on the material torus");
+        expect(sample.coverage >= 0.0 && sample.coverage <= 1.0 &&
+                   sample.height >= 0.0 && sample.height <= 1.0 &&
+                   sample.roughness >= 0.0 && sample.roughness <= 1.0,
+               "textile material fields stay normalised");
+    }
+
+    textile.pattern = paperweight::TextilePattern::plainWeave;
+    const auto woven = paperweight::evaluateTextile(textile, 0.21, 0.37, 280028);
+    textile.pattern = paperweight::TextilePattern::loopPile;
+    const auto loop = paperweight::evaluateTextile(textile, 0.21, 0.37, 280028);
+    textile.pattern = paperweight::TextilePattern::cutPile;
+    const auto tuft = paperweight::evaluateTextile(textile, 0.21, 0.37, 280028);
+    expect(woven.pile == 0.0 && (loop.pile > 0.0 || tuft.pile > 0.0),
+           "woven yarn and raised pile expose distinct reusable fields");
+
+    paperweight::Material material;
+    material.seed = 280028;
+    material.metadata = paperweight::MaterialMetadata{
+        "28002800-0000-4000-8000-000000000028",
+        "Textile Round Trip",
+        "A complete version-20 textile fixture.",
+        "textile",
+        {"textile", "test"},
+    };
+    textile.pattern = paperweight::TextilePattern::twillWeave;
+    material.layers = {paperweight::makeTextileLayer()};
+    std::get<paperweight::TextileOperation>(material.layers.front().operation) = textile;
+    expect(!paperweight::validateMaterial(material),
+           "a complete textile operation passes material validation");
+
+    const auto encoded = paperweight::serialisePmat(material);
+    const auto* text = std::get_if<std::string>(&encoded);
+    expect(text != nullptr && text->find("pmat.version = 20") != std::string::npos &&
+               text->find("textile.pattern = twill_weave") != std::string::npos &&
+               text->find("textile.tile_orientation = checkerboard") != std::string::npos,
+           "PMAT version 20 serialises the complete textile vocabulary readably");
+    if (text != nullptr) {
+        const auto decoded = paperweight::parsePmat(*text);
+        const auto* roundTripped = std::get_if<paperweight::Material>(&decoded);
+        expect(roundTripped != nullptr && *roundTripped == material,
+               "PMAT version 20 round-trips textile operations exactly");
+        auto oldVersion = *text;
+        const auto versionPosition = oldVersion.find("pmat.version = 20");
+        oldVersion.replace(versionPosition, std::string_view{"pmat.version = 20"}.size(),
+                           "pmat.version = 19");
+        expect(std::holds_alternative<paperweight::ParseDiagnostic>(
+                   paperweight::parsePmat(oldVersion)),
+               "textile fields are rejected when mislabeled as PMAT version 19");
+    }
+
+    const auto compiled = paperweight::compileMaterialGraph(material);
+    const auto* graph = std::get_if<paperweight::MaterialGraph>(&compiled);
+    expect(graph != nullptr && std::any_of(
+               graph->nodes.begin(), graph->nodes.end(), [](const auto& node) {
+                   const auto* generator = std::get_if<paperweight::GeneratorNode>(&node);
+                   return generator != nullptr && std::holds_alternative<
+                       paperweight::TextileOperation>(generator->operation);
+               }),
+           "textile layers compile into reusable material-graph generator nodes");
+
+    std::array<std::uint64_t, paperweight::materialOutputs.size()> serialChecksums{};
+    for (const auto output : paperweight::materialOutputs) {
+        const auto serial = paperweight::generate({
+            material, 37, 29, output, std::nullopt, std::nullopt, 1,
+        });
+        const auto parallel = paperweight::generate({
+            material, 37, 29, output, std::nullopt, std::nullopt, 4,
+        });
+        const auto* serialImage = std::get_if<paperweight::Image>(&serial);
+        const auto* parallelImage = std::get_if<paperweight::Image>(&parallel);
+        const auto outputIndex = static_cast<std::size_t>(output);
+        if (serialImage != nullptr) serialChecksums[outputIndex] = checksum(serialImage->pixels());
+        expect(serialImage != nullptr && parallelImage != nullptr &&
+                   serialImage->pixels().size() == parallelImage->pixels().size() &&
+                   std::equal(serialImage->pixels().begin(), serialImage->pixels().end(),
+                              parallelImage->pixels().begin()),
+               "textile output is byte-identical with one and four workers");
+    }
+    const auto changedSeedMaterial = [&] {
+        auto changed = material;
+        ++changed.seed;
+        return changed;
+    }();
+    const auto changed = paperweight::generate({
+        changedSeedMaterial, 37, 29, paperweight::MaterialOutput::colour,
+        std::nullopt, std::nullopt, 4,
+    });
+    const auto* changedImage = std::get_if<paperweight::Image>(&changed);
+    expect(changedImage != nullptr &&
+               checksum(changedImage->pixels()) !=
+                   serialChecksums[static_cast<std::size_t>(paperweight::MaterialOutput::colour)],
+           "changing a material seed changes stable textile variation and damage");
+
+    auto invalid = material;
+    auto& invalidTextile = std::get<paperweight::TextileOperation>(
+        invalid.layers.front().operation);
+    invalidTextile.tileRows = 3;
+    expect(paperweight::validateMaterial(invalid).has_value(),
+           "alternating textile tiles reject odd repeat counts that would break seams");
+}
+
 } // namespace
 
 int main()
@@ -5469,6 +5629,7 @@ int main()
     testShapePrimitivesAndLattices();
     testDeterministicScatter();
     testOrganicStructures();
+    testTextilesAndFibres();
     testAdvancedSurfaceOperations();
     testStylisedOperations();
     testMaterialGraph();

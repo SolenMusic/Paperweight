@@ -60,6 +60,9 @@ set(PAPERWEIGHT_SHOWCASE_MATERIALS
     "${PROJECT_SOURCE_DIR}/examples/materials/castle-foliage.pmat"
     "${PROJECT_SOURCE_DIR}/examples/materials/radial-target.pmat"
     "${PROJECT_SOURCE_DIR}/examples/materials/arc-and-crescent-motifs.pmat"
+    "${PROJECT_SOURCE_DIR}/examples/materials/woven-upholstery.pmat"
+    "${PROJECT_SOURCE_DIR}/examples/materials/alternating-carpet.pmat"
+    "${PROJECT_SOURCE_DIR}/examples/materials/heraldic-banner-cloth.pmat"
 )
 set_source_files_properties(${PAPERWEIGHT_SHOWCASE_MATERIALS} PROPERTIES
     MACOSX_PACKAGE_LOCATION "Resources/Showcases"

@@ -9,6 +9,7 @@ typedef NS_ENUM(NSInteger, PWPreviewShape) {
     PWPreviewShapeSphere = 1,
     PWPreviewShapeCube = 2,
     PWPreviewShapeCylinder = 3,
+    PWPreviewShapeWavyFlag = 4,
 };
 
 typedef NS_ENUM(NSInteger, PWPreviewEnvironment) {

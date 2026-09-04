@@ -535,6 +535,98 @@ std::optional<std::string> validateOrganicAccumulation(
     return std::nullopt;
 }
 
+std::optional<std::string> validateTextile(
+    const TextileOperation& operation,
+    std::string_view prefix)
+{
+    switch (operation.pattern) {
+    case TextilePattern::plainWeave:
+    case TextilePattern::basketWeave:
+    case TextilePattern::twillWeave:
+    case TextilePattern::loopPile:
+    case TextilePattern::cutPile:
+        break;
+    default:
+        return std::string(prefix) + "textile pattern is not supported";
+    }
+    switch (operation.field) {
+    case TextileField::material:
+    case TextileField::height:
+    case TextileField::warp:
+    case TextileField::weft:
+    case TextileField::overUnder:
+    case TextileField::fibres:
+    case TextileField::pile:
+    case TextileField::damage:
+    case TextileField::colourVariation:
+    case TextileField::direction:
+        break;
+    default:
+        return std::string(prefix) + "textile field is not supported";
+    }
+    switch (operation.yarnProfile) {
+    case YarnProfile::round:
+    case YarnProfile::flat:
+    case YarnProfile::twisted:
+        break;
+    default:
+        return std::string(prefix) + "textile yarn profile is not supported";
+    }
+    switch (operation.tileOrientation) {
+    case TextileTileOrientation::uniform:
+    case TextileTileOrientation::alternatingRows:
+    case TextileTileOrientation::alternatingColumns:
+    case TextileTileOrientation::checkerboard:
+        break;
+    default:
+        return std::string(prefix) + "textile tile orientation is not supported";
+    }
+    if (operation.columns == 0 || operation.rows == 0 ||
+        operation.columns > LayerLimits::maximumTextileThreads ||
+        operation.rows > LayerLimits::maximumTextileThreads ||
+        operation.tileColumns == 0 || operation.tileRows == 0 ||
+        operation.tileColumns > LayerLimits::maximumTextileTiles ||
+        operation.tileRows > LayerLimits::maximumTextileTiles) {
+        return std::string(prefix) +
+            "textiles require 1 to 128 threads and 1 to 16 orientation tiles per axis";
+    }
+    if (operation.weaveSpan == 0 ||
+        operation.weaveSpan > LayerLimits::maximumWeaveSpan ||
+        operation.twillStep == 0 ||
+        operation.twillStep > LayerLimits::maximumWeaveSpan ||
+        operation.fibreFrequency == 0 ||
+        operation.fibreFrequency > LayerLimits::maximumFibreFrequency) {
+        return std::string(prefix) +
+            "textile weave span, twill step, and fibre frequency are outside their supported ranges";
+    }
+    if (!validRange(operation.yarnWidth, 0.05, 1.5) ||
+        !validRange(operation.yarnRoundness, 0.0, 1.0) ||
+        !validRange(operation.crossingHeight, 0.0, 1.0) ||
+        !validRange(operation.jitter, 0.0, 1.0) ||
+        !validRange(operation.fibreStrength, 0.0, 1.0) ||
+        !validRange(operation.twist, 0.0, 1.0) ||
+        !validRange(operation.pileRadius, 0.05, 0.75) ||
+        !validRange(operation.pileHeight, 0.0, 1.0) ||
+        !validRange(operation.missingAmount, 0.0, 1.0) ||
+        !validRange(operation.damageAmount, 0.0, 1.0) ||
+        !validRange(operation.differentColourAmount, 0.0, 1.0) ||
+        !validRange(operation.colourVariation, 0.0, 1.0) ||
+        !validRange(operation.softness, 0.0, 0.25)) {
+        return std::string(prefix) +
+            "textile yarn, pile, damage, colour, or softness parameter is outside its supported range";
+    }
+    if ((operation.tileOrientation == TextileTileOrientation::alternatingRows &&
+         operation.tileRows % 2U != 0U) ||
+        (operation.tileOrientation == TextileTileOrientation::alternatingColumns &&
+         operation.tileColumns % 2U != 0U) ||
+        (operation.tileOrientation == TextileTileOrientation::checkerboard &&
+         (operation.tileColumns % 2U != 0U || operation.tileRows % 2U != 0U))) {
+        return std::string(prefix) +
+            "alternating textile orientation requires an even tile count on every alternating axis";
+    }
+    return std::nullopt;
+}
+
 } // namespace
 
 bool isCanonicalMaterialUid(std::string_view uid)
@@ -1111,6 +1203,10 @@ std::optional<std::string> validateMaterial(const Material& material)
                 } else if constexpr (
                     std::is_same_v<Operation, OrganicAccumulationOperation>) {
                     if (const auto error = validateOrganicAccumulation(operation, prefix)) {
+                        return error;
+                    }
+                } else if constexpr (std::is_same_v<Operation, TextileOperation>) {
+                    if (const auto error = validateTextile(operation, prefix)) {
                         return error;
                     }
                 } else if constexpr (

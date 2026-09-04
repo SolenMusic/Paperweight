@@ -36,7 +36,8 @@ using GeneratorOperation = std::variant<
     OrganicCellOperation,
     OrganicCrackOperation,
     LeafClusterOperation,
-    SurfaceValueOperation>;
+    SurfaceValueOperation,
+    TextileOperation>;
 
 struct GeneratorNode {
     GraphNodeId id{invalidGraphNodeId};

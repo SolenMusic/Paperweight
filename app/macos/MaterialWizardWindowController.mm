@@ -513,7 +513,7 @@ bool hasCompleteMapSet(const paperweight::MaterialImageSet& images)
     self.previewModeControl.accessibilityLabel = @"Live preview mode";
     self.previewShapePopup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
     [self.previewShapePopup addItemsWithTitles:@[
-        @"Square plane", @"Sphere", @"Cube", @"Cylinder",
+        @"Square plane", @"Sphere", @"Cube", @"Cylinder", @"Wavy flag",
     ]];
     [self.previewShapePopup selectItemAtIndex:1];
     self.previewShapePopup.target = self;

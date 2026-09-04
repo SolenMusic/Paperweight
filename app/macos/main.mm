@@ -797,6 +797,8 @@ NSString* operationDisplayName(const paperweight::LayerOperation& operation)
         return @"Organic Accumulation";
     case 28:
         return @"Surface Value";
+    case 29:
+        return @"Textile / Fibres";
     default:
         return @"Unknown";
     }
@@ -1270,6 +1272,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @[ @"Castle Foliage", @"castle-foliage" ],
         @[ @"Radial Target", @"radial-target" ],
         @[ @"Arc and Crescent Motifs", @"arc-and-crescent-motifs" ],
+        @[ @"Woven Upholstery", @"woven-upholstery" ],
+        @[ @"Alternating Carpet", @"alternating-carpet" ],
+        @[ @"Heraldic Banner Cloth", @"heraldic-banner-cloth" ],
     ];
     for (NSArray<NSString*>* showcase in showcases) {
         auto* item = [showcaseMenu addItemWithTitle:showcase[0]
@@ -2171,7 +2176,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     auto* shapeLabel = makeLabel(@"Inspection shape");
     [shapeLabel.widthAnchor constraintEqualToConstant:72.0].active = YES;
     self.previewShapePopup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
-    [self.previewShapePopup addItemsWithTitles:@[@"Plane", @"Sphere", @"Cube", @"Cylinder"]];
+    [self.previewShapePopup addItemsWithTitles:@[
+        @"Plane", @"Sphere", @"Cube", @"Cylinder", @"Wavy Flag",
+    ]];
     [self.previewShapePopup selectItemAtIndex:1];
     self.previewShapePopup.target = self;
     self.previewShapePopup.action = @selector(previewShapeChanged:);
@@ -2300,13 +2307,13 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     ]];
     mapsFifthRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
 
-    auto* animationPhaseRow = makePreviewSliderRow(@"Light phase", 0.0, 1.0, 0.0, self);
+    auto* animationPhaseRow = makePreviewSliderRow(@"Light / flag phase", 0.0, 1.0, 0.0, self);
     self.animationPhaseSlider = static_cast<NSSlider*>(animationPhaseRow.views[1]);
     self.animationPhaseValue = static_cast<NSTextField*>(animationPhaseRow.views[2]);
     auto* animationSpeedRow = makePreviewSliderRow(@"Speed", 0.02, 1.5, 0.25, self);
     self.animationSpeedSlider = static_cast<NSSlider*>(animationSpeedRow.views[1]);
     self.animationSpeedValue = static_cast<NSTextField*>(animationSpeedRow.views[2]);
-    self.animationButton = [NSButton buttonWithTitle:@"Play Light"
+    self.animationButton = [NSButton buttonWithTitle:@"Play Animation"
                                               target:self
                                               action:@selector(togglePreviewAnimation:)];
     auto* resetCameraButton = [NSButton buttonWithTitle:@"Reset View"
@@ -2545,6 +2552,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @"Leaf Clusters",
         @"Organic Accumulation",
         @"Surface Value",
+        @"Textile / Fibres",
     ]];
     auto* addLayerButton = [NSButton buttonWithTitle:@"Add"
                                               target:self
@@ -3493,6 +3501,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     const auto* leaves = std::get_if<paperweight::LeafClusterOperation>(&layer->operation);
     const auto* accumulation =
         std::get_if<paperweight::OrganicAccumulationOperation>(&layer->operation);
+    const auto* textile = std::get_if<paperweight::TextileOperation>(&layer->operation);
     self.noiseSeedRow.hidden = noise == nullptr;
     self.solidColourRow.hidden = solid == nullptr;
     self.surfaceValueRow.hidden = surfaceValue == nullptr;
@@ -4289,6 +4298,154 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.patternSeedRow.hidden = NO;
         self.patternSeedOffsetField.stringValue = [NSString
             stringWithFormat:@"%llu", accumulation->seedOffset];
+    } else if (textile != nullptr) {
+        self.surfaceKindRow.hidden = NO;
+        static_cast<NSTextField*>(self.surfaceKindRow.views[0]).stringValue = @"Pattern";
+        [self.surfaceKindPopup removeAllItems];
+        [self.surfaceKindPopup addItemsWithTitles:@[
+            @"Plain weave", @"Basket weave", @"Twill weave", @"Loop pile", @"Cut pile",
+        ]];
+        [self.surfaceKindPopup selectItemAtIndex:static_cast<NSInteger>(textile->pattern)];
+        self.courseFieldRow.hidden = NO;
+        static_cast<NSTextField*>(self.courseFieldRow.views[0]).stringValue = @"Output";
+        [self.courseFieldPopup removeAllItems];
+        [self.courseFieldPopup addItemsWithTitles:@[
+            @"Material", @"Height", @"Warp", @"Weft", @"Over / under",
+            @"Fibres", @"Pile", @"Damage", @"Colour variation", @"Direction",
+        ]];
+        [self.courseFieldPopup selectItemAtIndex:static_cast<NSInteger>(textile->field)];
+        self.processingTargetRow.hidden = NO;
+        static_cast<NSTextField*>(self.processingTargetRow.views[0]).stringValue = @"Yarn";
+        [self.processingTargetPopup removeAllItems];
+        [self.processingTargetPopup addItemsWithTitles:@[@"Round", @"Flat", @"Twisted"]];
+        [self.processingTargetPopup selectItemAtIndex:static_cast<NSInteger>(textile->yarnProfile)];
+        self.rampModeRow.hidden = NO;
+        static_cast<NSTextField*>(self.rampModeRow.views[0]).stringValue = @"Tile direction";
+        [self.rampModePopup removeAllItems];
+        [self.rampModePopup addItemsWithTitles:@[
+            @"Uniform", @"Alternating rows", @"Alternating columns", @"Checkerboard",
+        ]];
+        [self.rampModePopup selectItemAtIndex:static_cast<NSInteger>(textile->tileOrientation)];
+        showCount(self.patternCountXRow, self.patternCountXLabel,
+                  self.patternCountXSlider, self.patternCountXValue,
+                  @"Warp threads", textile->columns);
+        self.patternCountXSlider.maxValue = paperweight::LayerLimits::maximumTextileThreads;
+        showCount(self.patternCountYRow, self.patternCountYLabel,
+                  self.patternCountYSlider, self.patternCountYValue,
+                  @"Weft threads", textile->rows);
+        self.patternCountYSlider.maxValue = paperweight::LayerLimits::maximumTextileThreads;
+        showValue(self.patternValueOneRow, self.patternValueOneLabel,
+                  self.patternValueOneSlider, self.patternValueOneValue,
+                  @"Yarn width", 0.05, 1.5, textile->yarnWidth);
+        showValue(self.patternValueTwoRow, self.patternValueTwoLabel,
+                  self.patternValueTwoSlider, self.patternValueTwoValue,
+                  @"Roundness", 0.0, 1.0, textile->yarnRoundness);
+        showValue(self.patternValueThreeRow, self.patternValueThreeLabel,
+                  self.patternValueThreeSlider, self.patternValueThreeValue,
+                  @"Crossing relief", 0.0, 1.0, textile->crossingHeight);
+        showValue(self.patternValueFourRow, self.patternValueFourLabel,
+                  self.patternValueFourSlider, self.patternValueFourValue,
+                  @"Thread jitter", 0.0, 1.0, textile->jitter);
+        self.courseGapRow.hidden = NO;
+        static_cast<NSTextField*>(self.courseGapRow.views[0]).stringValue = @"Fibre strength";
+        self.courseGapSlider.minValue = 0.0;
+        self.courseGapSlider.maxValue = 1.0;
+        self.courseGapSlider.doubleValue = textile->fibreStrength;
+        self.courseGapValue.stringValue = [NSString stringWithFormat:@"%.2f", textile->fibreStrength];
+        self.courseSoftnessRow.hidden = NO;
+        static_cast<NSTextField*>(self.courseSoftnessRow.views[0]).stringValue = @"Damage";
+        self.courseSoftnessSlider.minValue = 0.0;
+        self.courseSoftnessSlider.maxValue = 1.0;
+        self.courseSoftnessSlider.doubleValue = textile->damageAmount;
+        self.courseSoftnessValue.stringValue = [NSString stringWithFormat:@"%.2f", textile->damageAmount];
+        self.courseOverlapRow.hidden = NO;
+        static_cast<NSTextField*>(self.courseOverlapRow.views[0]).stringValue = @"Accent fibres";
+        self.courseOverlapSlider.minValue = 0.0;
+        self.courseOverlapSlider.maxValue = 1.0;
+        self.courseOverlapSlider.doubleValue = textile->differentColourAmount;
+        self.courseOverlapValue.stringValue = [NSString stringWithFormat:@"%.2f", textile->differentColourAmount];
+        self.filterSensitivityRow.hidden = NO;
+        static_cast<NSTextField*>(self.filterSensitivityRow.views[0]).stringValue = @"Edge softness";
+        self.filterSensitivitySlider.minValue = 0.0;
+        self.filterSensitivitySlider.maxValue = 0.25;
+        self.filterSensitivitySlider.doubleValue = textile->softness;
+        self.filterSensitivityValue.stringValue = [NSString stringWithFormat:@"%.3f", textile->softness];
+        self.posteriseBandsRow.hidden = NO;
+        static_cast<NSTextField*>(self.posteriseBandsRow.views[0]).stringValue = @"Fibre frequency";
+        self.posteriseBandsSlider.minValue = 1.0;
+        self.posteriseBandsSlider.maxValue = paperweight::LayerLimits::maximumFibreFrequency;
+        self.posteriseBandsSlider.numberOfTickMarks = 0;
+        self.posteriseBandsSlider.allowsTickMarkValuesOnly = NO;
+        self.posteriseBandsSlider.doubleValue = textile->fibreFrequency;
+        self.posteriseBandsValue.stringValue = [NSString stringWithFormat:@"%u", textile->fibreFrequency];
+        self.inkRadiusRow.hidden = NO;
+        static_cast<NSTextField*>(self.inkRadiusRow.views[0]).stringValue = @"Twist";
+        self.inkRadiusSlider.minValue = 0.0;
+        self.inkRadiusSlider.maxValue = 1.0;
+        self.inkRadiusSlider.doubleValue = textile->twist;
+        self.inkRadiusValue.stringValue = [NSString stringWithFormat:@"%.2f", textile->twist];
+        self.inkThresholdRow.hidden = NO;
+        static_cast<NSTextField*>(self.inkThresholdRow.views[0]).stringValue = @"Pile radius";
+        self.inkThresholdSlider.minValue = 0.05;
+        self.inkThresholdSlider.maxValue = 0.75;
+        self.inkThresholdSlider.doubleValue = textile->pileRadius;
+        self.inkThresholdValue.stringValue = [NSString stringWithFormat:@"%.2f", textile->pileRadius];
+        self.inkSoftnessRow.hidden = NO;
+        static_cast<NSTextField*>(self.inkSoftnessRow.views[0]).stringValue = @"Pile height";
+        self.inkSoftnessSlider.minValue = 0.0;
+        self.inkSoftnessSlider.maxValue = 1.0;
+        self.inkSoftnessSlider.doubleValue = textile->pileHeight;
+        self.inkSoftnessValue.stringValue = [NSString stringWithFormat:@"%.2f", textile->pileHeight];
+        self.inkStrengthRow.hidden = NO;
+        static_cast<NSTextField*>(self.inkStrengthRow.views[0]).stringValue = @"Missing fibres";
+        self.inkStrengthSlider.minValue = 0.0;
+        self.inkStrengthSlider.maxValue = 1.0;
+        self.inkStrengthSlider.doubleValue = textile->missingAmount;
+        self.inkStrengthValue.stringValue = [NSString stringWithFormat:@"%.2f", textile->missingAmount];
+        self.levelsLowRow.hidden = NO;
+        static_cast<NSTextField*>(self.levelsLowRow.views[0]).stringValue = @"Colour variation";
+        self.levelsLowSlider.minValue = 0.0;
+        self.levelsLowSlider.maxValue = 1.0;
+        self.levelsLowSlider.doubleValue = textile->colourVariation;
+        self.levelsLowValue.stringValue = [NSString stringWithFormat:@"%.2f", textile->colourVariation];
+        self.levelsHighRow.hidden = NO;
+        static_cast<NSTextField*>(self.levelsHighRow.views[0]).stringValue = @"Weave span";
+        self.levelsHighSlider.minValue = 1.0;
+        self.levelsHighSlider.maxValue = paperweight::LayerLimits::maximumWeaveSpan;
+        self.levelsHighSlider.doubleValue = textile->weaveSpan;
+        self.levelsHighValue.stringValue = [NSString stringWithFormat:@"%u", textile->weaveSpan];
+        self.levelsGammaRow.hidden = NO;
+        static_cast<NSTextField*>(self.levelsGammaRow.views[0]).stringValue = @"Twill step";
+        self.levelsGammaSlider.minValue = 1.0;
+        self.levelsGammaSlider.maxValue = paperweight::LayerLimits::maximumWeaveSpan;
+        self.levelsGammaSlider.doubleValue = textile->twillStep;
+        self.levelsGammaValue.stringValue = [NSString stringWithFormat:@"%u", textile->twillStep];
+        self.thresholdRow.hidden = NO;
+        static_cast<NSTextField*>(self.thresholdRow.views[0]).stringValue = @"Orientation tiles";
+        self.thresholdSlider.minValue = 1.0;
+        self.thresholdSlider.maxValue = paperweight::LayerLimits::maximumTextileTiles;
+        self.thresholdSlider.doubleValue = std::max(textile->tileColumns, textile->tileRows);
+        self.thresholdValue.stringValue = [NSString stringWithFormat:@"%u", std::max(textile->tileColumns, textile->tileRows)];
+        self.colourEntriesGroup.hidden = NO;
+        const std::array<std::pair<NSString*, paperweight::Rgba8>, 4> textileColours{{
+            {@"Yarn low", textile->lowColour},
+            {@"Yarn high", textile->highColour},
+            {@"Accent", textile->accentColour},
+            {@"Backing / damage", textile->damageColour},
+        }};
+        for (NSUInteger colourIndex = 0; colourIndex < self.colourEntryRows.count; ++colourIndex) {
+            self.colourEntryRows[colourIndex].hidden = colourIndex >= textileColours.size();
+            if (colourIndex < textileColours.size()) {
+                self.colourEntryLabels[colourIndex].stringValue = textileColours[colourIndex].first;
+                self.colourPositionSliders[colourIndex].hidden = YES;
+                self.colourPositionValues[colourIndex].hidden = YES;
+                self.colourEntryWells[colourIndex].color = colourFromRgba8(textileColours[colourIndex].second);
+            }
+        }
+        self.addColourEntryButton.enabled = NO;
+        self.removeColourEntryButton.enabled = NO;
+        self.patternSeedRow.hidden = NO;
+        self.patternSeedOffsetField.stringValue = [NSString stringWithFormat:@"%llu", textile->seedOffset];
     } else if (editableShape != nullptr) {
         self.surfaceKindRow.hidden = NO;
         [self.surfaceKindPopup removeAllItems];
@@ -4910,6 +5067,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     case 32:
         material_.layers.push_back(paperweight::makeSurfaceValueLayer());
         break;
+    case 33:
+        material_.layers.push_back(paperweight::makeTextileLayer());
+        break;
     default:
         return;
     }
@@ -4990,7 +5150,16 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     if (layer == nullptr) {
         return;
     }
-    if (auto* scatter = std::get_if<paperweight::ScatterOperation>(&layer->operation)) {
+    if (auto* textile = std::get_if<paperweight::TextileOperation>(&layer->operation)) {
+        const auto colour = rgba8FromColour(sender.color);
+        switch (sender.tag) {
+        case 0: textile->lowColour = colour; break;
+        case 1: textile->highColour = colour; break;
+        case 2: textile->accentColour = colour; break;
+        case 3: textile->damageColour = colour; break;
+        default: return;
+        }
+    } else if (auto* scatter = std::get_if<paperweight::ScatterOperation>(&layer->operation)) {
         const auto populationIndex = static_cast<std::size_t>(sender.tag / 2);
         if (populationIndex >= scatter->populations.size()) {
             return;
@@ -5046,7 +5215,40 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     if (layer == nullptr) {
         return;
     }
-    if (auto* scatter = std::get_if<paperweight::ScatterOperation>(&layer->operation)) {
+    if (auto* textile = std::get_if<paperweight::TextileOperation>(&layer->operation)) {
+        if (sender == self.processingTargetPopup) {
+            textile->yarnProfile = static_cast<paperweight::YarnProfile>(
+                self.processingTargetPopup.indexOfSelectedItem);
+        }
+        if (sender == self.rampModePopup) {
+            textile->tileOrientation = static_cast<paperweight::TextileTileOrientation>(
+                self.rampModePopup.indexOfSelectedItem);
+            if (textile->tileOrientation == paperweight::TextileTileOrientation::alternatingRows ||
+                textile->tileOrientation == paperweight::TextileTileOrientation::checkerboard) {
+                textile->tileRows = std::max(2U, textile->tileRows + textile->tileRows % 2U);
+            }
+            if (textile->tileOrientation == paperweight::TextileTileOrientation::alternatingColumns ||
+                textile->tileOrientation == paperweight::TextileTileOrientation::checkerboard) {
+                textile->tileColumns = std::max(2U, textile->tileColumns + textile->tileColumns % 2U);
+            }
+        }
+        textile->fibreFrequency = static_cast<std::uint32_t>(std::clamp(
+            std::llround(self.posteriseBandsSlider.doubleValue),
+            1LL,
+            static_cast<long long>(paperweight::LayerLimits::maximumFibreFrequency)));
+        textile->softness = self.filterSensitivitySlider.doubleValue;
+        textile->twist = self.inkRadiusSlider.doubleValue;
+        textile->pileRadius = self.inkThresholdSlider.doubleValue;
+        textile->pileHeight = self.inkSoftnessSlider.doubleValue;
+        textile->missingAmount = self.inkStrengthSlider.doubleValue;
+        self.posteriseBandsSlider.doubleValue = textile->fibreFrequency;
+        self.posteriseBandsValue.stringValue = [NSString stringWithFormat:@"%u", textile->fibreFrequency];
+        self.filterSensitivityValue.stringValue = [NSString stringWithFormat:@"%.3f", textile->softness];
+        self.inkRadiusValue.stringValue = [NSString stringWithFormat:@"%.2f", textile->twist];
+        self.inkThresholdValue.stringValue = [NSString stringWithFormat:@"%.2f", textile->pileRadius];
+        self.inkSoftnessValue.stringValue = [NSString stringWithFormat:@"%.2f", textile->pileHeight];
+        self.inkStrengthValue.stringValue = [NSString stringWithFormat:@"%.2f", textile->missingAmount];
+    } else if (auto* scatter = std::get_if<paperweight::ScatterOperation>(&layer->operation)) {
         if (sender == self.rampModePopup) {
             selectedScatterPopulation_ = self.rampModePopup.indexOfSelectedItem;
             [self refreshLayerInspector];
@@ -5469,6 +5671,34 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     if (auto* threshold = std::get_if<paperweight::ThresholdOperation>(&layer->operation)) {
         threshold->threshold = self.thresholdSlider.doubleValue;
     }
+    if (auto* textile = std::get_if<paperweight::TextileOperation>(&layer->operation)) {
+        textile->colourVariation = self.levelsLowSlider.doubleValue;
+        textile->weaveSpan = static_cast<std::uint32_t>(std::clamp(
+            std::llround(self.levelsHighSlider.doubleValue),
+            1LL,
+            static_cast<long long>(paperweight::LayerLimits::maximumWeaveSpan)));
+        textile->twillStep = static_cast<std::uint32_t>(std::clamp(
+            std::llround(self.levelsGammaSlider.doubleValue),
+            1LL,
+            static_cast<long long>(paperweight::LayerLimits::maximumWeaveSpan)));
+        auto tileCount = static_cast<std::uint32_t>(std::clamp(
+            std::llround(self.thresholdSlider.doubleValue),
+            1LL,
+            static_cast<long long>(paperweight::LayerLimits::maximumTextileTiles)));
+        if (textile->tileOrientation != paperweight::TextileTileOrientation::uniform &&
+            tileCount % 2U != 0U) {
+            tileCount = std::min(tileCount + 1U, paperweight::LayerLimits::maximumTextileTiles);
+        }
+        textile->tileColumns = tileCount;
+        textile->tileRows = tileCount;
+        self.levelsHighSlider.doubleValue = textile->weaveSpan;
+        self.levelsGammaSlider.doubleValue = textile->twillStep;
+        self.thresholdSlider.doubleValue = tileCount;
+        self.levelsLowValue.stringValue = [NSString stringWithFormat:@"%.2f", textile->colourVariation];
+        self.levelsHighValue.stringValue = [NSString stringWithFormat:@"%u", textile->weaveSpan];
+        self.levelsGammaValue.stringValue = [NSString stringWithFormat:@"%u", textile->twillStep];
+        self.thresholdValue.stringValue = [NSString stringWithFormat:@"%u", tileCount];
+    }
     if (auto* scatter = std::get_if<paperweight::ScatterOperation>(&layer->operation)) {
         selectedScatterPopulation_ = std::clamp<NSInteger>(
             selectedScatterPopulation_, 0,
@@ -5581,16 +5811,20 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         parsedSeed = parsed;
     }
 
+    const auto maximumCount = std::holds_alternative<paperweight::TextileOperation>(
+        layer->operation)
+        ? paperweight::LayerLimits::maximumTextileThreads
+        : paperweight::LayerLimits::maximumPatternCount;
     const auto countX = static_cast<std::uint32_t>(
         std::clamp(
             std::llround(self.patternCountXSlider.doubleValue),
             static_cast<long long>(paperweight::LayerLimits::minimumPatternCount),
-            static_cast<long long>(paperweight::LayerLimits::maximumPatternCount)));
+            static_cast<long long>(maximumCount)));
     const auto countY = static_cast<std::uint32_t>(
         std::clamp(
             std::llround(self.patternCountYSlider.doubleValue),
             static_cast<long long>(paperweight::LayerLimits::minimumPatternCount),
-            static_cast<long long>(paperweight::LayerLimits::maximumPatternCount)));
+            static_cast<long long>(maximumCount)));
     const auto updateShape = [&](paperweight::ShapePrimitiveOperation& shape) {
         if (sender == self.surfaceKindPopup) {
             const auto previousKind = shape.kind;
@@ -5927,6 +6161,28 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
             self.facetedNormalsCheckbox.state == NSControlStateValueOn;
         if (parsedSeed) {
             sculpt->seedOffset = *parsedSeed;
+        }
+    } else if (auto* textile =
+                   std::get_if<paperweight::TextileOperation>(&layer->operation)) {
+        if (sender == self.surfaceKindPopup) {
+            textile->pattern = static_cast<paperweight::TextilePattern>(
+                self.surfaceKindPopup.indexOfSelectedItem);
+        }
+        if (sender == self.courseFieldPopup) {
+            textile->field = static_cast<paperweight::TextileField>(
+                self.courseFieldPopup.indexOfSelectedItem);
+        }
+        textile->columns = countX;
+        textile->rows = countY;
+        textile->yarnWidth = self.patternValueOneSlider.doubleValue;
+        textile->yarnRoundness = self.patternValueTwoSlider.doubleValue;
+        textile->crossingHeight = self.patternValueThreeSlider.doubleValue;
+        textile->jitter = self.patternValueFourSlider.doubleValue;
+        textile->fibreStrength = self.courseGapSlider.doubleValue;
+        textile->damageAmount = self.courseSoftnessSlider.doubleValue;
+        textile->differentColourAmount = self.courseOverlapSlider.doubleValue;
+        if (parsedSeed) {
+            textile->seedOffset = *parsedSeed;
         }
     } else if (auto* cells =
                    std::get_if<paperweight::OrganicCellOperation>(&layer->operation)) {
@@ -6673,7 +6929,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     static_cast<void>(sender);
     const BOOL running = !self.material3DPreviewView.isAnimationRunning;
     self.material3DPreviewView.animationRunning = running;
-    self.animationButton.title = running ? @"Pause Light" : @"Play Light";
+    self.animationButton.title = running ? @"Pause Animation" : @"Play Animation";
     [self.animationUiTimer invalidate];
     self.animationUiTimer = nil;
     if (running) {

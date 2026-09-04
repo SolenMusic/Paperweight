@@ -13,7 +13,22 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-v0.0.27 is the current Motifs, Profiles and Radial Layouts release. The portable
+v0.0.28 is the current Textiles and Fibres release. A new portable textile
+operation constructs plain, basket, and twill weaves plus loop and cut pile from
+deterministic yarn and tuft geometry. Authored warp/weft counts, over-under
+patterns, yarn profiles, fibre direction, damage, missing fibres, repair colours,
+and alternating tile orientation all evaluate in continuous material space and
+remain mathematically seamless.
+
+The native editor exposes the complete textile vocabulary through its ordinary
+layer inspector. Woven Upholstery, Alternating Carpet, and Heraldic Banner Cloth
+are bundled editable showcases, golden-test inputs, and benchmark materials.
+`.pmat` version 20 persists the operation readably. The MetalKit inspector also
+adds a Wavy Flag shape to the editor and Material Design Wizard; its manually
+scrubbable or automatic cloth motion is presentation-only and cannot affect CPU
+material output.
+
+The v0.0.27 Motifs, Profiles and Radial Layouts work remains available. The portable
 C++ core adds annuli, bounded arcs, annular sectors, and crescents to its signed-
 distance shape vocabulary. Any analytic shape can now be copied around a stable
 centre with an authored radius and phase, while each copy remains fixed, faces
@@ -149,7 +164,7 @@ templates where appropriate. The v0.0.25 glazed, lacquered, wet, coated-metal,
 and emissive recipes use the same ordinary family workflow.
 
 Wizard results are normal editable `Material` values and human-readable
-version-19 `.pmat` files. The wizard adds no evaluator, hidden recipe state, or
+version-20 `.pmat` files. The wizard adds no evaluator, hidden recipe state, or
 new serialisation format. The v0.0.19 working-folder browser, metadata,
 diagnostics, safe file operations, and selectable 64x64 through 1024x1024
 preview resolution remain available.
@@ -161,7 +176,7 @@ The staged work is tracked in [GitHub Issues](https://github.com/SolenMusic/Pape
 ```text
 Portable C++20 core
   image buffers, deterministic primitives, periodic noise,
-  structural, course-layout, sculpting, shape, lattice, scatter, organic, and surface generators,
+  structural, course-layout, sculpting, shape, lattice, scatter, organic, textile, and surface generators,
   exact region identity and fields,
   neighbourhood filters,
   layer-to-graph compiler, graph validation/evaluation,
@@ -178,6 +193,7 @@ See [docs/architecture.md](docs/architecture.md),
 [docs/motifs-and-radial-layouts.md](docs/motifs-and-radial-layouts.md),
 [docs/coatings-and-special-surfaces.md](docs/coatings-and-special-surfaces.md),
 [docs/metals-and-reflections.md](docs/metals-and-reflections.md),
+[docs/textiles-and-fibres.md](docs/textiles-and-fibres.md),
 [docs/organic-structures.md](docs/organic-structures.md),
 [docs/reference-materials.md](docs/reference-materials.md),
 [docs/material-wizard.md](docs/material-wizard.md),
@@ -212,21 +228,24 @@ The metal collection adds polished chrome, brushed steel, copper, brass,
 scratched painted steel, and corroded metal. The special-surface collection adds
 glazed ceramic, lacquered wood, wet stone, machinery panels, and an illuminated
 science-fiction surface. The designed-surface collection adds a radial target
-and an arc, annular-sector, and crescent motif study.
+and an arc, annular-sector, and crescent motif study. Textile showcases add
+woven upholstery, alternating carpet tiles, and heraldic banner cloth.
 File > New from Reference Template exposes the ten Blastard targets as seedless,
 caller-instantiated recipes with compact material-specific controls. The older
 Showcase menu remains available for direct access to the wider example set.
 Region Stones demonstrates repeatable
 per-cell variation, while Course Random gives every row one stable value.
 
-Format-version-1 through version-19 `.pmat` files open. Versions 1 through 18
+Format-version-1 through version-20 `.pmat` files open. Versions 1 through 19
 retain their historical output intact; saving migrates them to canonical format
-version 19. Version 16 adds output routing and optional physical relief without
+version 20. Version 16 adds output routing and optional physical relief without
 changing the legacy default. Version 17 adds metalness routing and dielectric
 optics. Version 18 adds coating, occlusion, clear-coat, clear-coat roughness, and
 emissive routing plus anisotropy controls; older files migrate to neutral values.
 Version 19 adds opt-in radial profiles and motif repetition; older shape layers
 acquire identity defaults and retain their previous output.
+Version 20 adds the opt-in textile generator; older formats contain no textile
+layers and therefore retain their previous output exactly.
 Exact block
 and parent-course keys are evaluator metadata, not pixel channels, so they are
 never stored in lossy floating-point form.

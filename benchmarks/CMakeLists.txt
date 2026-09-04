@@ -52,6 +52,9 @@ foreach(material IN ITEMS
     wet-stone
     machinery-panels
     illuminated-scifi
+    woven-upholstery
+    alternating-carpet
+    heraldic-banner-cloth
 )
     configure_file(
         "${PROJECT_SOURCE_DIR}/examples/materials/${material}.pmat"

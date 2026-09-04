@@ -38,6 +38,7 @@ struct PreviewUniforms {
     simd_float4 environmentSettings;
     simd_float4 specialMapSettings;
     simd_float4 anisotropySettings;
+    simd_float4 shapeSettings;
 };
 
 struct MeshData {
@@ -114,6 +115,20 @@ MeshData makePlane()
             {0.0F, 1.0F, 0.0F},
             {1.0F, 0.0F, 0.0F, 1.0F},
             {u, v},
+        };
+    });
+    return mesh;
+}
+
+MeshData makeWavyFlag()
+{
+    MeshData mesh;
+    appendGrid(mesh, 120, 80, [](float u, float v) {
+        return PreviewVertex{
+            {u * 1.8F - 0.9F, v * 1.64F - 0.82F, 0.0F},
+            {0.0F, 0.0F, 1.0F},
+            {1.0F, 0.0F, 0.0F, 1.0F},
+            {u, 1.0F - v},
         };
     });
     return mesh;
@@ -257,6 +272,8 @@ MeshData makeMesh(PWPreviewShape shape)
         return makeCube();
     case PWPreviewShapeCylinder:
         return makeCylinder();
+    case PWPreviewShapeWavyFlag:
+        return makeWavyFlag();
     }
     return makeSphere();
 }
@@ -759,6 +776,12 @@ MeshData makeMesh(PWPreviewShape shape)
             static_cast<float>(self.anisotropyStrength),
             static_cast<float>(
                 self.anisotropyRotationDegrees / 180.0 * std::numbers::pi),
+            0.0F,
+            0.0F,
+        },
+        {
+            self.previewShape == PWPreviewShapeWavyFlag ? 1.0F : 0.0F,
+            static_cast<float>(self.animationPhase),
             0.0F,
             0.0F,
         },

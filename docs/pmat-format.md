@@ -1,4 +1,4 @@
-# `.pmat` format version 19
+# `.pmat` format version 20
 
 Paperweight material files are UTF-8 text. They are intended to be readable,
 diffable, and small enough to embed alongside game assets.
@@ -7,7 +7,7 @@ diffable, and small enough to embed alongside game assets.
 
 ```text
 # Paperweight procedural material
-pmat.version = 19
+pmat.version = 20
 material.type = fbm
 material.seed = 18431
 material.width = 1m
@@ -84,7 +84,7 @@ no material; it never returns a partially accepted definition.
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
-| `pmat.version` | File-format version | `1` through `19`; the serialiser writes `19` |
+| `pmat.version` | File-format version | `1` through `20`; the serialiser writes `20` |
 | `material.type` | Generator model | `fbm` |
 | `material.seed` | Deterministic seed | Unsigned 64-bit integer |
 | `material.width` | Width of one seamless material repeat | Metre value from `0.000001m` to `1000000m` |
@@ -276,6 +276,20 @@ The operation selects exactly one parameter group:
 | `organic_accumulation` | `layer.N.organic.accumulation.colour_low`, `colour_high` | `0xRRGGBBAA` hexadecimal |
 | `organic_accumulation` | `layer.N.organic.accumulation.seed_offset` | Unsigned 64-bit integer |
 | `organic_accumulation` | `layer.N.organic.accumulation.target` | `colour`, `scalar`, or `all` |
+| `textile` | `layer.N.textile.pattern` | `plain_weave`, `basket_weave`, `twill_weave`, `loop_pile`, or `cut_pile` |
+| `textile` | `layer.N.textile.field` | `material`, `height`, `warp`, `weft`, `over_under`, `fibres`, `pile`, `damage`, `colour_variation`, or `direction` |
+| `textile` | `layer.N.textile.yarn_profile` | `round`, `flat`, or `twisted` |
+| `textile` | `layer.N.textile.tile_orientation` | `uniform`, `alternating_rows`, `alternating_columns`, or `checkerboard` |
+| `textile` | `layer.N.textile.columns`, `rows` | Warp and weft thread/tuft counts from 1 to 128 |
+| `textile` | `layer.N.textile.tile_columns`, `tile_rows` | Orientation tile counts from 1 to 16; alternating axes must be even |
+| `textile` | `layer.N.textile.weave_span`, `twill_step` | Integers from 1 to 8 |
+| `textile` | `layer.N.textile.fibre_frequency` | Integer from 1 to 64 |
+| `textile` | `layer.N.textile.yarn_width` | Cell-relative decimal from 0.05 to 1.5 |
+| `textile` | `layer.N.textile.pile_radius` | Cell-relative decimal from 0.05 to 0.75 |
+| `textile` | `layer.N.textile.softness` | Cell-relative decimal from 0 to 0.25 |
+| `textile` | `layer.N.textile.yarn_roundness`, `crossing_height`, `jitter`, `fibre_strength`, `twist`, `pile_height`, `missing`, `damage`, `different_colour`, `colour_variation` | Decimals from 0 to 1 |
+| `textile` | `layer.N.textile.colour_low`, `colour_high`, `colour_accent`, `colour_damage` | `0xRRGGBBAA` hexadecimal |
+| `textile` | `layer.N.textile.seed_offset` | Unsigned 64-bit integer |
 | `surface_pattern` | `layer.N.surface.kind` | `ridged_noise`, `bands`, `rings`, `scatter`, or `streaks` |
 | `surface_pattern` | `layer.N.surface.scale` | Integer from 1 to 64 |
 | `surface_pattern` | `layer.N.surface.width` | Decimal from 0.001 to 1 |
@@ -471,7 +485,7 @@ The native editor presents those derived column and row counts explicitly. When
 an author changes the brick size or count, it recalculates `material.width` and
 `material.height` automatically so the saved definition remains seamless.
 
-Every layer in versions 3 through 14 also has this coordinate-transform group:
+Every layer in versions 3 through 20 also has this coordinate-transform group:
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
@@ -490,7 +504,7 @@ Offsets are continuous and wrap naturally. When enabled, warp uses two
 independent periodic FBM channels to displace the transformed coordinates.
 Disabling warp, or setting its strength to zero, is exactly the identity path.
 
-Every layer in versions 3 through 16 also declares its optional mask:
+Every layer in versions 3 through 20 also declares its optional mask:
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
@@ -504,7 +518,7 @@ The mask samples an independent periodic FBM field in the layer's transformed
 coordinates. Its remapped value multiplies the layer opacity, allowing smooth,
 threshold-like, or inverted spatial control without changing the operation.
 Disabled masks evaluate to exactly one. Transform, warp, and mask fields remain
-required in versions 3 through 17 even when their optional features are disabled; this
+required in versions 3 through 20 even when their optional features are disabled; this
 keeps canonical files explicit and round trips unambiguous.
 
 Noise seed offset zero reproduces the original material seed exactly. Other
@@ -522,7 +536,7 @@ formula is applied to scalar, red, green, blue, and alpha channels.
 
 ## Graph compilation
 
-Paperweight v0.0.27 retains the layer syntax, now at version 19, as the compact,
+Paperweight v0.0.28 retains the layer syntax, now at version 20, as the compact,
 human-editable authoring projection. Before generation, the portable core
 compiles it into a directed acyclic material graph:
 
@@ -535,7 +549,7 @@ compiles it into a directed acyclic material graph:
 - all ten material outputs receive explicit output nodes.
 
 Disabled layers compile as exact no-ops. Node metadata records the source layer
-for future diagnostics and incremental evaluation. Version-19 layers compile
+for future diagnostics and incremental evaluation. Version-20 layers compile
 into nine independent routed branches according to `layer.N.outputs`; normal
 continues to derive from height. Materials whose enabled layers target all branches retain
 the historical shared graph exactly. Portable C++ callers may also provide a
@@ -599,6 +613,11 @@ It also adds radial copy count, radius, phase, and fixed/outward/tangential
 orientation to every analytic shape. Older shape layers migrate to one fixed
 copy at radius zero; their evaluation and output bytes are unchanged.
 
+Format version 20 adds the textile generator. Its explicit weave, yarn, pile,
+fibre, defect, colour, output-field, and alternating-orientation parameters
+compile to an ordinary generator node. Older materials contain no textile layer
+and retain their previous evaluation exactly.
+
 ## Material outputs
 
 Every output derives from its routed graph branch at the same pixel centre:
@@ -630,7 +649,7 @@ generation wrap mathematically across both tile axes.
 ## Compatibility policy
 
 The `.pmat` format version and Paperweight application version are separate.
-Paperweight v0.0.27 reads versions 1 through 19 and writes version 19. A reader
+Paperweight v0.0.28 reads versions 1 through 20 and writes version 20. A reader
 rejects unsupported versions and unknown fields so that it cannot quietly
 reinterpret a future material.
 
@@ -663,12 +682,14 @@ so every version-15 material retains byte-identical output. Version 17 adds an
 opt-in metalness branch and dielectric IOR. Version-16 and older files default
 to zero metalness and IOR 1.5, preserving every historical colour, height,
 normal, and roughness byte. Saving any older format performs the explicit
-migration to version 19. Version 18 adds opt-in special-surface branches and
+migration to version 20. Version 18 adds opt-in special-surface branches and
 neutral migration defaults; version-17 colour, height, normal, roughness, and
 metalness bytes remain unchanged.
 Version 19 adds opt-in radial profiles and motif repetition. Versions 1 through
 18 acquire identity radial defaults, so existing shapes retain byte-identical
 output.
+Version 20 adds an opt-in textile operation. Versions 1 through 19 contain no
+textile layers and therefore retain every historical output byte.
 
 The portable entry points are `paperweight::parsePmat` and
 `paperweight::serialisePmat` in `include/paperweight/pmat.hpp`.
