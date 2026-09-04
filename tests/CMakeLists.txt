@@ -67,6 +67,9 @@ foreach(showcase IN ITEMS
     castle-foliage
     radial-target
     arc-and-crescent-motifs
+    woven-upholstery
+    alternating-carpet
+    heraldic-banner-cloth
 )
     configure_file(
         "${PROJECT_SOURCE_DIR}/examples/materials/${showcase}.pmat"

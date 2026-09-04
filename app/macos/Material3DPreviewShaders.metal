@@ -21,6 +21,7 @@ struct PreviewUniforms {
     float4 environmentSettings;
     float4 specialMapSettings;
     float4 anisotropySettings;
+    float4 shapeSettings;
 };
 
 struct PreviewVaryings {
@@ -142,18 +143,46 @@ vertex PreviewVaryings paperweightPreviewVertex(
     texture2d<float> heightTexture [[texture(1)]])
 {
     PreviewVertex source = vertices[vertexId];
+    float3 localPosition = source.position;
+    float3 localNormal = source.normal;
+    float3 localTangent = source.tangent.xyz;
+    if (uniforms.shapeSettings.x > 0.5) {
+        const float u = source.uv.x;
+        const float v = source.uv.y;
+        const float phase = uniforms.shapeSettings.y * 2.0 * previewPi;
+        const float envelope = smoothstep(0.0, 0.24, u);
+        const float primaryAngle = 2.0 * previewPi * (u * 1.15) + phase;
+        const float secondaryAngle = 2.0 * previewPi * (v * 0.72) - phase * 0.63;
+        const float primaryWave = sin(primaryAngle) * 0.105;
+        const float secondaryWave = sin(secondaryAngle) * 0.038;
+        const float droop = u * u * 0.075;
+        localPosition.z += envelope * (primaryWave + secondaryWave);
+        localPosition.y -= droop;
+
+        const float envelopeDerivative = u < 0.24
+            ? 25.0 * (u / 0.24) * (1.0 - u / 0.24)
+            : 0.0;
+        const float dzdu = envelopeDerivative * (primaryWave + secondaryWave) +
+            envelope * cos(primaryAngle) * 0.105 * 2.0 * previewPi * 1.15;
+        const float dzdv = envelope * cos(secondaryAngle) * 0.038 *
+            2.0 * previewPi * 0.72;
+        const float3 derivativeU = float3(1.8, -2.0 * u * 0.075, dzdu);
+        const float3 derivativeV = float3(0.0, -1.64, dzdv);
+        localNormal = normalize(cross(derivativeV, derivativeU));
+        localTangent = normalize(derivativeU);
+    }
     const float height = heightTexture.sample(materialSampler, source.uv, level(0.0)).r;
     const float displacement = uniforms.mapSettings.y > 0.5
         ? (height - 0.5) * uniforms.settings.w
         : 0.0;
-    const float3 localPosition = source.position + source.normal * displacement;
+    localPosition += localNormal * displacement;
     const float4 worldPosition = uniforms.model * float4(localPosition, 1.0);
 
     PreviewVaryings output;
     output.position = uniforms.modelViewProjection * float4(localPosition, 1.0);
     output.worldPosition = worldPosition.xyz;
-    output.normal = normalize((uniforms.normalMatrix * float4(source.normal, 0.0)).xyz);
-    output.tangent = normalize((uniforms.normalMatrix * float4(source.tangent.xyz, 0.0)).xyz);
+    output.normal = normalize((uniforms.normalMatrix * float4(localNormal, 0.0)).xyz);
+    output.tangent = normalize((uniforms.normalMatrix * float4(localTangent, 0.0)).xyz);
     output.tangentSign = source.tangent.w;
     output.uv = source.uv;
     return output;

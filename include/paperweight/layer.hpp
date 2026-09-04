@@ -695,6 +695,76 @@ struct OrganicAccumulationOperation {
         const OrganicAccumulationOperation&) = default;
 };
 
+enum class TextilePattern : std::uint8_t {
+    plainWeave = 0,
+    basketWeave = 1,
+    twillWeave = 2,
+    loopPile = 3,
+    cutPile = 4,
+};
+
+enum class TextileField : std::uint8_t {
+    material = 0,
+    height = 1,
+    warp = 2,
+    weft = 3,
+    overUnder = 4,
+    fibres = 5,
+    pile = 6,
+    damage = 7,
+    colourVariation = 8,
+    direction = 9,
+};
+
+enum class YarnProfile : std::uint8_t {
+    round = 0,
+    flat = 1,
+    twisted = 2,
+};
+
+enum class TextileTileOrientation : std::uint8_t {
+    uniform = 0,
+    alternatingRows = 1,
+    alternatingColumns = 2,
+    checkerboard = 3,
+};
+
+struct TextileOperation {
+    TextilePattern pattern{TextilePattern::plainWeave};
+    TextileField field{TextileField::material};
+    YarnProfile yarnProfile{YarnProfile::round};
+    TextileTileOrientation tileOrientation{TextileTileOrientation::uniform};
+    std::uint32_t columns{32};
+    std::uint32_t rows{32};
+    std::uint32_t tileColumns{1};
+    std::uint32_t tileRows{1};
+    std::uint32_t weaveSpan{1};
+    std::uint32_t twillStep{1};
+    double yarnWidth{0.82};
+    double yarnRoundness{0.82};
+    double crossingHeight{0.18};
+    double jitter{0.08};
+    std::uint32_t fibreFrequency{12};
+    double fibreStrength{0.12};
+    double twist{0.3};
+    double pileRadius{0.34};
+    double pileHeight{0.78};
+    double missingAmount{};
+    double damageAmount{};
+    double differentColourAmount{};
+    double colourVariation{0.12};
+    double softness{0.025};
+    Rgba8 lowColour{54, 76, 70, 255};
+    Rgba8 highColour{102, 132, 112, 255};
+    Rgba8 accentColour{184, 168, 116, 255};
+    Rgba8 damageColour{42, 38, 34, 255};
+    std::uint64_t seedOffset{};
+
+    friend constexpr bool operator==(
+        const TextileOperation&,
+        const TextileOperation&) = default;
+};
+
 enum class SurfacePatternKind : std::uint8_t {
     ridgedNoise = 0,
     bands = 1,
@@ -783,7 +853,8 @@ using LayerOperation = std::variant<
     OrganicCrackOperation,
     LeafClusterOperation,
     OrganicAccumulationOperation,
-    SurfaceValueOperation>;
+    SurfaceValueOperation,
+    TextileOperation>;
 
 struct LayerOutputRouting {
     bool colour{true};
@@ -927,6 +998,10 @@ struct LayerLimits {
     static constexpr std::uint32_t maximumLeavesPerCluster = 24;
     static constexpr std::uint32_t maximumLeafDetails = 16;
     static constexpr double maximumLeafExtent = 0.5;
+    static constexpr std::uint32_t maximumTextileThreads = 128;
+    static constexpr std::uint32_t maximumTextileTiles = 16;
+    static constexpr std::uint32_t maximumWeaveSpan = 8;
+    static constexpr std::uint32_t maximumFibreFrequency = 64;
 };
 
 [[nodiscard]] constexpr MaterialLayer makeNoiseLayer(std::uint64_t seedOffset = 0)
@@ -1284,6 +1359,18 @@ struct LayerLimits {
         {}};
 }
 
+[[nodiscard]] constexpr MaterialLayer makeTextileLayer()
+{
+    return MaterialLayer{
+        true,
+        1.0,
+        CompositeMode::blend,
+        TextileOperation{},
+        {},
+        {},
+        {}};
+}
+
 [[nodiscard]] constexpr std::uint32_t rotationDegrees(QuarterTurn rotation)
 {
     return static_cast<std::uint32_t>(rotation) * 90U;
@@ -1369,9 +1456,62 @@ struct LayerLimits {
         return "organic_accumulation";
     case 28:
         return "surface_value";
+    case 29:
+        return "textile";
     default:
         return "unknown";
     }
+}
+
+[[nodiscard]] constexpr std::string_view textilePatternName(TextilePattern pattern)
+{
+    switch (pattern) {
+    case TextilePattern::plainWeave: return "plain_weave";
+    case TextilePattern::basketWeave: return "basket_weave";
+    case TextilePattern::twillWeave: return "twill_weave";
+    case TextilePattern::loopPile: return "loop_pile";
+    case TextilePattern::cutPile: return "cut_pile";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view textileFieldName(TextileField field)
+{
+    switch (field) {
+    case TextileField::material: return "material";
+    case TextileField::height: return "height";
+    case TextileField::warp: return "warp";
+    case TextileField::weft: return "weft";
+    case TextileField::overUnder: return "over_under";
+    case TextileField::fibres: return "fibres";
+    case TextileField::pile: return "pile";
+    case TextileField::damage: return "damage";
+    case TextileField::colourVariation: return "colour_variation";
+    case TextileField::direction: return "direction";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view yarnProfileName(YarnProfile profile)
+{
+    switch (profile) {
+    case YarnProfile::round: return "round";
+    case YarnProfile::flat: return "flat";
+    case YarnProfile::twisted: return "twisted";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view textileTileOrientationName(
+    TextileTileOrientation orientation)
+{
+    switch (orientation) {
+    case TextileTileOrientation::uniform: return "uniform";
+    case TextileTileOrientation::alternatingRows: return "alternating_rows";
+    case TextileTileOrientation::alternatingColumns: return "alternating_columns";
+    case TextileTileOrientation::checkerboard: return "checkerboard";
+    }
+    return "unknown";
 }
 
 [[nodiscard]] constexpr std::string_view organicCellFieldName(OrganicCellField field)

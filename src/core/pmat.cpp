@@ -124,6 +124,7 @@ enum class OperationKind {
     leafCluster,
     organicAccumulation,
     surfaceValue,
+    textile,
 };
 
 enum class BrickSizing {
@@ -403,6 +404,35 @@ struct LayerBuilder {
     ParsedValue<Rgba8> organicAccumulationHighColour;
     ParsedValue<std::uint64_t> organicAccumulationSeedOffset;
     ParsedValue<ProcessingTarget> organicAccumulationTarget;
+    ParsedValue<TextilePattern> textilePattern;
+    ParsedValue<TextileField> textileField;
+    ParsedValue<YarnProfile> textileYarnProfile;
+    ParsedValue<TextileTileOrientation> textileTileOrientation;
+    ParsedValue<std::uint32_t> textileColumns;
+    ParsedValue<std::uint32_t> textileRows;
+    ParsedValue<std::uint32_t> textileTileColumns;
+    ParsedValue<std::uint32_t> textileTileRows;
+    ParsedValue<std::uint32_t> textileWeaveSpan;
+    ParsedValue<std::uint32_t> textileTwillStep;
+    ParsedValue<double> textileYarnWidth;
+    ParsedValue<double> textileYarnRoundness;
+    ParsedValue<double> textileCrossingHeight;
+    ParsedValue<double> textileJitter;
+    ParsedValue<std::uint32_t> textileFibreFrequency;
+    ParsedValue<double> textileFibreStrength;
+    ParsedValue<double> textileTwist;
+    ParsedValue<double> textilePileRadius;
+    ParsedValue<double> textilePileHeight;
+    ParsedValue<double> textileMissingAmount;
+    ParsedValue<double> textileDamageAmount;
+    ParsedValue<double> textileDifferentColourAmount;
+    ParsedValue<double> textileColourVariation;
+    ParsedValue<double> textileSoftness;
+    ParsedValue<Rgba8> textileLowColour;
+    ParsedValue<Rgba8> textileHighColour;
+    ParsedValue<Rgba8> textileAccentColour;
+    ParsedValue<Rgba8> textileDamageColour;
+    ParsedValue<std::uint64_t> textileSeedOffset;
 };
 
 std::string_view trim(std::string_view value)
@@ -753,6 +783,52 @@ std::optional<OperationKind> parseOperationKind(std::string_view value)
     if (value == "surface_value") {
         return OperationKind::surfaceValue;
     }
+    if (value == "textile") {
+        return OperationKind::textile;
+    }
+    return std::nullopt;
+}
+
+std::optional<TextilePattern> parseTextilePattern(std::string_view value)
+{
+    if (value == "plain_weave") return TextilePattern::plainWeave;
+    if (value == "basket_weave") return TextilePattern::basketWeave;
+    if (value == "twill_weave") return TextilePattern::twillWeave;
+    if (value == "loop_pile") return TextilePattern::loopPile;
+    if (value == "cut_pile") return TextilePattern::cutPile;
+    return std::nullopt;
+}
+
+std::optional<TextileField> parseTextileField(std::string_view value)
+{
+    if (value == "material") return TextileField::material;
+    if (value == "height") return TextileField::height;
+    if (value == "warp") return TextileField::warp;
+    if (value == "weft") return TextileField::weft;
+    if (value == "over_under") return TextileField::overUnder;
+    if (value == "fibres") return TextileField::fibres;
+    if (value == "pile") return TextileField::pile;
+    if (value == "damage") return TextileField::damage;
+    if (value == "colour_variation") return TextileField::colourVariation;
+    if (value == "direction") return TextileField::direction;
+    return std::nullopt;
+}
+
+std::optional<YarnProfile> parseYarnProfile(std::string_view value)
+{
+    if (value == "round") return YarnProfile::round;
+    if (value == "flat") return YarnProfile::flat;
+    if (value == "twisted") return YarnProfile::twisted;
+    return std::nullopt;
+}
+
+std::optional<TextileTileOrientation> parseTextileTileOrientation(
+    std::string_view value)
+{
+    if (value == "uniform") return TextileTileOrientation::uniform;
+    if (value == "alternating_rows") return TextileTileOrientation::alternatingRows;
+    if (value == "alternating_columns") return TextileTileOrientation::alternatingColumns;
+    if (value == "checkerboard") return TextileTileOrientation::checkerboard;
     return std::nullopt;
 }
 
@@ -1405,6 +1481,26 @@ bool hasVersionFourteenFields(const LayerBuilder& builder)
         builder.organicAccumulationTarget.value;
 }
 
+bool hasVersionTwentyFields(const LayerBuilder& builder)
+{
+    return builder.textilePattern.value || builder.textileField.value ||
+        builder.textileYarnProfile.value || builder.textileTileOrientation.value ||
+        builder.textileColumns.value || builder.textileRows.value ||
+        builder.textileTileColumns.value || builder.textileTileRows.value ||
+        builder.textileWeaveSpan.value || builder.textileTwillStep.value ||
+        builder.textileYarnWidth.value || builder.textileYarnRoundness.value ||
+        builder.textileCrossingHeight.value || builder.textileJitter.value ||
+        builder.textileFibreFrequency.value || builder.textileFibreStrength.value ||
+        builder.textileTwist.value || builder.textilePileRadius.value ||
+        builder.textilePileHeight.value || builder.textileMissingAmount.value ||
+        builder.textileDamageAmount.value ||
+        builder.textileDifferentColourAmount.value ||
+        builder.textileColourVariation.value || builder.textileSoftness.value ||
+        builder.textileLowColour.value || builder.textileHighColour.value ||
+        builder.textileAccentColour.value || builder.textileDamageColour.value ||
+        builder.textileSeedOffset.value;
+}
+
 bool hasStructuralFields(const LayerBuilder& builder)
 {
     return hasVersionFourFields(builder) || hasVersionFiveFields(builder) ||
@@ -1412,7 +1508,7 @@ bool hasStructuralFields(const LayerBuilder& builder)
         hasVersionEightFields(builder) || hasVersionNineFields(builder) ||
         hasVersionTenFields(builder) || hasVersionElevenFields(builder) ||
         hasVersionTwelveFields(builder) || hasVersionThirteenFields(builder) ||
-        hasVersionFourteenFields(builder);
+        hasVersionFourteenFields(builder) || hasVersionTwentyFields(builder);
 }
 
 template<typename Value>
@@ -3346,6 +3442,87 @@ ParseResult parsePmat(std::string_view text)
                         : nullptr;
                     if (destination == nullptr) return diagnostic(lineNumber, valueColumn, "invalid organic accumulation property");
                     if (!storeValue(*destination, parsed, lineNumber, valueColumn)) return duplicate();
+                } else if (property == "textile.pattern") {
+                    const auto parsed = parseTextilePattern(value);
+                    if (!parsed || !storeValue(builder.textilePattern, *parsed, lineNumber, valueColumn)) {
+                        return parsed ? duplicate() : diagnostic(lineNumber, valueColumn, "textile pattern must be 'plain_weave', 'basket_weave', 'twill_weave', 'loop_pile', or 'cut_pile'");
+                    }
+                } else if (property == "textile.field") {
+                    const auto parsed = parseTextileField(value);
+                    if (!parsed || !storeValue(builder.textileField, *parsed, lineNumber, valueColumn)) {
+                        return parsed ? duplicate() : diagnostic(lineNumber, valueColumn, "textile field is not supported");
+                    }
+                } else if (property == "textile.yarn_profile") {
+                    const auto parsed = parseYarnProfile(value);
+                    if (!parsed || !storeValue(builder.textileYarnProfile, *parsed, lineNumber, valueColumn)) {
+                        return parsed ? duplicate() : diagnostic(lineNumber, valueColumn, "textile yarn profile must be 'round', 'flat', or 'twisted'");
+                    }
+                } else if (property == "textile.tile_orientation") {
+                    const auto parsed = parseTextileTileOrientation(value);
+                    if (!parsed || !storeValue(builder.textileTileOrientation, *parsed, lineNumber, valueColumn)) {
+                        return parsed ? duplicate() : diagnostic(lineNumber, valueColumn, "textile tile orientation is not supported");
+                    }
+                } else if (property == "textile.columns" || property == "textile.rows" ||
+                           property == "textile.tile_columns" || property == "textile.tile_rows" ||
+                           property == "textile.weave_span" || property == "textile.twill_step" ||
+                           property == "textile.fibre_frequency") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "textile count must be an integer");
+                    }
+                    ParsedValue<std::uint32_t>* destination =
+                        property == "textile.columns" ? &builder.textileColumns
+                        : property == "textile.rows" ? &builder.textileRows
+                        : property == "textile.tile_columns" ? &builder.textileTileColumns
+                        : property == "textile.tile_rows" ? &builder.textileTileRows
+                        : property == "textile.weave_span" ? &builder.textileWeaveSpan
+                        : property == "textile.twill_step" ? &builder.textileTwillStep
+                        : &builder.textileFibreFrequency;
+                    if (!storeValue(*destination, parsed, lineNumber, valueColumn)) return duplicate();
+                } else if (property == "textile.colour_low" ||
+                           property == "textile.colour_high" ||
+                           property == "textile.colour_accent" ||
+                           property == "textile.colour_damage") {
+                    Rgba8 parsed{};
+                    if (!parseColour(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "textile colour must use 0xRRGGBBAA hexadecimal notation");
+                    }
+                    ParsedValue<Rgba8>* destination =
+                        property == "textile.colour_low" ? &builder.textileLowColour
+                        : property == "textile.colour_high" ? &builder.textileHighColour
+                        : property == "textile.colour_accent" ? &builder.textileAccentColour
+                        : &builder.textileDamageColour;
+                    if (!storeValue(*destination, parsed, lineNumber, valueColumn)) return duplicate();
+                } else if (property == "textile.seed_offset") {
+                    std::uint64_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "textile seed offset must be an unsigned integer");
+                    }
+                    if (!storeValue(builder.textileSeedOffset, parsed, lineNumber, valueColumn)) return duplicate();
+                } else if (property.starts_with("textile.")) {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "textile parameter must be a decimal number");
+                    }
+                    ParsedValue<double>* destination =
+                        property == "textile.yarn_width" ? &builder.textileYarnWidth
+                        : property == "textile.yarn_roundness" ? &builder.textileYarnRoundness
+                        : property == "textile.crossing_height" ? &builder.textileCrossingHeight
+                        : property == "textile.jitter" ? &builder.textileJitter
+                        : property == "textile.fibre_strength" ? &builder.textileFibreStrength
+                        : property == "textile.twist" ? &builder.textileTwist
+                        : property == "textile.pile_radius" ? &builder.textilePileRadius
+                        : property == "textile.pile_height" ? &builder.textilePileHeight
+                        : property == "textile.missing" ? &builder.textileMissingAmount
+                        : property == "textile.damage" ? &builder.textileDamageAmount
+                        : property == "textile.different_colour" ? &builder.textileDifferentColourAmount
+                        : property == "textile.colour_variation" ? &builder.textileColourVariation
+                        : property == "textile.softness" ? &builder.textileSoftness
+                        : nullptr;
+                    if (destination == nullptr) {
+                        return diagnostic(lineNumber, valueColumn, "invalid textile property");
+                    }
+                    if (!storeValue(*destination, parsed, lineNumber, valueColumn)) return duplicate();
                 } else if (property == "transform.scale_x") {
                     std::uint32_t parsed = 0;
                     if (!parseInteger(value, parsed)) {
@@ -3749,6 +3926,15 @@ ParseResult parsePmat(std::string_view text)
                     "radial profiles and motif repetition require .pmat version 19");
             }
 
+            if (formatVersion < 20 &&
+                (hasVersionTwentyFields(builder) ||
+                 *builder.operation.value == OperationKind::textile)) {
+                return diagnostic(
+                    lineNumber + 1,
+                    1,
+                    "textiles and fibres require .pmat version 20");
+            }
+
             if (formatVersion < 4 &&
                 (hasVersionFourFields(builder) ||
                  isStructuralOperation(*builder.operation.value))) {
@@ -3955,6 +4141,7 @@ ParseResult parsePmat(std::string_view text)
             const bool hasLatticeFields = hasVersionTwelveLatticeFields(builder);
             const bool hasScatterFields = hasVersionThirteenFields(builder);
             const bool hasOrganicFields = hasVersionFourteenFields(builder);
+            const bool hasTextileFields = hasVersionTwentyFields(builder);
             const bool shapeBelongsToScatter =
                 *builder.operation.value == OperationKind::scatter;
             const int operationGroupCount = static_cast<int>(hasBrickFields) +
@@ -3970,7 +4157,8 @@ ParseResult parsePmat(std::string_view text)
                 static_cast<int>(hasLatticeFields) +
                 static_cast<int>(hasScatterFields ||
                     (shapeBelongsToScatter && hasShapeFields)) +
-                static_cast<int>(hasOrganicFields);
+                static_cast<int>(hasOrganicFields) +
+                static_cast<int>(hasTextileFields);
 
             const bool hasClassicFields = builder.seedOffset.value || builder.solidColour.value ||
                 builder.levelsLow.value || builder.levelsHigh.value ||
@@ -4937,6 +5125,69 @@ ParseResult parsePmat(std::string_view text)
                     *builder.organicAccumulationTarget.value,
                 };
                 break;
+            case OperationKind::textile:
+                if (!builder.textilePattern.value) return missingLayerField(lineNumber + 1, index, "textile.pattern");
+                if (!builder.textileField.value) return missingLayerField(lineNumber + 1, index, "textile.field");
+                if (!builder.textileYarnProfile.value) return missingLayerField(lineNumber + 1, index, "textile.yarn_profile");
+                if (!builder.textileTileOrientation.value) return missingLayerField(lineNumber + 1, index, "textile.tile_orientation");
+                if (!builder.textileColumns.value) return missingLayerField(lineNumber + 1, index, "textile.columns");
+                if (!builder.textileRows.value) return missingLayerField(lineNumber + 1, index, "textile.rows");
+                if (!builder.textileTileColumns.value) return missingLayerField(lineNumber + 1, index, "textile.tile_columns");
+                if (!builder.textileTileRows.value) return missingLayerField(lineNumber + 1, index, "textile.tile_rows");
+                if (!builder.textileWeaveSpan.value) return missingLayerField(lineNumber + 1, index, "textile.weave_span");
+                if (!builder.textileTwillStep.value) return missingLayerField(lineNumber + 1, index, "textile.twill_step");
+                if (!builder.textileYarnWidth.value) return missingLayerField(lineNumber + 1, index, "textile.yarn_width");
+                if (!builder.textileYarnRoundness.value) return missingLayerField(lineNumber + 1, index, "textile.yarn_roundness");
+                if (!builder.textileCrossingHeight.value) return missingLayerField(lineNumber + 1, index, "textile.crossing_height");
+                if (!builder.textileJitter.value) return missingLayerField(lineNumber + 1, index, "textile.jitter");
+                if (!builder.textileFibreFrequency.value) return missingLayerField(lineNumber + 1, index, "textile.fibre_frequency");
+                if (!builder.textileFibreStrength.value) return missingLayerField(lineNumber + 1, index, "textile.fibre_strength");
+                if (!builder.textileTwist.value) return missingLayerField(lineNumber + 1, index, "textile.twist");
+                if (!builder.textilePileRadius.value) return missingLayerField(lineNumber + 1, index, "textile.pile_radius");
+                if (!builder.textilePileHeight.value) return missingLayerField(lineNumber + 1, index, "textile.pile_height");
+                if (!builder.textileMissingAmount.value) return missingLayerField(lineNumber + 1, index, "textile.missing");
+                if (!builder.textileDamageAmount.value) return missingLayerField(lineNumber + 1, index, "textile.damage");
+                if (!builder.textileDifferentColourAmount.value) return missingLayerField(lineNumber + 1, index, "textile.different_colour");
+                if (!builder.textileColourVariation.value) return missingLayerField(lineNumber + 1, index, "textile.colour_variation");
+                if (!builder.textileSoftness.value) return missingLayerField(lineNumber + 1, index, "textile.softness");
+                if (!builder.textileLowColour.value) return missingLayerField(lineNumber + 1, index, "textile.colour_low");
+                if (!builder.textileHighColour.value) return missingLayerField(lineNumber + 1, index, "textile.colour_high");
+                if (!builder.textileAccentColour.value) return missingLayerField(lineNumber + 1, index, "textile.colour_accent");
+                if (!builder.textileDamageColour.value) return missingLayerField(lineNumber + 1, index, "textile.colour_damage");
+                if (!builder.textileSeedOffset.value) return missingLayerField(lineNumber + 1, index, "textile.seed_offset");
+                if (hasClassicFields || operationGroupCount != 1) return crossOperationError();
+                layer.operation = TextileOperation{
+                    *builder.textilePattern.value,
+                    *builder.textileField.value,
+                    *builder.textileYarnProfile.value,
+                    *builder.textileTileOrientation.value,
+                    *builder.textileColumns.value,
+                    *builder.textileRows.value,
+                    *builder.textileTileColumns.value,
+                    *builder.textileTileRows.value,
+                    *builder.textileWeaveSpan.value,
+                    *builder.textileTwillStep.value,
+                    *builder.textileYarnWidth.value,
+                    *builder.textileYarnRoundness.value,
+                    *builder.textileCrossingHeight.value,
+                    *builder.textileJitter.value,
+                    *builder.textileFibreFrequency.value,
+                    *builder.textileFibreStrength.value,
+                    *builder.textileTwist.value,
+                    *builder.textilePileRadius.value,
+                    *builder.textilePileHeight.value,
+                    *builder.textileMissingAmount.value,
+                    *builder.textileDamageAmount.value,
+                    *builder.textileDifferentColourAmount.value,
+                    *builder.textileColourVariation.value,
+                    *builder.textileSoftness.value,
+                    *builder.textileLowColour.value,
+                    *builder.textileHighColour.value,
+                    *builder.textileAccentColour.value,
+                    *builder.textileDamageColour.value,
+                    *builder.textileSeedOffset.value,
+                };
+                break;
             case OperationKind::lattice:
                 if (!builder.latticeKind.value) {
                     return missingLayerField(lineNumber + 1, index, "lattice.kind");
@@ -5793,6 +6044,49 @@ SerialisationResult serialisePmat(const Material& material)
                 return SerialisationError{"could not format surface value"};
             }
             output += prefix + "surface.value = " + formatted + "\n";
+        } else if (const auto* textile = std::get_if<TextileOperation>(&layer.operation)) {
+            output += prefix + "textile.pattern = " +
+                std::string(textilePatternName(textile->pattern)) + "\n";
+            output += prefix + "textile.field = " +
+                std::string(textileFieldName(textile->field)) + "\n";
+            output += prefix + "textile.yarn_profile = " +
+                std::string(yarnProfileName(textile->yarnProfile)) + "\n";
+            output += prefix + "textile.tile_orientation = " +
+                std::string(textileTileOrientationName(textile->tileOrientation)) + "\n";
+            output += prefix + "textile.columns = " + std::to_string(textile->columns) + "\n";
+            output += prefix + "textile.rows = " + std::to_string(textile->rows) + "\n";
+            output += prefix + "textile.tile_columns = " + std::to_string(textile->tileColumns) + "\n";
+            output += prefix + "textile.tile_rows = " + std::to_string(textile->tileRows) + "\n";
+            output += prefix + "textile.weave_span = " + std::to_string(textile->weaveSpan) + "\n";
+            output += prefix + "textile.twill_step = " + std::to_string(textile->twillStep) + "\n";
+            output += prefix + "textile.fibre_frequency = " + std::to_string(textile->fibreFrequency) + "\n";
+            const std::array<std::pair<std::string_view, double>, 13> values{{
+                {"yarn_width", textile->yarnWidth},
+                {"yarn_roundness", textile->yarnRoundness},
+                {"crossing_height", textile->crossingHeight},
+                {"jitter", textile->jitter},
+                {"fibre_strength", textile->fibreStrength},
+                {"twist", textile->twist},
+                {"pile_radius", textile->pileRadius},
+                {"pile_height", textile->pileHeight},
+                {"missing", textile->missingAmount},
+                {"damage", textile->damageAmount},
+                {"different_colour", textile->differentColourAmount},
+                {"colour_variation", textile->colourVariation},
+                {"softness", textile->softness},
+            }};
+            for (const auto& [name, value] : values) {
+                const auto formatted = formatDouble(value);
+                if (formatted.empty()) {
+                    return SerialisationError{"could not format textile parameters"};
+                }
+                output += prefix + "textile." + std::string(name) + " = " + formatted + "\n";
+            }
+            output += prefix + "textile.colour_low = " + formatColour(textile->lowColour) + "\n";
+            output += prefix + "textile.colour_high = " + formatColour(textile->highColour) + "\n";
+            output += prefix + "textile.colour_accent = " + formatColour(textile->accentColour) + "\n";
+            output += prefix + "textile.colour_damage = " + formatColour(textile->damageColour) + "\n";
+            output += prefix + "textile.seed_offset = " + std::to_string(textile->seedOffset) + "\n";
         } else if (const auto* levels = std::get_if<LevelsOperation>(&layer.operation)) {
             const auto low = formatDouble(levels->inputLow);
             const auto high = formatDouble(levels->inputHigh);

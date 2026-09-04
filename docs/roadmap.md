@@ -401,6 +401,29 @@ one/four-worker identity, showcase golden hashes, and ARM64/x86-64 builds are
 release gates. Tracked by
 [roadmap issue #278](https://github.com/SolenMusic/Paperweight/issues/278).
 
+## v0.0.28 - Textiles and Fibres
+
+Implemented: introduce one reusable portable textile generator for plain,
+basket, and twill weaving plus loop and cut pile. Warp and weft yarns have
+authored counts, width, rounded/flat/twisted profiles, crossing relief, jitter,
+fine fibre structure, and deterministic over-under order. Pile uses stable tuft
+placement and directional fibre lay. Missing, damaged, and differently coloured
+fibres derive only from material seed and integer textile identity.
+
+Whole-tile orientation may remain uniform or rotate across alternating rows,
+columns, or checkerboards. Tile counts that would make a rotated boundary
+non-periodic are rejected, keeping seams mathematical. Woven Upholstery,
+Alternating Carpet, and Heraldic Banner Cloth demonstrate the operation without
+introducing upholstery-, carpet-, or flag-specific generators.
+
+PMAT format 20 stores the complete textile operation explicitly. The editor
+exposes all parameters through the existing layer workflow. The 3D editor and
+wizard previews add a Wavy Flag mesh whose phase can be scrubbed or animated;
+this Metal-only deformation is inspection state and never enters `.pmat` or CPU
+generation. Seam probes, round-trips, one/four-worker identity, showcase golden
+hashes, and ARM64/x86-64 builds remain release gates. Tracked by
+[roadmap issue #285](https://github.com/SolenMusic/Paperweight/issues/285).
+
 ## v0.1.0 - Game Library
 
 Stabilise the embedding API and add material-definition versioning, generator
