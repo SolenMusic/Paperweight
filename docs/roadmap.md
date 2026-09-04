@@ -380,6 +380,27 @@ source-versus-set checks, one/multiple-worker checks, historical golden hashes,
 and ARM64/x86-64 conformance remain release gates. Tracked by
 [roadmap issue #270](https://github.com/SolenMusic/Paperweight/issues/270).
 
+## v0.0.27 - Motifs, Profiles and Radial Layouts
+
+Implemented: extend the portable signed-distance shape vocabulary with annuli,
+bounded arcs, annular sectors, and crescents. Every analytic shape can be copied
+around a stable centre using an authored count, radius, and phase. Copies may
+retain a fixed rotation, face away from the centre, or follow the circle
+tangentially.
+
+The feature is deliberately structural rather than asset-specific. Targets,
+jump pads, arches, medallions, dials, Moon Keep ornament, and repeated fasteners
+can share the same operations, Boolean masks, composites, output routing, and
+graph evaluator. Radial Target and Arc and Crescent Motifs demonstrate layered
+designed surfaces without introducing a target or science-fiction generator.
+
+PMAT format 19 persists the complete profile and radial layout explicitly. The
+native editor exposes those parameters without changing the existing layer-
+oriented workflow. Seam probes, format migration rejection, exact round-trips,
+one/four-worker identity, showcase golden hashes, and ARM64/x86-64 builds are
+release gates. Tracked by
+[roadmap issue #278](https://github.com/SolenMusic/Paperweight/issues/278).
+
 ## v0.1.0 - Game Library
 
 Stabilise the embedding API and add material-definition versioning, generator

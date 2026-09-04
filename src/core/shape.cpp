@@ -105,6 +105,73 @@ double distanceToSegment(Point point, Point start, Point end)
     });
 }
 
+double normalisedDegrees(double degrees)
+{
+    const double wrapped = std::fmod(degrees, 360.0);
+    return wrapped < 0.0 ? wrapped + 360.0 : wrapped;
+}
+
+bool angleWithinSweep(double angle, double start, double sweep)
+{
+    if (sweep >= 360.0) {
+        return true;
+    }
+    return normalisedDegrees(angle - start) <= sweep;
+}
+
+Point pointOnCircle(double radius, double degrees)
+{
+    const double radians = degrees * std::numbers::pi / 180.0;
+    return {radius * std::cos(radians), radius * std::sin(radians)};
+}
+
+double annulusDistance(Point point, double outerRadius, double innerRadius)
+{
+    const double radius = length(point);
+    return std::max(radius - outerRadius, innerRadius - radius);
+}
+
+double arcDistance(
+    Point point,
+    double outerRadius,
+    double innerRadius,
+    double startDegrees,
+    double sweepDegrees)
+{
+    const double angle = normalisedDegrees(
+        std::atan2(point.y, point.x) * 180.0 / std::numbers::pi);
+    if (angleWithinSweep(angle, startDegrees, sweepDegrees)) {
+        return annulusDistance(point, outerRadius, innerRadius);
+    }
+    const double midRadius = (outerRadius + innerRadius) * 0.5;
+    const double halfThickness = (outerRadius - innerRadius) * 0.5;
+    const auto start = pointOnCircle(midRadius, startDegrees);
+    const auto end = pointOnCircle(midRadius, startDegrees + sweepDegrees);
+    return std::min(length({point.x - start.x, point.y - start.y}),
+                    length({point.x - end.x, point.y - end.y})) - halfThickness;
+}
+
+double sectorDistance(
+    Point point,
+    double outerRadius,
+    double innerRadius,
+    double startDegrees,
+    double sweepDegrees)
+{
+    const double angle = normalisedDegrees(
+        std::atan2(point.y, point.x) * 180.0 / std::numbers::pi);
+    if (angleWithinSweep(angle, startDegrees, sweepDegrees)) {
+        return annulusDistance(point, outerRadius, innerRadius);
+    }
+    const auto innerStart = pointOnCircle(innerRadius, startDegrees);
+    const auto outerStart = pointOnCircle(outerRadius, startDegrees);
+    const auto innerEnd = pointOnCircle(innerRadius, startDegrees + sweepDegrees);
+    const auto outerEnd = pointOnCircle(outerRadius, startDegrees + sweepDegrees);
+    return std::min(
+        distanceToSegment(point, innerStart, outerStart),
+        distanceToSegment(point, innerEnd, outerEnd));
+}
+
 double polygonDistance(
     Point point,
     double width,
@@ -168,6 +235,36 @@ double primitiveDistance(
             width,
             height,
             operation.vertices);
+    case ShapePrimitiveKind::annulus: {
+        const double outerRadius = std::min(width, height) * 0.5;
+        return annulusDistance(point, outerRadius, operation.innerRadius);
+    }
+    case ShapePrimitiveKind::arc: {
+        const double outerRadius = std::min(width, height) * 0.5;
+        return arcDistance(
+            point,
+            outerRadius,
+            operation.innerRadius,
+            operation.arcStartDegrees,
+            operation.arcSweepDegrees);
+    }
+    case ShapePrimitiveKind::sector: {
+        const double outerRadius = std::min(width, height) * 0.5;
+        return sectorDistance(
+            point,
+            outerRadius,
+            operation.innerRadius,
+            operation.arcStartDegrees,
+            operation.arcSweepDegrees);
+    }
+    case ShapePrimitiveKind::crescent: {
+        const double outer = ellipseDistance(point, width, height);
+        const double innerWidth = operation.innerRadius * 2.0;
+        const double innerHeight = innerWidth * height / width;
+        const Point innerPoint{point.x - operation.crescentOffset, point.y};
+        const double inner = ellipseDistance(innerPoint, innerWidth, innerHeight);
+        return std::max(outer, -inner);
+    }
     }
     return std::numeric_limits<double>::infinity();
 }
@@ -244,6 +341,7 @@ ShapeSample evaluateShapePrimitive(
     Point nearestPoint{};
     std::int64_t nearestColumn{};
     std::int64_t nearestRow{};
+    std::uint32_t nearestCopy{};
     for (std::int64_t rowOffset = -2; rowOffset <= 2; ++rowOffset) {
         const auto row = baseY + rowOffset;
         const auto wrappedRow = positiveModulo(row, operation.rows);
@@ -257,15 +355,42 @@ ShapeSample evaluateShapePrimitive(
                     operation.offsetX + rowShift),
                 scaledY - (static_cast<double>(row) + 0.5 + operation.offsetY),
             };
-            const double distance = shapeSignedDistance(
-                operation,
-                point.x,
-                point.y);
-            if (distance < nearest) {
-                nearest = distance;
-                nearestPoint = rotateIntoShape(point, operation.rotationDegrees);
-                nearestColumn = positiveModulo(column, operation.columns);
-                nearestRow = wrappedRow;
+            for (std::uint32_t copy = 0; copy < operation.radialCopies; ++copy) {
+                const double copyAngle = operation.radialPhaseDegrees +
+                    360.0 * static_cast<double>(copy) /
+                        static_cast<double>(operation.radialCopies);
+                const auto copyCentre = pointOnCircle(operation.radialRadius, copyAngle);
+                const Point copyPoint{
+                    point.x - copyCentre.x,
+                    point.y - copyCentre.y,
+                };
+                double orientation = 0.0;
+                switch (operation.radialOrientation) {
+                case RadialOrientation::fixed:
+                    break;
+                case RadialOrientation::outward:
+                    orientation = copyAngle - 90.0;
+                    break;
+                case RadialOrientation::tangent:
+                    orientation = copyAngle;
+                    break;
+                }
+                const double distance = shapeSignedDistance(
+                    operation,
+                    copyPoint.x,
+                    copyPoint.y,
+                    1.0,
+                    1.0,
+                    orientation);
+                if (distance < nearest) {
+                    nearest = distance;
+                    nearestPoint = rotateIntoShape(
+                        copyPoint,
+                        operation.rotationDegrees + orientation);
+                    nearestColumn = positiveModulo(column, operation.columns);
+                    nearestRow = wrappedRow;
+                    nearestCopy = copy;
+                }
             }
         }
     }
@@ -282,11 +407,18 @@ ShapeSample evaluateShapePrimitive(
     const double insideScale = std::max(
         LayerLimits::minimumShapeDimension,
         std::min(halfWidth, halfHeight));
+    const auto selectedRegionDomain =
+        operation.radialCopies == 1 && operation.radialRadius == 0.0
+        ? regionDomain
+        : mixBits(regionDomain ^ mixBits(nearestCopy));
     return {
         shapeFieldCoverage(operation, nearest),
         nearest,
         RegionSample{
-            makeRegionKey(regionDomain, nearestColumn, nearestRow),
+            makeRegionKey(
+                selectedRegionDomain,
+                nearestColumn,
+                nearestRow),
             std::clamp(nearestPoint.x / operation.width + 0.5, 0.0, 1.0),
             std::clamp(nearestPoint.y / operation.height + 0.5, 0.0, 1.0),
             centreDistance,

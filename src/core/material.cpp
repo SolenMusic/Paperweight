@@ -73,6 +73,10 @@ std::optional<std::string> validateShapePrimitive(
     case ShapePrimitiveKind::capsule:
     case ShapePrimitiveKind::diamond:
     case ShapePrimitiveKind::convexPolygon:
+    case ShapePrimitiveKind::annulus:
+    case ShapePrimitiveKind::arc:
+    case ShapePrimitiveKind::sector:
+    case ShapePrimitiveKind::crescent:
         break;
     default:
         return std::string(prefix) + "shape primitive kind is not supported";
@@ -127,6 +131,41 @@ std::optional<std::string> validateShapePrimitive(
             -LayerLimits::maximumShapeRotation,
             LayerLimits::maximumShapeRotation)) {
         return std::string(prefix) + "local shape rotation must be finite and within -360 to 360 degrees";
+    }
+    switch (operation.radialOrientation) {
+    case RadialOrientation::fixed:
+    case RadialOrientation::outward:
+    case RadialOrientation::tangent:
+        break;
+    default:
+        return std::string(prefix) + "radial motif orientation is not supported";
+    }
+    if (!validRange(operation.innerRadius, 0.0, LayerLimits::maximumShapeInnerRadius) ||
+        !validRange(operation.arcStartDegrees,
+                    -LayerLimits::maximumShapeRotation,
+                    LayerLimits::maximumShapeRotation) ||
+        !validRange(operation.arcSweepDegrees,
+                    LayerLimits::minimumArcSweep,
+                    LayerLimits::maximumShapeRotation) ||
+        !validRange(operation.crescentOffset,
+                    -LayerLimits::maximumShapeOffset,
+                    LayerLimits::maximumShapeOffset) ||
+        operation.radialCopies < 1 ||
+        operation.radialCopies > LayerLimits::maximumRadialCopies ||
+        !validRange(operation.radialRadius, 0.0, LayerLimits::maximumShapeOffset) ||
+        !validRange(operation.radialPhaseDegrees,
+                    -LayerLimits::maximumShapeRotation,
+                    LayerLimits::maximumShapeRotation)) {
+        return std::string(prefix) +
+            "radial shape parameters are outside their supported ranges";
+    }
+    if ((operation.kind == ShapePrimitiveKind::annulus ||
+         operation.kind == ShapePrimitiveKind::arc ||
+         operation.kind == ShapePrimitiveKind::sector ||
+         operation.kind == ShapePrimitiveKind::crescent) &&
+        operation.innerRadius >= std::min(operation.width, operation.height) * 0.5) {
+        return std::string(prefix) +
+            "radial shape inner radius must be smaller than its outer radius";
     }
     if (operation.kind != ShapePrimitiveKind::convexPolygon) {
         return std::nullopt;

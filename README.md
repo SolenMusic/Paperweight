@@ -13,7 +13,22 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-v0.0.26 is the current Incremental and Multi-Output Performance release. A new
+v0.0.27 is the current Motifs, Profiles and Radial Layouts release. The portable
+C++ core adds annuli, bounded arcs, annular sectors, and crescents to its signed-
+distance shape vocabulary. Any analytic shape can now be copied around a stable
+centre with an authored radius and phase, while each copy remains fixed, faces
+outward, or follows the circle tangentially. The placement is derived only from
+material coordinates and authored values, so seams and worker-count identity
+remain exact.
+
+These are ordinary reusable shape operations rather than target, arch, or jump-
+pad generators. Native layer controls expose the profile parameters and radial
+layout directly. Radial Target and Arc and Crescent Motifs are bundled editable
+showcases, golden-test inputs, and benchmark materials. `.pmat` version 19 stores
+the new vocabulary readably and rejects it explicitly when labelled as an older
+format.
+
+The v0.0.26 Incremental and Multi-Output Performance work remains available. A
 portable `generateMaterialSet` API validates and prepares one material once,
 then produces any selected combination of its ten maps through one coordinated
 worker pool. Immutable graph plans and deterministic scatter, crack, and leaf
@@ -29,7 +44,7 @@ without launching CPU generation. Superseded work is cancelled, the last valid
 preview stays visible while replacements render, and only the newest revision is
 published.
 
-Across all 46 bundled materials at 64 x 64 on the development machine, the
+Across the 46 v0.0.26 bundled materials at 64 x 64 on the development machine, the
 coordinated ten-map path averaged 1.47x the throughput of ten sequential calls,
 with a 1.02x to 2.32x measured range and zero checksum differences. The benchmark
 window now defaults to that complete-set test and can still isolate any of the
@@ -134,7 +149,7 @@ templates where appropriate. The v0.0.25 glazed, lacquered, wet, coated-metal,
 and emissive recipes use the same ordinary family workflow.
 
 Wizard results are normal editable `Material` values and human-readable
-version-18 `.pmat` files. The wizard adds no evaluator, hidden recipe state, or
+version-19 `.pmat` files. The wizard adds no evaluator, hidden recipe state, or
 new serialisation format. The v0.0.19 working-folder browser, metadata,
 diagnostics, safe file operations, and selectable 64x64 through 1024x1024
 preview resolution remain available.
@@ -160,6 +175,7 @@ Native macOS AppKit frontend
 ```
 
 See [docs/architecture.md](docs/architecture.md),
+[docs/motifs-and-radial-layouts.md](docs/motifs-and-radial-layouts.md),
 [docs/coatings-and-special-surfaces.md](docs/coatings-and-special-surfaces.md),
 [docs/metals-and-reflections.md](docs/metals-and-reflections.md),
 [docs/organic-structures.md](docs/organic-structures.md),
@@ -195,19 +211,22 @@ an initial foliage population, cel forest bark, and layered castle foliage.
 The metal collection adds polished chrome, brushed steel, copper, brass,
 scratched painted steel, and corroded metal. The special-surface collection adds
 glazed ceramic, lacquered wood, wet stone, machinery panels, and an illuminated
-science-fiction surface.
+science-fiction surface. The designed-surface collection adds a radial target
+and an arc, annular-sector, and crescent motif study.
 File > New from Reference Template exposes the ten Blastard targets as seedless,
 caller-instantiated recipes with compact material-specific controls. The older
 Showcase menu remains available for direct access to the wider example set.
 Region Stones demonstrates repeatable
 per-cell variation, while Course Random gives every row one stable value.
 
-Format-version-1 through version-18 `.pmat` files open. Versions 1 through 17
+Format-version-1 through version-19 `.pmat` files open. Versions 1 through 18
 retain their historical output intact; saving migrates them to canonical format
-version 18. Version 16 adds output routing and optional physical relief without
+version 19. Version 16 adds output routing and optional physical relief without
 changing the legacy default. Version 17 adds metalness routing and dielectric
 optics. Version 18 adds coating, occlusion, clear-coat, clear-coat roughness, and
 emissive routing plus anisotropy controls; older files migrate to neutral values.
+Version 19 adds opt-in radial profiles and motif repetition; older shape layers
+acquire identity defaults and retain their previous output.
 Exact block
 and parent-course keys are evaluator metadata, not pixel channels, so they are
 never stored in lossy floating-point form.

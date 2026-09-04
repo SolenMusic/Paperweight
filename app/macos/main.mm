@@ -770,6 +770,14 @@ NSString* operationDisplayName(const paperweight::LayerOperation& operation)
             return @"Diamonds";
         case paperweight::ShapePrimitiveKind::convexPolygon:
             return @"Convex Polygons";
+        case paperweight::ShapePrimitiveKind::annulus:
+            return @"Annuli";
+        case paperweight::ShapePrimitiveKind::arc:
+            return @"Arcs";
+        case paperweight::ShapePrimitiveKind::sector:
+            return @"Annular Sectors";
+        case paperweight::ShapePrimitiveKind::crescent:
+            return @"Crescents";
         }
         return @"Shapes";
     }
@@ -1260,6 +1268,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @[ @"Foliage Foundation", @"foliage-foundation" ],
         @[ @"Cel Forest Bark", @"cel-forest-bark" ],
         @[ @"Castle Foliage", @"castle-foliage" ],
+        @[ @"Radial Target", @"radial-target" ],
+        @[ @"Arc and Crescent Motifs", @"arc-and-crescent-motifs" ],
     ];
     for (NSArray<NSString*>* showcase in showcases) {
         auto* item = [showcaseMenu addItemWithTitle:showcase[0]
@@ -3848,6 +3858,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         [self.surfaceKindPopup removeAllItems];
         [self.surfaceKindPopup addItemsWithTitles:@[
             @"Rounded Rectangle", @"Ellipse", @"Capsule", @"Diamond", @"Convex Polygon",
+            @"Annulus", @"Arc", @"Annular Sector", @"Crescent",
         ]];
         [self.surfaceKindPopup selectItemAtIndex:static_cast<NSInteger>(scatter->stamp.kind)];
         self.courseFieldRow.hidden = NO;
@@ -4293,6 +4304,11 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         ]];
         [self.courseFieldPopup selectItemAtIndex:
             static_cast<NSInteger>(editableShape->field)];
+        const bool radialPrimitive =
+            editableShape->kind == paperweight::ShapePrimitiveKind::annulus ||
+            editableShape->kind == paperweight::ShapePrimitiveKind::arc ||
+            editableShape->kind == paperweight::ShapePrimitiveKind::sector ||
+            editableShape->kind == paperweight::ShapePrimitiveKind::crescent;
         showCount(self.patternCountXRow, self.patternCountXLabel,
                   self.patternCountXSlider, self.patternCountXValue,
                   @"Columns", editableShape->columns);
@@ -4307,28 +4323,42 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
                   @"Height", 0.001, 1.0, editableShape->height);
         showValue(self.patternValueThreeRow, self.patternValueThreeLabel,
                   self.patternValueThreeSlider, self.patternValueThreeValue,
-                  @"Corner", 0.0, 0.5, editableShape->cornerRadius);
+                  radialPrimitive ? @"Inner radius" : @"Corner", 0.0, 0.5,
+                  radialPrimitive ? editableShape->innerRadius : editableShape->cornerRadius);
         showValue(self.patternValueFourRow, self.patternValueFourLabel,
                   self.patternValueFourSlider, self.patternValueFourValue,
-                  @"Rotation °", -360.0, 360.0, editableShape->rotationDegrees);
+                  radialPrimitive ? @"Arc start °" : @"Rotation °", -360.0, 360.0,
+                  radialPrimitive ? editableShape->arcStartDegrees : editableShape->rotationDegrees);
         self.courseGapRow.hidden = NO;
-        static_cast<NSTextField*>(self.courseGapRow.views[0]).stringValue = @"Inset";
-        self.courseGapSlider.minValue = 0.0;
-        self.courseGapSlider.maxValue = 0.5;
-        self.courseGapSlider.doubleValue = editableShape->inset;
-        self.courseGapValue.stringValue = [NSString stringWithFormat:@"%.2f", editableShape->inset];
+        static_cast<NSTextField*>(self.courseGapRow.views[0]).stringValue =
+            radialPrimitive ? @"Arc sweep °" : @"Inset";
+        self.courseGapSlider.minValue = radialPrimitive ? 0.1 : 0.0;
+        self.courseGapSlider.maxValue = radialPrimitive ? 360.0 : 0.5;
+        self.courseGapSlider.doubleValue = radialPrimitive
+            ? editableShape->arcSweepDegrees : editableShape->inset;
+        self.courseGapValue.stringValue = radialPrimitive
+            ? [NSString stringWithFormat:@"%.1f°", editableShape->arcSweepDegrees]
+            : [NSString stringWithFormat:@"%.2f", editableShape->inset];
         self.courseSoftnessRow.hidden = NO;
-        static_cast<NSTextField*>(self.courseSoftnessRow.views[0]).stringValue = @"Border";
-        self.courseSoftnessSlider.minValue = 0.0;
+        static_cast<NSTextField*>(self.courseSoftnessRow.views[0]).stringValue =
+            radialPrimitive ? @"Crescent offset" : @"Border";
+        self.courseSoftnessSlider.minValue = radialPrimitive ? -0.5 : 0.0;
         self.courseSoftnessSlider.maxValue = 0.5;
-        self.courseSoftnessSlider.doubleValue = editableShape->borderWidth;
-        self.courseSoftnessValue.stringValue = [NSString stringWithFormat:@"%.2f", editableShape->borderWidth];
+        self.courseSoftnessSlider.doubleValue = radialPrimitive
+            ? editableShape->crescentOffset : editableShape->borderWidth;
+        self.courseSoftnessValue.stringValue = [NSString stringWithFormat:@"%.2f",
+            radialPrimitive ? editableShape->crescentOffset : editableShape->borderWidth];
         self.courseOverlapRow.hidden = NO;
-        static_cast<NSTextField*>(self.courseOverlapRow.views[0]).stringValue = @"Stagger";
-        self.courseOverlapSlider.minValue = 0.0;
-        self.courseOverlapSlider.maxValue = 1.0;
-        self.courseOverlapSlider.doubleValue = editableShape->stagger;
-        self.courseOverlapValue.stringValue = [NSString stringWithFormat:@"%.2f", editableShape->stagger];
+        const bool repeatedMotif = editableShape->radialCopies > 1;
+        static_cast<NSTextField*>(self.courseOverlapRow.views[0]).stringValue =
+            repeatedMotif ? @"Radial phase °" : @"Stagger";
+        self.courseOverlapSlider.minValue = repeatedMotif ? -360.0 : 0.0;
+        self.courseOverlapSlider.maxValue = repeatedMotif ? 360.0 : 1.0;
+        self.courseOverlapSlider.doubleValue = repeatedMotif
+            ? editableShape->radialPhaseDegrees : editableShape->stagger;
+        self.courseOverlapValue.stringValue = repeatedMotif
+            ? [NSString stringWithFormat:@"%.1f°", editableShape->radialPhaseDegrees]
+            : [NSString stringWithFormat:@"%.2f", editableShape->stagger];
         self.filterSensitivityRow.hidden = NO;
         static_cast<NSTextField*>(self.filterSensitivityRow.views[0]).stringValue = @"Softness";
         self.filterSensitivitySlider.minValue = 0.0;
@@ -4347,7 +4377,24 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.inkThresholdSlider.maxValue = 0.5;
         self.inkThresholdSlider.doubleValue = editableShape->offsetY;
         self.inkThresholdValue.stringValue = [NSString stringWithFormat:@"%.2f", editableShape->offsetY];
-        self.posteriseBandsRow.hidden = NO;
+        self.inkSoftnessRow.hidden = NO;
+        static_cast<NSTextField*>(self.inkSoftnessRow.views[0]).stringValue = @"Radial copies";
+        self.inkSoftnessSlider.minValue = 1.0;
+        self.inkSoftnessSlider.maxValue = paperweight::LayerLimits::maximumRadialCopies;
+        self.inkSoftnessSlider.numberOfTickMarks = 0;
+        self.inkSoftnessSlider.allowsTickMarkValuesOnly = NO;
+        self.inkSoftnessSlider.doubleValue = editableShape->radialCopies;
+        self.inkSoftnessValue.stringValue = [NSString
+            stringWithFormat:@"%u", editableShape->radialCopies];
+        self.inkStrengthRow.hidden = NO;
+        static_cast<NSTextField*>(self.inkStrengthRow.views[0]).stringValue = @"Radial radius";
+        self.inkStrengthSlider.minValue = 0.0;
+        self.inkStrengthSlider.maxValue = 0.5;
+        self.inkStrengthSlider.doubleValue = editableShape->radialRadius;
+        self.inkStrengthValue.stringValue = [NSString
+            stringWithFormat:@"%.2f", editableShape->radialRadius];
+        self.posteriseBandsRow.hidden =
+            editableShape->kind != paperweight::ShapePrimitiveKind::convexPolygon;
         static_cast<NSTextField*>(self.posteriseBandsRow.views[0]).stringValue = @"Vertices";
         self.posteriseBandsSlider.minValue = paperweight::LayerLimits::minimumPolygonVertices;
         self.posteriseBandsSlider.maxValue = paperweight::LayerLimits::maximumPolygonVertices;
@@ -4374,6 +4421,16 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
             self.processingTargetRow.hidden = NO;
             [self.processingTargetPopup selectItemAtIndex:
                 processingTargetIndex(shapeBoolean->target)];
+        } else {
+            self.processingTargetRow.hidden = NO;
+            static_cast<NSTextField*>(self.processingTargetRow.views[0]).stringValue =
+                @"Orientation";
+            [self.processingTargetPopup removeAllItems];
+            [self.processingTargetPopup addItemsWithTitles:@[
+                @"Fixed", @"Face outward", @"Tangential",
+            ]];
+            [self.processingTargetPopup selectItemAtIndex:
+                static_cast<NSInteger>(editableShape->radialOrientation)];
         }
     } else if (lattice != nullptr) {
         self.surfaceKindRow.hidden = NO;
@@ -5142,6 +5199,13 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         shape->softness = self.filterSensitivitySlider.doubleValue;
         shape->offsetX = self.inkRadiusSlider.doubleValue;
         shape->offsetY = self.inkThresholdSlider.doubleValue;
+        shape->radialCopies = static_cast<std::uint32_t>(std::clamp(
+            std::llround(self.inkSoftnessSlider.doubleValue),
+            1LL,
+            static_cast<long long>(paperweight::LayerLimits::maximumRadialCopies)));
+        shape->radialRadius = self.inkStrengthSlider.doubleValue;
+        shape->radialOrientation = static_cast<paperweight::RadialOrientation>(
+            self.processingTargetPopup.indexOfSelectedItem);
         if (sender == self.posteriseBandsSlider) {
             const auto vertices = static_cast<std::size_t>(std::llround(
                 self.posteriseBandsSlider.doubleValue));
@@ -5155,11 +5219,32 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
             stringWithFormat:@"%.2f", shape->offsetY];
         self.posteriseBandsValue.stringValue = [NSString
             stringWithFormat:@"%zu", shape->vertices.size()];
+        self.inkSoftnessValue.stringValue = [NSString
+            stringWithFormat:@"%u", shape->radialCopies];
+        self.inkStrengthValue.stringValue = [NSString
+            stringWithFormat:@"%.2f", shape->radialRadius];
+        if (sender == self.inkSoftnessSlider) {
+            const bool repeated = shape->radialCopies > 1;
+            static_cast<NSTextField*>(self.courseOverlapRow.views[0]).stringValue =
+                repeated ? @"Radial phase °" : @"Stagger";
+            self.courseOverlapSlider.minValue = repeated ? -360.0 : 0.0;
+            self.courseOverlapSlider.maxValue = repeated ? 360.0 : 1.0;
+            self.courseOverlapSlider.doubleValue = repeated
+                ? shape->radialPhaseDegrees : shape->stagger;
+            self.courseOverlapValue.stringValue = repeated
+                ? [NSString stringWithFormat:@"%.1f°", shape->radialPhaseDegrees]
+                : [NSString stringWithFormat:@"%.2f", shape->stagger];
+        }
     } else if (auto* boolean =
                    std::get_if<paperweight::ShapeBooleanOperation>(&layer->operation)) {
         boolean->shape.softness = self.filterSensitivitySlider.doubleValue;
         boolean->shape.offsetX = self.inkRadiusSlider.doubleValue;
         boolean->shape.offsetY = self.inkThresholdSlider.doubleValue;
+        boolean->shape.radialCopies = static_cast<std::uint32_t>(std::clamp(
+            std::llround(self.inkSoftnessSlider.doubleValue),
+            1LL,
+            static_cast<long long>(paperweight::LayerLimits::maximumRadialCopies)));
+        boolean->shape.radialRadius = self.inkStrengthSlider.doubleValue;
         if (sender == self.posteriseBandsSlider) {
             const auto vertices = static_cast<std::size_t>(std::llround(
                 self.posteriseBandsSlider.doubleValue));
@@ -5177,6 +5262,22 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
             stringWithFormat:@"%.2f", boolean->shape.offsetY];
         self.posteriseBandsValue.stringValue = [NSString
             stringWithFormat:@"%zu", boolean->shape.vertices.size()];
+        self.inkSoftnessValue.stringValue = [NSString
+            stringWithFormat:@"%u", boolean->shape.radialCopies];
+        self.inkStrengthValue.stringValue = [NSString
+            stringWithFormat:@"%.2f", boolean->shape.radialRadius];
+        if (sender == self.inkSoftnessSlider) {
+            const bool repeated = boolean->shape.radialCopies > 1;
+            static_cast<NSTextField*>(self.courseOverlapRow.views[0]).stringValue =
+                repeated ? @"Radial phase °" : @"Stagger";
+            self.courseOverlapSlider.minValue = repeated ? -360.0 : 0.0;
+            self.courseOverlapSlider.maxValue = repeated ? 360.0 : 1.0;
+            self.courseOverlapSlider.doubleValue = repeated
+                ? boolean->shape.radialPhaseDegrees : boolean->shape.stagger;
+            self.courseOverlapValue.stringValue = repeated
+                ? [NSString stringWithFormat:@"%.1f°", boolean->shape.radialPhaseDegrees]
+                : [NSString stringWithFormat:@"%.2f", boolean->shape.stagger];
+        }
     } else {
         return;
     }
@@ -5492,8 +5593,28 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
             static_cast<long long>(paperweight::LayerLimits::maximumPatternCount)));
     const auto updateShape = [&](paperweight::ShapePrimitiveOperation& shape) {
         if (sender == self.surfaceKindPopup) {
+            const auto previousKind = shape.kind;
             shape.kind = static_cast<paperweight::ShapePrimitiveKind>(
                 self.surfaceKindPopup.indexOfSelectedItem);
+            const bool wasRadial =
+                previousKind == paperweight::ShapePrimitiveKind::annulus ||
+                previousKind == paperweight::ShapePrimitiveKind::arc ||
+                previousKind == paperweight::ShapePrimitiveKind::sector ||
+                previousKind == paperweight::ShapePrimitiveKind::crescent;
+            const bool isRadial =
+                shape.kind == paperweight::ShapePrimitiveKind::annulus ||
+                shape.kind == paperweight::ShapePrimitiveKind::arc ||
+                shape.kind == paperweight::ShapePrimitiveKind::sector ||
+                shape.kind == paperweight::ShapePrimitiveKind::crescent;
+            if (isRadial && !wasRadial) {
+                shape.innerRadius = std::min(
+                    0.2,
+                    std::min(shape.width, shape.height) * 0.5 - 0.001);
+                shape.arcStartDegrees = 0.0;
+                shape.arcSweepDegrees = 360.0;
+                shape.crescentOffset = 0.12;
+            }
+            return;
         }
         if (sender == self.courseFieldPopup) {
             shape.field = static_cast<paperweight::ShapeFieldKind>(
@@ -5503,11 +5624,29 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         shape.rows = countY;
         shape.width = self.patternValueOneSlider.doubleValue;
         shape.height = self.patternValueTwoSlider.doubleValue;
-        shape.cornerRadius = self.patternValueThreeSlider.doubleValue;
-        shape.rotationDegrees = self.patternValueFourSlider.doubleValue;
-        shape.inset = self.courseGapSlider.doubleValue;
-        shape.borderWidth = self.courseSoftnessSlider.doubleValue;
-        shape.stagger = self.courseOverlapSlider.doubleValue;
+        const bool radialPrimitive =
+            shape.kind == paperweight::ShapePrimitiveKind::annulus ||
+            shape.kind == paperweight::ShapePrimitiveKind::arc ||
+            shape.kind == paperweight::ShapePrimitiveKind::sector ||
+            shape.kind == paperweight::ShapePrimitiveKind::crescent;
+        if (radialPrimitive) {
+            shape.innerRadius = std::min(
+                self.patternValueThreeSlider.doubleValue,
+                std::min(shape.width, shape.height) * 0.5 - 0.001);
+            shape.arcStartDegrees = self.patternValueFourSlider.doubleValue;
+            shape.arcSweepDegrees = self.courseGapSlider.doubleValue;
+            shape.crescentOffset = self.courseSoftnessSlider.doubleValue;
+        } else {
+            shape.cornerRadius = self.patternValueThreeSlider.doubleValue;
+            shape.rotationDegrees = self.patternValueFourSlider.doubleValue;
+            shape.inset = self.courseGapSlider.doubleValue;
+            shape.borderWidth = self.courseSoftnessSlider.doubleValue;
+        }
+        if (shape.radialCopies > 1) {
+            shape.radialPhaseDegrees = self.courseOverlapSlider.doubleValue;
+        } else {
+            shape.stagger = self.courseOverlapSlider.doubleValue;
+        }
         shape.softness = self.filterSensitivitySlider.doubleValue;
         shape.offsetX = self.inkRadiusSlider.doubleValue;
         shape.offsetY = self.inkThresholdSlider.doubleValue;

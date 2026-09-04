@@ -58,6 +58,8 @@ set(PAPERWEIGHT_SHOWCASE_MATERIALS
     "${PROJECT_SOURCE_DIR}/examples/materials/foliage-foundation.pmat"
     "${PROJECT_SOURCE_DIR}/examples/materials/cel-forest-bark.pmat"
     "${PROJECT_SOURCE_DIR}/examples/materials/castle-foliage.pmat"
+    "${PROJECT_SOURCE_DIR}/examples/materials/radial-target.pmat"
+    "${PROJECT_SOURCE_DIR}/examples/materials/arc-and-crescent-motifs.pmat"
 )
 set_source_files_properties(${PAPERWEIGHT_SHOWCASE_MATERIALS} PROPERTIES
     MACOSX_PACKAGE_LOCATION "Resources/Showcases"

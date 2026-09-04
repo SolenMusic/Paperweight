@@ -354,6 +354,10 @@ enum class ShapePrimitiveKind : std::uint8_t {
     capsule = 2,
     diamond = 3,
     convexPolygon = 4,
+    annulus = 5,
+    arc = 6,
+    sector = 7,
+    crescent = 8,
 };
 
 enum class ShapeFieldKind : std::uint8_t {
@@ -368,6 +372,12 @@ struct ShapePoint {
     double y{};
 
     friend constexpr bool operator==(const ShapePoint&, const ShapePoint&) = default;
+};
+
+enum class RadialOrientation : std::uint8_t {
+    fixed = 0,
+    outward = 1,
+    tangent = 2,
 };
 
 struct ShapePrimitiveOperation {
@@ -394,6 +404,14 @@ struct ShapePrimitiveOperation {
         {0.0, 0.48},
         {-0.42, 0.28},
     };
+    double innerRadius{0.2};
+    double arcStartDegrees{};
+    double arcSweepDegrees{360.0};
+    double crescentOffset{0.12};
+    std::uint32_t radialCopies{1};
+    double radialRadius{};
+    double radialPhaseDegrees{};
+    RadialOrientation radialOrientation{RadialOrientation::fixed};
 
     friend bool operator==(
         const ShapePrimitiveOperation&,
@@ -891,6 +909,9 @@ struct LayerLimits {
     static constexpr double maximumShapeDimension = 1.0;
     static constexpr double maximumShapeOffset = 0.5;
     static constexpr double maximumShapeRotation = 360.0;
+    static constexpr double maximumShapeInnerRadius = 0.5;
+    static constexpr double minimumArcSweep = 0.1;
+    static constexpr std::uint32_t maximumRadialCopies = 32;
     static constexpr std::int32_t maximumLatticeWinding = 64;
     static constexpr std::size_t maximumScatterPopulations = 4;
     static constexpr double minimumScatterScale = 0.1;
@@ -1456,6 +1477,28 @@ struct LayerLimits {
         return "diamond";
     case ShapePrimitiveKind::convexPolygon:
         return "convex_polygon";
+    case ShapePrimitiveKind::annulus:
+        return "annulus";
+    case ShapePrimitiveKind::arc:
+        return "arc";
+    case ShapePrimitiveKind::sector:
+        return "sector";
+    case ShapePrimitiveKind::crescent:
+        return "crescent";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view radialOrientationName(
+    RadialOrientation orientation)
+{
+    switch (orientation) {
+    case RadialOrientation::fixed:
+        return "fixed";
+    case RadialOrientation::outward:
+        return "outward";
+    case RadialOrientation::tangent:
+        return "tangent";
     }
     return "unknown";
 }
