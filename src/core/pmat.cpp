@@ -308,6 +308,14 @@ struct LayerBuilder {
     ParsedValue<std::uint32_t> shapeVertexCount;
     std::array<ParsedValue<double>, LayerLimits::maximumPolygonVertices> shapeVertexX;
     std::array<ParsedValue<double>, LayerLimits::maximumPolygonVertices> shapeVertexY;
+    ParsedValue<double> shapeInnerRadius;
+    ParsedValue<double> shapeArcStart;
+    ParsedValue<double> shapeArcSweep;
+    ParsedValue<double> shapeCrescentOffset;
+    ParsedValue<std::uint32_t> shapeRadialCopies;
+    ParsedValue<double> shapeRadialRadius;
+    ParsedValue<double> shapeRadialPhase;
+    ParsedValue<RadialOrientation> shapeRadialOrientation;
     ParsedValue<ShapeBooleanMode> shapeBooleanMode;
     ParsedValue<ProcessingTarget> shapeBooleanTarget;
     ParsedValue<LatticeKind> latticeKind;
@@ -875,6 +883,32 @@ std::optional<ShapePrimitiveKind> parseShapePrimitiveKind(std::string_view value
     if (value == "convex_polygon") {
         return ShapePrimitiveKind::convexPolygon;
     }
+    if (value == "annulus") {
+        return ShapePrimitiveKind::annulus;
+    }
+    if (value == "arc") {
+        return ShapePrimitiveKind::arc;
+    }
+    if (value == "sector") {
+        return ShapePrimitiveKind::sector;
+    }
+    if (value == "crescent") {
+        return ShapePrimitiveKind::crescent;
+    }
+    return std::nullopt;
+}
+
+std::optional<RadialOrientation> parseRadialOrientation(std::string_view value)
+{
+    if (value == "fixed") {
+        return RadialOrientation::fixed;
+    }
+    if (value == "outward") {
+        return RadialOrientation::outward;
+    }
+    if (value == "tangent") {
+        return RadialOrientation::tangent;
+    }
     return std::nullopt;
 }
 
@@ -1273,8 +1307,20 @@ bool hasVersionTwelveShapeFields(const LayerBuilder& builder)
         builder.shapeOffsetX.value || builder.shapeOffsetY.value ||
         builder.shapeStagger.value || builder.shapeRotation.value ||
         builder.shapeSeedOffset.value || builder.shapeVertexCount.value ||
+        builder.shapeInnerRadius.value || builder.shapeArcStart.value ||
+        builder.shapeArcSweep.value || builder.shapeCrescentOffset.value ||
+        builder.shapeRadialCopies.value || builder.shapeRadialRadius.value ||
+        builder.shapeRadialPhase.value || builder.shapeRadialOrientation.value ||
         any(builder.shapeVertexX) || any(builder.shapeVertexY) ||
         builder.shapeBooleanMode.value || builder.shapeBooleanTarget.value;
+}
+
+bool hasVersionNineteenFields(const LayerBuilder& builder)
+{
+    return builder.shapeInnerRadius.value || builder.shapeArcStart.value ||
+        builder.shapeArcSweep.value || builder.shapeCrescentOffset.value ||
+        builder.shapeRadialCopies.value || builder.shapeRadialRadius.value ||
+        builder.shapeRadialPhase.value || builder.shapeRadialOrientation.value;
 }
 
 bool hasVersionTwelveLatticeFields(const LayerBuilder& builder)
@@ -2693,7 +2739,7 @@ ParseResult parsePmat(std::string_view text)
                         return diagnostic(
                             lineNumber,
                             valueColumn,
-                            "shape kind must be 'rounded_rectangle', 'ellipse', 'capsule', 'diamond', or 'convex_polygon'");
+                            "shape kind must be 'rounded_rectangle', 'ellipse', 'capsule', 'diamond', 'convex_polygon', 'annulus', 'arc', 'sector', or 'crescent'");
                     }
                     if (!storeValue(builder.shapeKind, *parsed, lineNumber, valueColumn)) {
                         return duplicate();
@@ -2803,6 +2849,70 @@ ParseResult parsePmat(std::string_view text)
                         return diagnostic(lineNumber, valueColumn, "local shape rotation must be a decimal degree value");
                     }
                     if (!storeValue(builder.shapeRotation, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "shape.inner_radius") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "shape inner radius must be a decimal number");
+                    }
+                    if (!storeValue(builder.shapeInnerRadius, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "shape.arc_start") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "shape arc start must be a decimal degree value");
+                    }
+                    if (!storeValue(builder.shapeArcStart, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "shape.arc_sweep") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "shape arc sweep must be a decimal degree value");
+                    }
+                    if (!storeValue(builder.shapeArcSweep, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "shape.crescent_offset") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "shape crescent offset must be a decimal number");
+                    }
+                    if (!storeValue(builder.shapeCrescentOffset, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "shape.radial_copies") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "shape radial copies must be an integer");
+                    }
+                    if (!storeValue(builder.shapeRadialCopies, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "shape.radial_radius") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "shape radial radius must be a decimal number");
+                    }
+                    if (!storeValue(builder.shapeRadialRadius, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "shape.radial_phase") {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "shape radial phase must be a decimal degree value");
+                    }
+                    if (!storeValue(builder.shapeRadialPhase, parsed, lineNumber, valueColumn)) {
+                        return duplicate();
+                    }
+                } else if (property == "shape.radial_orientation") {
+                    const auto parsed = parseRadialOrientation(value);
+                    if (!parsed) {
+                        return diagnostic(lineNumber, valueColumn, "shape radial orientation must be 'fixed', 'outward', or 'tangent'");
+                    }
+                    if (!storeValue(builder.shapeRadialOrientation, *parsed, lineNumber, valueColumn)) {
                         return duplicate();
                     }
                 } else if (property == "shape.seed_offset") {
@@ -3626,6 +3736,19 @@ ParseResult parsePmat(std::string_view text)
                     "organic structures require .pmat version 14");
             }
 
+            const bool usesRadialShapeKind = builder.shapeKind.value &&
+                (*builder.shapeKind.value == ShapePrimitiveKind::annulus ||
+                 *builder.shapeKind.value == ShapePrimitiveKind::arc ||
+                 *builder.shapeKind.value == ShapePrimitiveKind::sector ||
+                 *builder.shapeKind.value == ShapePrimitiveKind::crescent);
+            if (formatVersion < 19 &&
+                (hasVersionNineteenFields(builder) || usesRadialShapeKind)) {
+                return diagnostic(
+                    lineNumber + 1,
+                    1,
+                    "radial profiles and motif repetition require .pmat version 19");
+            }
+
             if (formatVersion < 4 &&
                 (hasVersionFourFields(builder) ||
                  isStructuralOperation(*builder.operation.value))) {
@@ -4405,6 +4528,16 @@ ParseResult parsePmat(std::string_view text)
                 if (!builder.shapeVertexCount.value) {
                     return missingLayerField(lineNumber + 1, index, "shape.vertices");
                 }
+                if (formatVersion >= 19) {
+                    if (!builder.shapeInnerRadius.value) return missingLayerField(lineNumber + 1, index, "shape.inner_radius");
+                    if (!builder.shapeArcStart.value) return missingLayerField(lineNumber + 1, index, "shape.arc_start");
+                    if (!builder.shapeArcSweep.value) return missingLayerField(lineNumber + 1, index, "shape.arc_sweep");
+                    if (!builder.shapeCrescentOffset.value) return missingLayerField(lineNumber + 1, index, "shape.crescent_offset");
+                    if (!builder.shapeRadialCopies.value) return missingLayerField(lineNumber + 1, index, "shape.radial_copies");
+                    if (!builder.shapeRadialRadius.value) return missingLayerField(lineNumber + 1, index, "shape.radial_radius");
+                    if (!builder.shapeRadialPhase.value) return missingLayerField(lineNumber + 1, index, "shape.radial_phase");
+                    if (!builder.shapeRadialOrientation.value) return missingLayerField(lineNumber + 1, index, "shape.radial_orientation");
+                }
                 if (hasClassicFields || operationGroupCount != 1) {
                     return crossOperationError();
                 }
@@ -4465,6 +4598,14 @@ ParseResult parsePmat(std::string_view text)
                     *builder.shapeSeedOffset.value,
                     std::move(vertices),
                 };
+                shape.innerRadius = builder.shapeInnerRadius.value.value_or(shape.innerRadius);
+                shape.arcStartDegrees = builder.shapeArcStart.value.value_or(shape.arcStartDegrees);
+                shape.arcSweepDegrees = builder.shapeArcSweep.value.value_or(shape.arcSweepDegrees);
+                shape.crescentOffset = builder.shapeCrescentOffset.value.value_or(shape.crescentOffset);
+                shape.radialCopies = builder.shapeRadialCopies.value.value_or(shape.radialCopies);
+                shape.radialRadius = builder.shapeRadialRadius.value.value_or(shape.radialRadius);
+                shape.radialPhaseDegrees = builder.shapeRadialPhase.value.value_or(shape.radialPhaseDegrees);
+                shape.radialOrientation = builder.shapeRadialOrientation.value.value_or(shape.radialOrientation);
                 if (*builder.operation.value == OperationKind::shape) {
                     if (builder.shapeBooleanMode.value ||
                         builder.shapeBooleanTarget.value) {
@@ -4516,6 +4657,16 @@ ParseResult parsePmat(std::string_view text)
                 if (!builder.shapeRotation.value) return missingLayerField(lineNumber + 1, index, "shape.rotation");
                 if (!builder.shapeSeedOffset.value) return missingLayerField(lineNumber + 1, index, "shape.seed_offset");
                 if (!builder.shapeVertexCount.value) return missingLayerField(lineNumber + 1, index, "shape.vertices");
+                if (formatVersion >= 19) {
+                    if (!builder.shapeInnerRadius.value) return missingLayerField(lineNumber + 1, index, "shape.inner_radius");
+                    if (!builder.shapeArcStart.value) return missingLayerField(lineNumber + 1, index, "shape.arc_start");
+                    if (!builder.shapeArcSweep.value) return missingLayerField(lineNumber + 1, index, "shape.arc_sweep");
+                    if (!builder.shapeCrescentOffset.value) return missingLayerField(lineNumber + 1, index, "shape.crescent_offset");
+                    if (!builder.shapeRadialCopies.value) return missingLayerField(lineNumber + 1, index, "shape.radial_copies");
+                    if (!builder.shapeRadialRadius.value) return missingLayerField(lineNumber + 1, index, "shape.radial_radius");
+                    if (!builder.shapeRadialPhase.value) return missingLayerField(lineNumber + 1, index, "shape.radial_phase");
+                    if (!builder.shapeRadialOrientation.value) return missingLayerField(lineNumber + 1, index, "shape.radial_orientation");
+                }
                 if (builder.shapeBooleanMode.value || builder.shapeBooleanTarget.value ||
                     hasClassicFields || operationGroupCount != 1) {
                     return crossOperationError();
@@ -4562,6 +4713,14 @@ ParseResult parsePmat(std::string_view text)
                     *builder.shapeStagger.value, *builder.shapeRotation.value,
                     *builder.shapeSeedOffset.value, std::move(vertices),
                 };
+                stamp.innerRadius = builder.shapeInnerRadius.value.value_or(stamp.innerRadius);
+                stamp.arcStartDegrees = builder.shapeArcStart.value.value_or(stamp.arcStartDegrees);
+                stamp.arcSweepDegrees = builder.shapeArcSweep.value.value_or(stamp.arcSweepDegrees);
+                stamp.crescentOffset = builder.shapeCrescentOffset.value.value_or(stamp.crescentOffset);
+                stamp.radialCopies = builder.shapeRadialCopies.value.value_or(stamp.radialCopies);
+                stamp.radialRadius = builder.shapeRadialRadius.value.value_or(stamp.radialRadius);
+                stamp.radialPhaseDegrees = builder.shapeRadialPhase.value.value_or(stamp.radialPhaseDegrees);
+                stamp.radialOrientation = builder.shapeRadialOrientation.value.value_or(stamp.radialOrientation);
 
                 const auto populationCount = *builder.scatterPopulationCount.value;
                 if (populationCount < 1 || populationCount > LayerLimits::maximumScatterPopulations) {
@@ -5566,9 +5725,17 @@ SerialisationResult serialisePmat(const Material& material)
             const auto offsetY = formatDouble(shape.offsetY);
             const auto stagger = formatDouble(shape.stagger);
             const auto rotation = formatDouble(shape.rotationDegrees);
+            const auto innerRadius = formatDouble(shape.innerRadius);
+            const auto arcStart = formatDouble(shape.arcStartDegrees);
+            const auto arcSweep = formatDouble(shape.arcSweepDegrees);
+            const auto crescentOffset = formatDouble(shape.crescentOffset);
+            const auto radialRadius = formatDouble(shape.radialRadius);
+            const auto radialPhase = formatDouble(shape.radialPhaseDegrees);
             if (width.empty() || height.empty() || cornerRadius.empty() || inset.empty() ||
                 borderWidth.empty() || softness.empty() || offsetX.empty() ||
-                offsetY.empty() || stagger.empty() || rotation.empty()) {
+                offsetY.empty() || stagger.empty() || rotation.empty() ||
+                innerRadius.empty() || arcStart.empty() || arcSweep.empty() ||
+                crescentOffset.empty() || radialRadius.empty() || radialPhase.empty()) {
                 return SerialisationError{"could not format shape parameters"};
             }
             output += prefix + "shape.kind = " +
@@ -5587,6 +5754,16 @@ SerialisationResult serialisePmat(const Material& material)
             output += prefix + "shape.offset_y = " + offsetY + "\n";
             output += prefix + "shape.stagger = " + stagger + "\n";
             output += prefix + "shape.rotation = " + rotation + "\n";
+            output += prefix + "shape.inner_radius = " + innerRadius + "\n";
+            output += prefix + "shape.arc_start = " + arcStart + "\n";
+            output += prefix + "shape.arc_sweep = " + arcSweep + "\n";
+            output += prefix + "shape.crescent_offset = " + crescentOffset + "\n";
+            output += prefix + "shape.radial_copies = " +
+                std::to_string(shape.radialCopies) + "\n";
+            output += prefix + "shape.radial_radius = " + radialRadius + "\n";
+            output += prefix + "shape.radial_phase = " + radialPhase + "\n";
+            output += prefix + "shape.radial_orientation = " +
+                std::string(radialOrientationName(shape.radialOrientation)) + "\n";
             output += prefix + "shape.seed_offset = " +
                 std::to_string(shape.seedOffset) + "\n";
             output += prefix + "shape.vertices = " +

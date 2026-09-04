@@ -65,6 +65,8 @@ foreach(showcase IN ITEMS
     foliage-foundation
     cel-forest-bark
     castle-foliage
+    radial-target
+    arc-and-crescent-motifs
 )
     configure_file(
         "${PROJECT_SOURCE_DIR}/examples/materials/${showcase}.pmat"

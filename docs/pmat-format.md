@@ -1,4 +1,4 @@
-# `.pmat` format version 18
+# `.pmat` format version 19
 
 Paperweight material files are UTF-8 text. They are intended to be readable,
 diffable, and small enough to embed alongside game assets.
@@ -7,7 +7,7 @@ diffable, and small enough to embed alongside game assets.
 
 ```text
 # Paperweight procedural material
-pmat.version = 18
+pmat.version = 19
 material.type = fbm
 material.seed = 18431
 material.width = 1m
@@ -84,7 +84,7 @@ no material; it never returns a partially accepted definition.
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
-| `pmat.version` | File-format version | `1` through `18`; the serialiser writes `18` |
+| `pmat.version` | File-format version | `1` through `19`; the serialiser writes `19` |
 | `material.type` | Generator model | `fbm` |
 | `material.seed` | Deterministic seed | Unsigned 64-bit integer |
 | `material.width` | Width of one seamless material repeat | Metre value from `0.000001m` to `1000000m` |
@@ -193,7 +193,7 @@ The operation selects exactly one parameter group:
 | `circles` | `layer.N.circles.columns`, `rows` | Integers from 1 to 64 |
 | `circles` | `layer.N.circles.radius` | Decimal from 0 to 0.5 |
 | `circles` | `layer.N.circles.softness` | Decimal from 0 to 0.25 |
-| `shape` or `shape_boolean` | `layer.N.shape.kind` | `rounded_rectangle`, `ellipse`, `capsule`, `diamond`, or `convex_polygon` |
+| `shape` or `shape_boolean` | `layer.N.shape.kind` | `rounded_rectangle`, `ellipse`, `capsule`, `diamond`, `convex_polygon`, `annulus`, `arc`, `sector`, or `crescent` |
 | `shape` or `shape_boolean` | `layer.N.shape.field` | `fill`, `inset`, `outline`, or `border` |
 | `shape` or `shape_boolean` | `layer.N.shape.columns`, `rows` | Integers from 1 to 64 |
 | `shape` or `shape_boolean` | `layer.N.shape.width`, `height` | Cell-relative decimals from 0.001 to 1 |
@@ -205,6 +205,14 @@ The operation selects exactly one parameter group:
 | `shape` or `shape_boolean` | `layer.N.shape.seed_offset` | Unsigned 64-bit region-identity salt |
 | `shape` or `shape_boolean` | `layer.N.shape.vertices` | Convex polygon vertex count from 3 to 12 |
 | `shape` or `shape_boolean` | `layer.N.shape.vertex.K.x`, `.y` | Ordered convex vertex coordinates from -0.5 to 0.5 |
+| `shape` or `shape_boolean` | `layer.N.shape.inner_radius` | Inner profile radius from 0 to 0.5, smaller than the outer radius |
+| `shape` or `shape_boolean` | `layer.N.shape.arc_start` | Arc or sector start angle in degrees from -360 to 360 |
+| `shape` or `shape_boolean` | `layer.N.shape.arc_sweep` | Clockwise profile sweep from 0.1 to 360 degrees |
+| `shape` or `shape_boolean` | `layer.N.shape.crescent_offset` | Offset of the subtractive crescent circle from -0.5 to 0.5 |
+| `shape` or `shape_boolean` | `layer.N.shape.radial_copies` | Deterministic copy count from 1 to 32 |
+| `shape` or `shape_boolean` | `layer.N.shape.radial_radius` | Centre-to-copy radius from 0 to 0.5 texture repeats |
+| `shape` or `shape_boolean` | `layer.N.shape.radial_phase` | Angular placement phase in degrees from -360 to 360 |
+| `shape` or `shape_boolean` | `layer.N.shape.radial_orientation` | `fixed`, `outward`, or `tangent` |
 | `shape_boolean` | `layer.N.shape.boolean` | `union`, `intersection`, or `subtraction` |
 | `shape_boolean` | `layer.N.shape.target` | `colour`, `scalar`, or `all` |
 | `lattice` | `layer.N.lattice.kind` | `lines` or `diamonds` |
@@ -514,7 +522,7 @@ formula is applied to scalar, red, green, blue, and alpha channels.
 
 ## Graph compilation
 
-Paperweight v0.0.25 retains the layer syntax, now at version 18, as the compact,
+Paperweight v0.0.27 retains the layer syntax, now at version 19, as the compact,
 human-editable authoring projection. Before generation, the portable core
 compiles it into a directed acyclic material graph:
 
@@ -527,7 +535,7 @@ compiles it into a directed acyclic material graph:
 - all ten material outputs receive explicit output nodes.
 
 Disabled layers compile as exact no-ops. Node metadata records the source layer
-for future diagnostics and incremental evaluation. Version-18 layers compile
+for future diagnostics and incremental evaluation. Version-19 layers compile
 into nine independent routed branches according to `layer.N.outputs`; normal
 continues to derive from height. Materials whose enabled layers target all branches retain
 the historical shared graph exactly. Portable C++ callers may also provide a
@@ -586,6 +594,11 @@ visibility, zero clear coat, clear-coat roughness 0.1, zero emission, and zero
 anisotropy. Their newly routed branches are therefore visually neutral while
 their five historical maps remain byte-identical.
 
+Format version 19 adds annulus, arc, annular-sector, and crescent shape kinds.
+It also adds radial copy count, radius, phase, and fixed/outward/tangential
+orientation to every analytic shape. Older shape layers migrate to one fixed
+copy at radius zero; their evaluation and output bytes are unchanged.
+
 ## Material outputs
 
 Every output derives from its routed graph branch at the same pixel centre:
@@ -617,7 +630,7 @@ generation wrap mathematically across both tile axes.
 ## Compatibility policy
 
 The `.pmat` format version and Paperweight application version are separate.
-Paperweight v0.0.25 reads versions 1 through 18 and writes version 18. A reader
+Paperweight v0.0.27 reads versions 1 through 19 and writes version 19. A reader
 rejects unsupported versions and unknown fields so that it cannot quietly
 reinterpret a future material.
 
@@ -650,9 +663,12 @@ so every version-15 material retains byte-identical output. Version 17 adds an
 opt-in metalness branch and dielectric IOR. Version-16 and older files default
 to zero metalness and IOR 1.5, preserving every historical colour, height,
 normal, and roughness byte. Saving any older format performs the explicit
-migration to version 18. Version 18 adds opt-in special-surface branches and
+migration to version 19. Version 18 adds opt-in special-surface branches and
 neutral migration defaults; version-17 colour, height, normal, roughness, and
 metalness bytes remain unchanged.
+Version 19 adds opt-in radial profiles and motif repetition. Versions 1 through
+18 acquire identity radial defaults, so existing shapes retain byte-identical
+output.
 
 The portable entry points are `paperweight::parsePmat` and
 `paperweight::serialisePmat` in `include/paperweight/pmat.hpp`.

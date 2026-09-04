@@ -252,6 +252,15 @@ evaluation. Height and normal share one unquantised scalar field only when their
 graph source and normal treatment are provably equivalent. `GenerationRequest`
 remains compatible and delegates to this path with one selected output.
 
+In v0.0.27, radial profiles remain part of the same portable analytic shape
+evaluator. Annulus, arc, sector, and crescent distances are evaluated in wrapped
+material coordinates. Radial repetition transforms the sample into each copy's
+local frame using only copy index, count, radius, phase, and orientation, then
+selects the strongest deterministic result. It does not create a pixel-derived
+placement list or depend on worker scheduling. The same operation therefore
+feeds colour, height, roughness, and every other routed branch without adding a
+second designed-surface engine.
+
 ### macOS frontend
 
 Located under `app/macos/`.
@@ -336,7 +345,7 @@ hit rate and bounded memory without altering the cancellation contract.
 `.pmat` is a human-readable, versioned text format. Parsing and serialisation live in the portable core. Round trips should be stable and errors should identify useful source locations.
 
 The format version is deliberately independent of the application version.
-Paperweight v0.0.25 reads `.pmat` format versions 1 through 18 and writes version 18.
+Paperweight v0.0.27 reads `.pmat` format versions 1 through 19 and writes version 19.
 Unknown keys and unsupported format versions fail explicitly instead of being
 silently ignored. Version 1 maps to the original implicit FBM source; adding an
 explicit base noise layer produces byte-identical output. Version-2 layers map
@@ -385,6 +394,9 @@ Format version 18 adds independently routed coating, occlusion, clear-coat,
 clear-coat roughness, and emissive branches plus their global remaps, emissive
 intensity, and brushed-reflection anisotropy controls. Neutral migration values
 preserve the five version-17 output maps byte-for-byte.
+Format version 19 adds annulus, arc, annular-sector, and crescent profiles plus
+deterministic radial copy placement. Versions 1 through 18 acquire one fixed copy
+at radius zero, preserving every historical shape evaluation.
 Paperweight v0.0.21 adds a separate derived `.pwlib` format around canonical
 PMAT payloads. Its encoder and memory-backed reader remain in the
 portable core; filesystem discovery and save panels remain outside it. A strict
@@ -442,7 +454,7 @@ core. No workspace or window state is added to `.pmat` or `.pwlib`.
 Visual node-canvas authoring, graph-specific text persistence, WebAssembly
 bindings, game-engine adapters, arbitrary global texture
 rotation, bitmap-backed botanical stamps, and procedural GPU backends remain
-outside v0.0.26. MetalKit presents CPU-generated images with metallic/roughness,
+outside v0.0.27. MetalKit presents CPU-generated images with metallic/roughness,
 coating, occlusion, clear-coat, emissive, and anisotropic shading, or with the
 optional cel-lighting mode; it is not a
 generator backend and its lighting choices are never serialised into `.pmat`.
