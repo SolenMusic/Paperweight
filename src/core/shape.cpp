@@ -342,6 +342,7 @@ ShapeSample evaluateShapePrimitive(
     std::int64_t nearestColumn{};
     std::int64_t nearestRow{};
     std::uint32_t nearestCopy{};
+    double nearestOrientationDegrees{};
     for (std::int64_t rowOffset = -2; rowOffset <= 2; ++rowOffset) {
         const auto row = baseY + rowOffset;
         const auto wrappedRow = positiveModulo(row, operation.rows);
@@ -390,6 +391,7 @@ ShapeSample evaluateShapePrimitive(
                     nearestColumn = positiveModulo(column, operation.columns);
                     nearestRow = wrappedRow;
                     nearestCopy = copy;
+                    nearestOrientationDegrees = operation.rotationDegrees + orientation;
                 }
             }
         }
@@ -424,6 +426,9 @@ ShapeSample evaluateShapePrimitive(
             centreDistance,
             std::clamp(-nearest / insideScale, 0.0, 1.0),
             true,
+            0,
+            false,
+            nearestOrientationDegrees / 360.0,
         },
     };
 }

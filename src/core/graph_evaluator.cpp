@@ -109,6 +109,11 @@ struct RegionSurfacePlan {
     RegionSurfaceOperation parameters;
 };
 
+struct RegionAttachmentPlan {
+    std::size_t input;
+    RegionAttachmentOperation parameters;
+};
+
 struct ShapeBooleanPlan {
     std::size_t input{};
     ShapeBooleanOperation parameters;
@@ -143,6 +148,7 @@ using EvaluationPlan = std::variant<
     InkContourPlan,
     RegionFieldPlan,
     RegionSurfacePlan,
+    RegionAttachmentPlan,
     ShapeBooleanPlan,
     OrganicAccumulationPlan,
     MaskPlan,
@@ -296,6 +302,13 @@ public:
                                     return RegionSurfacePlan{
                                         indexOf(surface.input),
                                         surface.parameters,
+                                    };
+                                },
+                                [&indexOf](
+                                    const RegionAttachmentProcessing& attachment) -> EvaluationPlan {
+                                    return RegionAttachmentPlan{
+                                        indexOf(attachment.input),
+                                        attachment.parameters,
                                     };
                                 },
                                 [&indexOf](
@@ -619,6 +632,16 @@ private:
                     const auto input = evaluateNode(surface.input, context, cacheResult);
                     return evaluateOperation(
                         LayerOperation{surface.parameters},
+                        context,
+                        input);
+                },
+                [this, &context, cacheResult](const RegionAttachmentPlan& attachment) {
+                    const auto input = evaluateNode(
+                        attachment.input,
+                        context,
+                        cacheResult);
+                    return evaluateOperation(
+                        LayerOperation{attachment.parameters},
                         context,
                         input);
                 },

@@ -48,7 +48,7 @@ struct Showcase {
     const char* resource;
 };
 
-constexpr std::array<Showcase, 51> showcases{{
+constexpr std::array<Showcase, 55> showcases{{
     {"Default Noise", "default"},
     {"Brick Wall", "brick-wall"},
     {"Cobblestone", "cobblestone"},
@@ -100,6 +100,10 @@ constexpr std::array<Showcase, 51> showcases{{
     {"Woven Upholstery", "woven-upholstery"},
     {"Alternating Carpet", "alternating-carpet"},
     {"Heraldic Banner Cloth", "heraldic-banner-cloth"},
+    {"Attached Paving", "attached-paving"},
+    {"Arch Stone Panel", "arch-stone-panel"},
+    {"Damaged Crate", "damaged-crate"},
+    {"Detailed Target Panel", "detailed-target-panel"},
 }};
 
 constexpr std::array<std::uint32_t, 5> resolutions{{64, 128, 256, 512, 1024}};

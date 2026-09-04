@@ -141,6 +141,15 @@ struct RegionSurfaceProcessing {
         const RegionSurfaceProcessing&) = default;
 };
 
+struct RegionAttachmentProcessing {
+    GraphNodeId input{invalidGraphNodeId};
+    RegionAttachmentOperation parameters;
+
+    friend constexpr bool operator==(
+        const RegionAttachmentProcessing&,
+        const RegionAttachmentProcessing&) = default;
+};
+
 struct ShapeBooleanProcessing {
     GraphNodeId input{invalidGraphNodeId};
     ShapeBooleanOperation parameters;
@@ -170,6 +179,7 @@ using ProcessingOperation = std::variant<
     InkContourProcessing,
     RegionFieldProcessing,
     RegionSurfaceProcessing,
+    RegionAttachmentProcessing,
     ShapeBooleanProcessing,
     OrganicAccumulationProcessing>;
 

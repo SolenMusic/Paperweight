@@ -799,6 +799,8 @@ NSString* operationDisplayName(const paperweight::LayerOperation& operation)
         return @"Surface Value";
     case 29:
         return @"Textile / Fibres";
+    case 30:
+        return @"Region Attachment";
     default:
         return @"Unknown";
     }
@@ -1275,6 +1277,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @[ @"Woven Upholstery", @"woven-upholstery" ],
         @[ @"Alternating Carpet", @"alternating-carpet" ],
         @[ @"Heraldic Banner Cloth", @"heraldic-banner-cloth" ],
+        @[ @"Attached Paving", @"attached-paving" ],
+        @[ @"Arch Stone Panel", @"arch-stone-panel" ],
+        @[ @"Damaged Crate", @"damaged-crate" ],
+        @[ @"Detailed Target Panel", @"detailed-target-panel" ],
     ];
     for (NSArray<NSString*>* showcase in showcases) {
         auto* item = [showcaseMenu addItemWithTitle:showcase[0]
@@ -2553,6 +2559,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @"Organic Accumulation",
         @"Surface Value",
         @"Textile / Fibres",
+        @"Region Attachment",
     ]];
     auto* addLayerButton = [NSButton buttonWithTitle:@"Add"
                                               target:self
@@ -3502,6 +3509,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     const auto* accumulation =
         std::get_if<paperweight::OrganicAccumulationOperation>(&layer->operation);
     const auto* textile = std::get_if<paperweight::TextileOperation>(&layer->operation);
+    const auto* attachment =
+        std::get_if<paperweight::RegionAttachmentOperation>(&layer->operation);
     self.noiseSeedRow.hidden = noise == nullptr;
     self.solidColourRow.hidden = solid == nullptr;
     self.surfaceValueRow.hidden = surfaceValue == nullptr;
@@ -4298,6 +4307,135 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.patternSeedRow.hidden = NO;
         self.patternSeedOffsetField.stringValue = [NSString
             stringWithFormat:@"%llu", accumulation->seedOffset];
+    } else if (attachment != nullptr) {
+        self.surfaceKindRow.hidden = NO;
+        static_cast<NSTextField*>(self.surfaceKindRow.views[0]).stringValue = @"Detail";
+        [self.surfaceKindPopup removeAllItems];
+        [self.surfaceKindPopup addItemsWithTitles:@[
+            @"Fastener", @"Inlay", @"Glyph", @"Chip", @"Crack", @"Damage",
+        ]];
+        [self.surfaceKindPopup selectItemAtIndex:static_cast<NSInteger>(attachment->kind)];
+        self.courseFieldRow.hidden = NO;
+        static_cast<NSTextField*>(self.courseFieldRow.views[0]).stringValue = @"Output";
+        [self.courseFieldPopup removeAllItems];
+        [self.courseFieldPopup addItemsWithTitles:@[@"Material", @"Mask", @"Distance"]];
+        [self.courseFieldPopup selectItemAtIndex:static_cast<NSInteger>(attachment->field)];
+        self.processingTargetRow.hidden = NO;
+        static_cast<NSTextField*>(self.processingTargetRow.views[0]).stringValue = @"Start anchor";
+        [self.processingTargetPopup removeAllItems];
+        [self.processingTargetPopup addItemsWithTitles:@[@"Centre", @"Edge", @"Corner", @"Cavity"]];
+        [self.processingTargetPopup selectItemAtIndex:static_cast<NSInteger>(attachment->startAnchor)];
+        self.rampModeRow.hidden = NO;
+        if (attachment->kind == paperweight::RegionAttachmentKind::glyph) {
+            static_cast<NSTextField*>(self.rampModeRow.views[0]).stringValue = @"Glyph";
+            [self.rampModePopup removeAllItems];
+            [self.rampModePopup addItemsWithTitles:@[@"Cross", @"Chevron", @"Triangle", @"Rune"]];
+            [self.rampModePopup selectItemAtIndex:static_cast<NSInteger>(attachment->glyph)];
+        } else {
+            static_cast<NSTextField*>(self.rampModeRow.views[0]).stringValue = @"End anchor";
+            [self.rampModePopup removeAllItems];
+            [self.rampModePopup addItemsWithTitles:@[@"Centre", @"Edge", @"Corner", @"Cavity"]];
+            [self.rampModePopup selectItemAtIndex:static_cast<NSInteger>(attachment->endAnchor)];
+        }
+        showCount(self.patternCountXRow, self.patternCountXLabel,
+                  self.patternCountXSlider, self.patternCountXValue,
+                  @"Per region", attachment->count);
+        self.patternCountXSlider.maxValue = paperweight::LayerLimits::maximumRegionAttachments;
+        showValue(self.patternValueOneRow, self.patternValueOneLabel,
+                  self.patternValueOneSlider, self.patternValueOneValue,
+                  @"Size", 0.01, 1.0, attachment->size);
+        showValue(self.patternValueTwoRow, self.patternValueTwoLabel,
+                  self.patternValueTwoSlider, self.patternValueTwoValue,
+                  @"Aspect", 0.2, 5.0, attachment->aspect);
+        showValue(self.patternValueThreeRow, self.patternValueThreeLabel,
+                  self.patternValueThreeSlider, self.patternValueThreeValue,
+                  @"Anchor inset", 0.0, 0.45, attachment->inset);
+        showValue(self.patternValueFourRow, self.patternValueFourLabel,
+                  self.patternValueFourSlider, self.patternValueFourValue,
+                  @"Selection", 0.0, 1.0, attachment->selection);
+        self.courseGapRow.hidden = NO;
+        static_cast<NSTextField*>(self.courseGapRow.views[0]).stringValue = @"Line width";
+        self.courseGapSlider.minValue = 0.001;
+        self.courseGapSlider.maxValue = 0.5;
+        self.courseGapSlider.doubleValue = attachment->lineWidth;
+        self.courseGapValue.stringValue = [NSString stringWithFormat:@"%.3f", attachment->lineWidth];
+        self.courseSoftnessRow.hidden = NO;
+        static_cast<NSTextField*>(self.courseSoftnessRow.views[0]).stringValue = @"Branching";
+        self.courseSoftnessSlider.minValue = 0.0;
+        self.courseSoftnessSlider.maxValue = 1.0;
+        self.courseSoftnessSlider.doubleValue = attachment->branching;
+        self.courseSoftnessValue.stringValue = [NSString stringWithFormat:@"%.2f", attachment->branching];
+        self.courseOverlapRow.hidden = NO;
+        static_cast<NSTextField*>(self.courseOverlapRow.views[0]).stringValue = @"Jitter / bend";
+        self.courseOverlapSlider.minValue = 0.0;
+        self.courseOverlapSlider.maxValue = 1.0;
+        self.courseOverlapSlider.doubleValue = attachment->jitter;
+        self.courseOverlapValue.stringValue = [NSString stringWithFormat:@"%.2f", attachment->jitter];
+        self.filterSensitivityRow.hidden = NO;
+        static_cast<NSTextField*>(self.filterSensitivityRow.views[0]).stringValue = @"Softness";
+        self.filterSensitivitySlider.minValue = 0.0;
+        self.filterSensitivitySlider.maxValue = 0.25;
+        self.filterSensitivitySlider.doubleValue = attachment->softness;
+        self.filterSensitivityValue.stringValue = [NSString stringWithFormat:@"%.3f", attachment->softness];
+        self.posteriseBandsRow.hidden = NO;
+        static_cast<NSTextField*>(self.posteriseBandsRow.views[0]).stringValue = @"Crack length";
+        self.posteriseBandsSlider.minValue = 0.01;
+        self.posteriseBandsSlider.maxValue = 1.5;
+        self.posteriseBandsSlider.numberOfTickMarks = 0;
+        self.posteriseBandsSlider.allowsTickMarkValuesOnly = NO;
+        self.posteriseBandsSlider.doubleValue = attachment->length;
+        self.posteriseBandsValue.stringValue = [NSString stringWithFormat:@"%.2f", attachment->length];
+        self.inkRadiusRow.hidden = NO;
+        static_cast<NSTextField*>(self.inkRadiusRow.views[0]).stringValue = @"Rotation";
+        self.inkRadiusSlider.minValue = -360.0;
+        self.inkRadiusSlider.maxValue = 360.0;
+        self.inkRadiusSlider.doubleValue = attachment->rotationDegrees;
+        self.inkRadiusValue.stringValue = [NSString stringWithFormat:@"%.0f°", attachment->rotationDegrees];
+        self.inkStrengthRow.hidden = NO;
+        static_cast<NSTextField*>(self.inkStrengthRow.views[0]).stringValue = @"Emissive";
+        self.inkStrengthSlider.minValue = 0.0;
+        self.inkStrengthSlider.maxValue = 1.0;
+        self.inkStrengthSlider.doubleValue = attachment->emissive;
+        self.inkStrengthValue.stringValue = [NSString stringWithFormat:@"%.2f", attachment->emissive];
+        self.levelsLowRow.hidden = NO;
+        static_cast<NSTextField*>(self.levelsLowRow.views[0]).stringValue = @"Height";
+        self.levelsLowSlider.minValue = 0.0;
+        self.levelsLowSlider.maxValue = 1.0;
+        self.levelsLowSlider.doubleValue = attachment->height;
+        self.levelsLowValue.stringValue = [NSString stringWithFormat:@"%.2f", attachment->height];
+        self.levelsHighRow.hidden = NO;
+        static_cast<NSTextField*>(self.levelsHighRow.views[0]).stringValue = @"Roughness";
+        self.levelsHighSlider.minValue = 0.0;
+        self.levelsHighSlider.maxValue = 1.0;
+        self.levelsHighSlider.doubleValue = attachment->roughness;
+        self.levelsHighValue.stringValue = [NSString stringWithFormat:@"%.2f", attachment->roughness];
+        self.levelsGammaRow.hidden = NO;
+        static_cast<NSTextField*>(self.levelsGammaRow.views[0]).stringValue = @"Metalness";
+        self.levelsGammaSlider.minValue = 0.0;
+        self.levelsGammaSlider.maxValue = 1.0;
+        self.levelsGammaSlider.doubleValue = attachment->metalness;
+        self.levelsGammaValue.stringValue = [NSString stringWithFormat:@"%.2f", attachment->metalness];
+        self.thresholdRow.hidden = NO;
+        static_cast<NSTextField*>(self.thresholdRow.views[0]).stringValue = @"Occlusion";
+        self.thresholdSlider.minValue = 0.0;
+        self.thresholdSlider.maxValue = 1.0;
+        self.thresholdSlider.doubleValue = attachment->occlusion;
+        self.thresholdValue.stringValue = [NSString stringWithFormat:@"%.2f", attachment->occlusion];
+        self.colourEntriesGroup.hidden = NO;
+        for (NSUInteger colourIndex = 0; colourIndex < self.colourEntryRows.count; ++colourIndex) {
+            self.colourEntryRows[colourIndex].hidden = colourIndex != 0;
+            if (colourIndex == 0) {
+                self.colourEntryLabels[colourIndex].stringValue = @"Detail colour";
+                self.colourPositionSliders[colourIndex].hidden = YES;
+                self.colourPositionValues[colourIndex].hidden = YES;
+                self.colourEntryWells[colourIndex].color = colourFromRgba8(attachment->colour);
+            }
+        }
+        self.addColourEntryButton.enabled = NO;
+        self.removeColourEntryButton.enabled = NO;
+        self.patternSeedRow.hidden = NO;
+        self.patternSeedOffsetField.stringValue = [NSString
+            stringWithFormat:@"%llu", attachment->seedOffset];
     } else if (textile != nullptr) {
         self.surfaceKindRow.hidden = NO;
         static_cast<NSTextField*>(self.surfaceKindRow.views[0]).stringValue = @"Pattern";
@@ -5070,6 +5208,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     case 33:
         material_.layers.push_back(paperweight::makeTextileLayer());
         break;
+    case 34:
+        material_.layers.push_back(paperweight::makeRegionAttachmentLayer());
+        break;
     default:
         return;
     }
@@ -5150,7 +5291,12 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     if (layer == nullptr) {
         return;
     }
-    if (auto* textile = std::get_if<paperweight::TextileOperation>(&layer->operation)) {
+    if (auto* attachment =
+            std::get_if<paperweight::RegionAttachmentOperation>(&layer->operation)) {
+        if (sender.tag != 0) return;
+        attachment->colour = rgba8FromColour(sender.color);
+    } else if (auto* textile =
+                   std::get_if<paperweight::TextileOperation>(&layer->operation)) {
         const auto colour = rgba8FromColour(sender.color);
         switch (sender.tag) {
         case 0: textile->lowColour = colour; break;
@@ -5215,7 +5361,30 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     if (layer == nullptr) {
         return;
     }
-    if (auto* textile = std::get_if<paperweight::TextileOperation>(&layer->operation)) {
+    if (auto* attachment =
+            std::get_if<paperweight::RegionAttachmentOperation>(&layer->operation)) {
+        if (sender == self.processingTargetPopup) {
+            attachment->startAnchor = static_cast<paperweight::RegionAnchor>(
+                self.processingTargetPopup.indexOfSelectedItem);
+        }
+        if (sender == self.rampModePopup) {
+            if (attachment->kind == paperweight::RegionAttachmentKind::glyph) {
+                attachment->glyph = static_cast<paperweight::RegionGlyph>(
+                    self.rampModePopup.indexOfSelectedItem);
+            } else {
+                attachment->endAnchor = static_cast<paperweight::RegionAnchor>(
+                    self.rampModePopup.indexOfSelectedItem);
+            }
+        }
+        attachment->softness = self.filterSensitivitySlider.doubleValue;
+        attachment->length = self.posteriseBandsSlider.doubleValue;
+        attachment->rotationDegrees = self.inkRadiusSlider.doubleValue;
+        attachment->emissive = self.inkStrengthSlider.doubleValue;
+        self.filterSensitivityValue.stringValue = [NSString stringWithFormat:@"%.3f", attachment->softness];
+        self.posteriseBandsValue.stringValue = [NSString stringWithFormat:@"%.2f", attachment->length];
+        self.inkRadiusValue.stringValue = [NSString stringWithFormat:@"%.0f°", attachment->rotationDegrees];
+        self.inkStrengthValue.stringValue = [NSString stringWithFormat:@"%.2f", attachment->emissive];
+    } else if (auto* textile = std::get_if<paperweight::TextileOperation>(&layer->operation)) {
         if (sender == self.processingTargetPopup) {
             textile->yarnProfile = static_cast<paperweight::YarnProfile>(
                 self.processingTargetPopup.indexOfSelectedItem);
@@ -5670,6 +5839,17 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     }
     if (auto* threshold = std::get_if<paperweight::ThresholdOperation>(&layer->operation)) {
         threshold->threshold = self.thresholdSlider.doubleValue;
+    }
+    if (auto* attachment =
+            std::get_if<paperweight::RegionAttachmentOperation>(&layer->operation)) {
+        attachment->height = self.levelsLowSlider.doubleValue;
+        attachment->roughness = self.levelsHighSlider.doubleValue;
+        attachment->metalness = self.levelsGammaSlider.doubleValue;
+        attachment->occlusion = self.thresholdSlider.doubleValue;
+        self.levelsLowValue.stringValue = [NSString stringWithFormat:@"%.2f", attachment->height];
+        self.levelsHighValue.stringValue = [NSString stringWithFormat:@"%.2f", attachment->roughness];
+        self.levelsGammaValue.stringValue = [NSString stringWithFormat:@"%.2f", attachment->metalness];
+        self.thresholdValue.stringValue = [NSString stringWithFormat:@"%.2f", attachment->occlusion];
     }
     if (auto* textile = std::get_if<paperweight::TextileOperation>(&layer->operation)) {
         textile->colourVariation = self.levelsLowSlider.doubleValue;
@@ -6161,6 +6341,30 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
             self.facetedNormalsCheckbox.state == NSControlStateValueOn;
         if (parsedSeed) {
             sculpt->seedOffset = *parsedSeed;
+        }
+    } else if (auto* attachment =
+                   std::get_if<paperweight::RegionAttachmentOperation>(&layer->operation)) {
+        if (sender == self.surfaceKindPopup) {
+            attachment->kind = static_cast<paperweight::RegionAttachmentKind>(
+                self.surfaceKindPopup.indexOfSelectedItem);
+        }
+        if (sender == self.courseFieldPopup) {
+            attachment->field = static_cast<paperweight::RegionAttachmentField>(
+                self.courseFieldPopup.indexOfSelectedItem);
+        }
+        attachment->count = std::clamp(
+            countX,
+            1U,
+            paperweight::LayerLimits::maximumRegionAttachments);
+        attachment->size = self.patternValueOneSlider.doubleValue;
+        attachment->aspect = self.patternValueTwoSlider.doubleValue;
+        attachment->inset = self.patternValueThreeSlider.doubleValue;
+        attachment->selection = self.patternValueFourSlider.doubleValue;
+        attachment->lineWidth = self.courseGapSlider.doubleValue;
+        attachment->branching = self.courseSoftnessSlider.doubleValue;
+        attachment->jitter = self.courseOverlapSlider.doubleValue;
+        if (parsedSeed) {
+            attachment->seedOffset = *parsedSeed;
         }
     } else if (auto* textile =
                    std::get_if<paperweight::TextileOperation>(&layer->operation)) {

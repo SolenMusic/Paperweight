@@ -63,6 +63,7 @@ std::optional<GeneratorOperation> generatorOperation(const LayerOperation& opera
                           std::is_same_v<Operation, InkContourOperation> ||
                           std::is_same_v<Operation, RegionFieldOperation> ||
                           std::is_same_v<Operation, RegionSurfaceOperation> ||
+                          std::is_same_v<Operation, RegionAttachmentOperation> ||
                           std::is_same_v<Operation, ShapeBooleanOperation> ||
                           std::is_same_v<Operation, OrganicAccumulationOperation>) {
                 return std::nullopt;
@@ -124,6 +125,9 @@ std::optional<std::string> validateProcessingNode(const ProcessingNode& node)
             },
             [&layer](const RegionSurfaceProcessing& surface) {
                 layer.operation = surface.parameters;
+            },
+            [&layer](const RegionAttachmentProcessing& attachment) {
+                layer.operation = attachment.parameters;
             },
             [&layer](const ShapeBooleanProcessing& shape) {
                 layer.operation = shape.parameters;
@@ -198,6 +202,9 @@ std::vector<GraphNodeId> dependencies(const GraphNode& node)
                         },
                         [](const RegionSurfaceProcessing& surface) {
                             return std::vector<GraphNodeId>{surface.input};
+                        },
+                        [](const RegionAttachmentProcessing& attachment) {
+                            return std::vector<GraphNodeId>{attachment.input};
                         },
                         [](const ShapeBooleanProcessing& shape) {
                             return std::vector<GraphNodeId>{shape.input};
@@ -404,6 +411,11 @@ std::optional<GraphError> validateMaterialGraph(const MaterialGraph& graph)
                                     surface.input,
                                     GraphNodeCategory::generator);
                             },
+                            [&checkInput](const RegionAttachmentProcessing& attachment) {
+                                return checkInput(
+                                    attachment.input,
+                                    GraphNodeCategory::generator);
+                            },
                             [&checkInput](const ShapeBooleanProcessing& shape) {
                                 return checkInput(
                                     shape.input,
@@ -561,6 +573,11 @@ GraphCompilationResult compileMaterialGraph(const Material& material)
                            std::get_if<RegionSurfaceOperation>(&layer.operation)) {
                 source = addProcessing(
                     RegionSurfaceProcessing{accumulated, *surface},
+                    layerIndex);
+            } else if (const auto* attachment =
+                           std::get_if<RegionAttachmentOperation>(&layer.operation)) {
+                source = addProcessing(
+                    RegionAttachmentProcessing{accumulated, *attachment},
                     layerIndex);
             } else if (const auto* shape =
                            std::get_if<ShapeBooleanOperation>(&layer.operation)) {

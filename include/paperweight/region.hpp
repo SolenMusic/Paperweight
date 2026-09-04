@@ -13,6 +13,10 @@ struct RegionSample {
     bool valid{};
     std::uint64_t parentKey{};
     bool parentValid{};
+    // Clockwise orientation of the region-local U axis, expressed as turns.
+    // localU/localV are already evaluated in this frame; this value lets
+    // consumers orient attached presentation or geometry consistently.
+    double orientationTurns{};
 
     friend constexpr bool operator==(const RegionSample&, const RegionSample&) = default;
 };

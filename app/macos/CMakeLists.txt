@@ -63,6 +63,10 @@ set(PAPERWEIGHT_SHOWCASE_MATERIALS
     "${PROJECT_SOURCE_DIR}/examples/materials/woven-upholstery.pmat"
     "${PROJECT_SOURCE_DIR}/examples/materials/alternating-carpet.pmat"
     "${PROJECT_SOURCE_DIR}/examples/materials/heraldic-banner-cloth.pmat"
+    "${PROJECT_SOURCE_DIR}/examples/materials/attached-paving.pmat"
+    "${PROJECT_SOURCE_DIR}/examples/materials/arch-stone-panel.pmat"
+    "${PROJECT_SOURCE_DIR}/examples/materials/damaged-crate.pmat"
+    "${PROJECT_SOURCE_DIR}/examples/materials/detailed-target-panel.pmat"
 )
 set_source_files_properties(${PAPERWEIGHT_SHOWCASE_MATERIALS} PROPERTIES
     MACOSX_PACKAGE_LOCATION "Resources/Showcases"

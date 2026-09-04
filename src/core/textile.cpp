@@ -295,6 +295,7 @@ TextileSample evaluateWeave(
             coverage > 0.0,
             makeRegionKey(seed, coordinate.tileX, coordinate.tileY),
             true,
+            coordinate.rotated ? 0.25 : 0.0,
         },
     };
 }

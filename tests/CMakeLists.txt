@@ -70,6 +70,10 @@ foreach(showcase IN ITEMS
     woven-upholstery
     alternating-carpet
     heraldic-banner-cloth
+    attached-paving
+    arch-stone-panel
+    damaged-crate
+    detailed-target-panel
 )
     configure_file(
         "${PROJECT_SOURCE_DIR}/examples/materials/${showcase}.pmat"

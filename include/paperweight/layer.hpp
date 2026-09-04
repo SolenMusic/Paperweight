@@ -765,6 +765,65 @@ struct TextileOperation {
         const TextileOperation&) = default;
 };
 
+enum class RegionAttachmentKind : std::uint8_t {
+    fastener = 0,
+    inlay = 1,
+    glyph = 2,
+    chip = 3,
+    crack = 4,
+    damage = 5,
+};
+
+enum class RegionAnchor : std::uint8_t {
+    centre = 0,
+    edge = 1,
+    corner = 2,
+    cavity = 3,
+};
+
+enum class RegionAttachmentField : std::uint8_t {
+    material = 0,
+    mask = 1,
+    distance = 2,
+};
+
+enum class RegionGlyph : std::uint8_t {
+    cross = 0,
+    chevron = 1,
+    triangle = 2,
+    rune = 3,
+};
+
+struct RegionAttachmentOperation {
+    RegionAttachmentKind kind{RegionAttachmentKind::fastener};
+    RegionAttachmentField field{RegionAttachmentField::material};
+    RegionAnchor startAnchor{RegionAnchor::centre};
+    RegionAnchor endAnchor{RegionAnchor::edge};
+    RegionGlyph glyph{RegionGlyph::cross};
+    std::uint32_t count{1};
+    double size{0.18};
+    double aspect{1.0};
+    double inset{0.12};
+    double rotationDegrees{};
+    double jitter{0.08};
+    double selection{1.0};
+    double lineWidth{0.045};
+    double length{0.65};
+    double branching{0.35};
+    double softness{0.015};
+    Rgba8 colour{92, 96, 102, 255};
+    double height{0.82};
+    double roughness{0.38};
+    double metalness{0.75};
+    double occlusion{0.55};
+    double emissive{};
+    std::uint64_t seedOffset{};
+
+    friend constexpr bool operator==(
+        const RegionAttachmentOperation&,
+        const RegionAttachmentOperation&) = default;
+};
+
 enum class SurfacePatternKind : std::uint8_t {
     ridgedNoise = 0,
     bands = 1,
@@ -854,7 +913,8 @@ using LayerOperation = std::variant<
     LeafClusterOperation,
     OrganicAccumulationOperation,
     SurfaceValueOperation,
-    TextileOperation>;
+    TextileOperation,
+    RegionAttachmentOperation>;
 
 struct LayerOutputRouting {
     bool colour{true};
@@ -1002,6 +1062,7 @@ struct LayerLimits {
     static constexpr std::uint32_t maximumTextileTiles = 16;
     static constexpr std::uint32_t maximumWeaveSpan = 8;
     static constexpr std::uint32_t maximumFibreFrequency = 64;
+    static constexpr std::uint32_t maximumRegionAttachments = 8;
 };
 
 [[nodiscard]] constexpr MaterialLayer makeNoiseLayer(std::uint64_t seedOffset = 0)
@@ -1371,6 +1432,18 @@ struct LayerLimits {
         {}};
 }
 
+[[nodiscard]] constexpr MaterialLayer makeRegionAttachmentLayer()
+{
+    return MaterialLayer{
+        true,
+        1.0,
+        CompositeMode::blend,
+        RegionAttachmentOperation{},
+        {},
+        {},
+        {}};
+}
+
 [[nodiscard]] constexpr std::uint32_t rotationDegrees(QuarterTurn rotation)
 {
     return static_cast<std::uint32_t>(rotation) * 90U;
@@ -1458,9 +1531,58 @@ struct LayerLimits {
         return "surface_value";
     case 29:
         return "textile";
+    case 30:
+        return "region_attachment";
     default:
         return "unknown";
     }
+}
+
+[[nodiscard]] constexpr std::string_view regionAttachmentKindName(
+    RegionAttachmentKind kind)
+{
+    switch (kind) {
+    case RegionAttachmentKind::fastener: return "fastener";
+    case RegionAttachmentKind::inlay: return "inlay";
+    case RegionAttachmentKind::glyph: return "glyph";
+    case RegionAttachmentKind::chip: return "chip";
+    case RegionAttachmentKind::crack: return "crack";
+    case RegionAttachmentKind::damage: return "damage";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view regionAnchorName(RegionAnchor anchor)
+{
+    switch (anchor) {
+    case RegionAnchor::centre: return "centre";
+    case RegionAnchor::edge: return "edge";
+    case RegionAnchor::corner: return "corner";
+    case RegionAnchor::cavity: return "cavity";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view regionAttachmentFieldName(
+    RegionAttachmentField field)
+{
+    switch (field) {
+    case RegionAttachmentField::material: return "material";
+    case RegionAttachmentField::mask: return "mask";
+    case RegionAttachmentField::distance: return "distance";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view regionGlyphName(RegionGlyph glyph)
+{
+    switch (glyph) {
+    case RegionGlyph::cross: return "cross";
+    case RegionGlyph::chevron: return "chevron";
+    case RegionGlyph::triangle: return "triangle";
+    case RegionGlyph::rune: return "rune";
+    }
+    return "unknown";
 }
 
 [[nodiscard]] constexpr std::string_view textilePatternName(TextilePattern pattern)
