@@ -74,6 +74,10 @@ foreach(showcase IN ITEMS
     arch-stone-panel
     damaged-crate
     detailed-target-panel
+    hierarchical-foliage
+    hierarchical-ground
+    rich-moss-colonies
+    rich-lichen-stamps
 )
     configure_file(
         "${PROJECT_SOURCE_DIR}/examples/materials/${showcase}.pmat"

@@ -345,6 +345,29 @@
 @property(nonatomic, strong) NSStackView* courseOverlapRow;
 @property(nonatomic, strong) NSSlider* courseOverlapSlider;
 @property(nonatomic, strong) NSTextField* courseOverlapValue;
+@property(nonatomic, strong) NSStackView* organicPopulationRow;
+@property(nonatomic, strong) NSPopUpButton* organicPopulationPopup;
+@property(nonatomic, strong) NSStackView* organicPopulationWeightRow;
+@property(nonatomic, strong) NSSlider* organicPopulationWeightSlider;
+@property(nonatomic, strong) NSTextField* organicPopulationWeightValue;
+@property(nonatomic, strong) NSStackView* organicPopulationScaleRow;
+@property(nonatomic, strong) NSSlider* organicPopulationScaleSlider;
+@property(nonatomic, strong) NSTextField* organicPopulationScaleValue;
+@property(nonatomic, strong) NSStackView* organicClusterColourRow;
+@property(nonatomic, strong) NSSlider* organicClusterColourSlider;
+@property(nonatomic, strong) NSTextField* organicClusterColourValue;
+@property(nonatomic, strong) NSStackView* organicInstanceColourRow;
+@property(nonatomic, strong) NSSlider* organicInstanceColourSlider;
+@property(nonatomic, strong) NSTextField* organicInstanceColourValue;
+@property(nonatomic, strong) NSStackView* organicOutlineRow;
+@property(nonatomic, strong) NSSlider* organicOutlineSlider;
+@property(nonatomic, strong) NSTextField* organicOutlineValue;
+@property(nonatomic, strong) NSStackView* organicHighlightRow;
+@property(nonatomic, strong) NSSlider* organicHighlightSlider;
+@property(nonatomic, strong) NSTextField* organicHighlightValue;
+@property(nonatomic, strong) NSStackView* organicHighlightInsetRow;
+@property(nonatomic, strong) NSSlider* organicHighlightInsetSlider;
+@property(nonatomic, strong) NSTextField* organicHighlightInsetValue;
 @property(nonatomic, strong) NSStackView* processingTargetRow;
 @property(nonatomic, strong) NSPopUpButton* processingTargetPopup;
 @property(nonatomic, strong) NSStackView* filterSensitivityRow;
@@ -792,7 +815,7 @@ NSString* operationDisplayName(const paperweight::LayerOperation& operation)
     case 25:
         return @"Organic Cracks";
     case 26:
-        return @"Leaf Clusters";
+        return @"Organic Clusters";
     case 27:
         return @"Organic Accumulation";
     case 28:
@@ -920,6 +943,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     bool dirty_;
     NSInteger selectedLayer_;
     NSInteger selectedScatterPopulation_;
+    NSInteger selectedLeafPopulation_;
     paperweight::PhysicalSize previewCoverage_;
     std::uint32_t previewResolution_;
 }
@@ -1281,6 +1305,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @[ @"Arch Stone Panel", @"arch-stone-panel" ],
         @[ @"Damaged Crate", @"damaged-crate" ],
         @[ @"Detailed Target Panel", @"detailed-target-panel" ],
+        @[ @"Hierarchical Foliage", @"hierarchical-foliage" ],
+        @[ @"Hierarchical Ground", @"hierarchical-ground" ],
+        @[ @"Rich Moss Colonies", @"rich-moss-colonies" ],
+        @[ @"Rich Lichen Stamps", @"rich-lichen-stamps" ],
     ];
     for (NSArray<NSString*>* showcase in showcases) {
         auto* item = [showcaseMenu addItemWithTitle:showcase[0]
@@ -2555,7 +2583,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @"Instance Scatter",
         @"Organic Cells",
         @"Organic Cracks",
-        @"Leaf Clusters",
+        @"Organic Clusters",
         @"Organic Accumulation",
         @"Surface Value",
         @"Textile / Fibres",
@@ -2762,6 +2790,46 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.courseOverlapSlider = static_cast<NSSlider*>(self.courseOverlapRow.views[1]);
     self.courseOverlapValue = static_cast<NSTextField*>(self.courseOverlapRow.views[2]);
     self.courseOverlapSlider.action = @selector(structuralParameterChanged:);
+
+    auto* organicPopulationLabel = makeLabel(@"Population");
+    [organicPopulationLabel.widthAnchor constraintEqualToConstant:72.0].active = YES;
+    self.organicPopulationPopup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+    self.organicPopulationPopup.target = self;
+    self.organicPopulationPopup.action = @selector(structuralParameterChanged:);
+    self.organicPopulationRow = [NSStackView stackViewWithViews:@[
+        organicPopulationLabel, self.organicPopulationPopup,
+    ]];
+    self.organicPopulationRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+    self.organicPopulationRow.alignment = NSLayoutAttributeCenterY;
+    self.organicPopulationRow.spacing = 8.0;
+    self.organicPopulationWeightRow = makeLayerSliderRow(@"Population weight", 0.0, 1.0, 0.0, self);
+    self.organicPopulationWeightSlider = static_cast<NSSlider*>(self.organicPopulationWeightRow.views[1]);
+    self.organicPopulationWeightValue = static_cast<NSTextField*>(self.organicPopulationWeightRow.views[2]);
+    self.organicPopulationWeightSlider.action = @selector(structuralParameterChanged:);
+    self.organicPopulationScaleRow = makeLayerSliderRow(@"Population scale", 0.1, 4.0, 1.0, self);
+    self.organicPopulationScaleSlider = static_cast<NSSlider*>(self.organicPopulationScaleRow.views[1]);
+    self.organicPopulationScaleValue = static_cast<NSTextField*>(self.organicPopulationScaleRow.views[2]);
+    self.organicPopulationScaleSlider.action = @selector(structuralParameterChanged:);
+    self.organicClusterColourRow = makeLayerSliderRow(@"Cluster colour", 0.0, 1.0, 0.0, self);
+    self.organicClusterColourSlider = static_cast<NSSlider*>(self.organicClusterColourRow.views[1]);
+    self.organicClusterColourValue = static_cast<NSTextField*>(self.organicClusterColourRow.views[2]);
+    self.organicClusterColourSlider.action = @selector(structuralParameterChanged:);
+    self.organicInstanceColourRow = makeLayerSliderRow(@"Instance colour", 0.0, 1.0, 1.0, self);
+    self.organicInstanceColourSlider = static_cast<NSSlider*>(self.organicInstanceColourRow.views[1]);
+    self.organicInstanceColourValue = static_cast<NSTextField*>(self.organicInstanceColourRow.views[2]);
+    self.organicInstanceColourSlider.action = @selector(structuralParameterChanged:);
+    self.organicOutlineRow = makeLayerSliderRow(@"Outline width", 0.0, 0.5, 0.08, self);
+    self.organicOutlineSlider = static_cast<NSSlider*>(self.organicOutlineRow.views[1]);
+    self.organicOutlineValue = static_cast<NSTextField*>(self.organicOutlineRow.views[2]);
+    self.organicOutlineSlider.action = @selector(structuralParameterChanged:);
+    self.organicHighlightRow = makeLayerSliderRow(@"Highlight width", 0.0, 0.5, 0.1, self);
+    self.organicHighlightSlider = static_cast<NSSlider*>(self.organicHighlightRow.views[1]);
+    self.organicHighlightValue = static_cast<NSTextField*>(self.organicHighlightRow.views[2]);
+    self.organicHighlightSlider.action = @selector(structuralParameterChanged:);
+    self.organicHighlightInsetRow = makeLayerSliderRow(@"Highlight inset", 0.0, 0.5, 0.08, self);
+    self.organicHighlightInsetSlider = static_cast<NSSlider*>(self.organicHighlightInsetRow.views[1]);
+    self.organicHighlightInsetValue = static_cast<NSTextField*>(self.organicHighlightInsetRow.views[2]);
+    self.organicHighlightInsetSlider.action = @selector(structuralParameterChanged:);
 
     auto* processingTargetLabel = makeLabel(@"Affect");
     [processingTargetLabel.widthAnchor constraintEqualToConstant:72.0].active = YES;
@@ -3025,6 +3093,14 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.courseGapRow,
         self.courseSoftnessRow,
         self.courseOverlapRow,
+        self.organicPopulationRow,
+        self.organicPopulationWeightRow,
+        self.organicPopulationScaleRow,
+        self.organicClusterColourRow,
+        self.organicInstanceColourRow,
+        self.organicOutlineRow,
+        self.organicHighlightRow,
+        self.organicHighlightInsetRow,
         self.equalMortarWidthCheckbox,
         self.patternDirectionRow,
         self.patternSeedRow,
@@ -3232,6 +3308,15 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         [self.courseGapRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.courseSoftnessRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.courseOverlapRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.organicPopulationRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.organicPopulationPopup.trailingAnchor constraintEqualToAnchor:self.organicPopulationRow.trailingAnchor],
+        [self.organicPopulationWeightRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.organicPopulationScaleRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.organicClusterColourRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.organicInstanceColourRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.organicOutlineRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.organicHighlightRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
+        [self.organicHighlightInsetRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.processingTargetRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
         [self.processingTargetPopup.trailingAnchor constraintEqualToAnchor:self.processingTargetRow.trailingAnchor],
         [self.filterSensitivityRow.widthAnchor constraintEqualToAnchor:self.layerSettingsGroup.widthAnchor],
@@ -3405,6 +3490,14 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.courseGapRow.hidden = YES;
         self.courseSoftnessRow.hidden = YES;
         self.courseOverlapRow.hidden = YES;
+        self.organicPopulationRow.hidden = YES;
+        self.organicPopulationWeightRow.hidden = YES;
+        self.organicPopulationScaleRow.hidden = YES;
+        self.organicClusterColourRow.hidden = YES;
+        self.organicInstanceColourRow.hidden = YES;
+        self.organicOutlineRow.hidden = YES;
+        self.organicHighlightRow.hidden = YES;
+        self.organicHighlightInsetRow.hidden = YES;
         self.equalMortarWidthCheckbox.hidden = YES;
         self.physicalBrickCheckbox.hidden = YES;
         self.physicalBrickWidthRow.hidden = YES;
@@ -3529,6 +3622,14 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.courseGapRow.hidden = YES;
     self.courseSoftnessRow.hidden = YES;
     self.courseOverlapRow.hidden = YES;
+    self.organicPopulationRow.hidden = YES;
+    self.organicPopulationWeightRow.hidden = YES;
+    self.organicPopulationScaleRow.hidden = YES;
+    self.organicClusterColourRow.hidden = YES;
+    self.organicInstanceColourRow.hidden = YES;
+    self.organicOutlineRow.hidden = YES;
+    self.organicHighlightRow.hidden = YES;
+    self.organicHighlightInsetRow.hidden = YES;
     self.equalMortarWidthCheckbox.hidden = YES;
     self.physicalBrickCheckbox.hidden = brick == nullptr && course == nullptr;
     self.physicalBrickWidthRow.hidden = YES;
@@ -4116,6 +4217,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.patternSeedOffsetField.stringValue = [NSString
             stringWithFormat:@"%llu", organicCracks->seedOffset];
     } else if (leaves != nullptr) {
+        static_cast<NSTextField*>(self.organicPopulationRow.views[0]).stringValue = @"Population";
         self.rampModeRow.hidden = NO;
         static_cast<NSTextField*>(self.rampModeRow.views[0]).stringValue = @"Species";
         [self.rampModePopup removeAllItems];
@@ -4127,19 +4229,25 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         [self.surfaceKindPopup removeAllItems];
         [self.surfaceKindPopup addItemsWithTitles:@[
             @"Ovate", @"Lanceolate", @"Cordate", @"Lobed",
+            @"Blob", @"Rosette", @"Lichen",
         ]];
-        [self.surfaceKindPopup selectItemAtIndex:static_cast<NSInteger>(leaves->profile)];
+        selectedLeafPopulation_ = std::clamp<NSInteger>(selectedLeafPopulation_, 0, 2);
+        const auto selectedProfile = selectedLeafPopulation_ == 0 ? leaves->profile
+            : selectedLeafPopulation_ == 1 ? leaves->secondaryProfile
+            : leaves->tertiaryProfile;
+        [self.surfaceKindPopup selectItemAtIndex:static_cast<NSInteger>(selectedProfile)];
         self.courseFieldRow.hidden = NO;
         [self.courseFieldPopup removeAllItems];
         [self.courseFieldPopup addItemsWithTitles:@[
             @"Material outputs", @"Fill", @"Edge", @"Midrib", @"Veins", @"Leaf variation",
+            @"Contour outline", @"Inner highlight", @"Cluster variation", @"Population",
         ]];
         [self.courseFieldPopup selectItemAtIndex:static_cast<NSInteger>(leaves->field)];
         self.processingTargetRow.hidden = NO;
         static_cast<NSTextField*>(self.processingTargetRow.views[0]).stringValue = @"Cluster";
         [self.processingTargetPopup removeAllItems];
         [self.processingTargetPopup addItemsWithTitles:@[
-            @"Radial", @"Fan", @"Vine", @"Canopy",
+            @"Radial", @"Fan", @"Vine", @"Canopy", @"Ground scatter",
         ]];
         [self.processingTargetPopup selectItemAtIndex:static_cast<NSInteger>(leaves->pattern)];
         showCount(self.patternCountXRow, self.patternCountXLabel,
@@ -4220,6 +4328,40 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.inkStrengthSlider.maxValue = 0.8;
         self.inkStrengthSlider.doubleValue = leaves->lobing;
         self.inkStrengthValue.stringValue = [NSString stringWithFormat:@"%.2f", leaves->lobing];
+        self.organicPopulationRow.hidden = NO;
+        [self.organicPopulationPopup removeAllItems];
+        [self.organicPopulationPopup addItemsWithTitles:@[
+            @"Primary", @"Secondary", @"Tertiary",
+        ]];
+        [self.organicPopulationPopup selectItemAtIndex:selectedLeafPopulation_];
+        self.organicPopulationWeightRow.hidden = NO;
+        const double populationWeight = selectedLeafPopulation_ == 0
+            ? 1.0 - leaves->secondaryWeight - leaves->tertiaryWeight
+            : selectedLeafPopulation_ == 1 ? leaves->secondaryWeight : leaves->tertiaryWeight;
+        self.organicPopulationWeightSlider.doubleValue = populationWeight;
+        self.organicPopulationWeightSlider.enabled = selectedLeafPopulation_ != 0;
+        self.organicPopulationWeightValue.stringValue = [NSString stringWithFormat:@"%.2f", populationWeight];
+        self.organicPopulationScaleRow.hidden = NO;
+        const double populationScale = selectedLeafPopulation_ == 0 ? 1.0
+            : selectedLeafPopulation_ == 1 ? leaves->secondaryScale : leaves->tertiaryScale;
+        self.organicPopulationScaleSlider.doubleValue = populationScale;
+        self.organicPopulationScaleSlider.enabled = selectedLeafPopulation_ != 0;
+        self.organicPopulationScaleValue.stringValue = [NSString stringWithFormat:@"%.2f", populationScale];
+        self.organicClusterColourRow.hidden = NO;
+        self.organicClusterColourSlider.doubleValue = leaves->clusterColourVariation;
+        self.organicClusterColourValue.stringValue = [NSString stringWithFormat:@"%.2f", leaves->clusterColourVariation];
+        self.organicInstanceColourRow.hidden = NO;
+        self.organicInstanceColourSlider.doubleValue = leaves->instanceColourVariation;
+        self.organicInstanceColourValue.stringValue = [NSString stringWithFormat:@"%.2f", leaves->instanceColourVariation];
+        self.organicOutlineRow.hidden = NO;
+        self.organicOutlineSlider.doubleValue = leaves->edgeWidth;
+        self.organicOutlineValue.stringValue = [NSString stringWithFormat:@"%.2f", leaves->edgeWidth];
+        self.organicHighlightRow.hidden = NO;
+        self.organicHighlightSlider.doubleValue = leaves->innerHighlightWidth;
+        self.organicHighlightValue.stringValue = [NSString stringWithFormat:@"%.2f", leaves->innerHighlightWidth];
+        self.organicHighlightInsetRow.hidden = NO;
+        self.organicHighlightInsetSlider.doubleValue = leaves->innerHighlightInset;
+        self.organicHighlightInsetValue.stringValue = [NSString stringWithFormat:@"%.2f", leaves->innerHighlightInset];
         self.levelsLowRow.hidden = NO;
         static_cast<NSTextField*>(self.levelsLowRow.views[0]).stringValue = @"Minimum height";
         self.levelsLowSlider.doubleValue = leaves->minimumHeight;
@@ -4239,11 +4381,17 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
             self.colourEntryRows[colourIndex].hidden = colourIndex >= 2;
             if (colourIndex < 2) {
                 self.colourEntryLabels[colourIndex].stringValue =
-                    colourIndex == 0 ? @"Leaf low" : @"Leaf high";
+                    colourIndex == 0 ? @"Population low" : @"Population high";
                 self.colourPositionSliders[colourIndex].hidden = YES;
                 self.colourPositionValues[colourIndex].hidden = YES;
+                const auto lowColour = selectedLeafPopulation_ == 0 ? leaves->lowColour
+                    : selectedLeafPopulation_ == 1 ? leaves->secondaryLowColour
+                    : leaves->tertiaryLowColour;
+                const auto highColour = selectedLeafPopulation_ == 0 ? leaves->highColour
+                    : selectedLeafPopulation_ == 1 ? leaves->secondaryHighColour
+                    : leaves->tertiaryHighColour;
                 self.colourEntryWells[colourIndex].color = colourFromRgba8(
-                    colourIndex == 0 ? leaves->lowColour : leaves->highColour);
+                    colourIndex == 0 ? lowColour : highColour);
             }
         }
         self.addColourEntryButton.enabled = NO;
@@ -4262,6 +4410,18 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
             @"Cavities", @"Boundaries", @"Low height", @"Authored mask",
         ]];
         [self.courseFieldPopup selectItemAtIndex:static_cast<NSInteger>(accumulation->source)];
+        self.organicPopulationRow.hidden = NO;
+        static_cast<NSTextField*>(self.organicPopulationRow.views[0]).stringValue = @"Profile";
+        [self.organicPopulationPopup removeAllItems];
+        [self.organicPopulationPopup addItemsWithTitles:@[@"Noise", @"Colonies", @"Speckles"]];
+        [self.organicPopulationPopup selectItemAtIndex:static_cast<NSInteger>(accumulation->profile)];
+        self.rampModeRow.hidden = NO;
+        static_cast<NSTextField*>(self.rampModeRow.views[0]).stringValue = @"Output";
+        [self.rampModePopup removeAllItems];
+        [self.rampModePopup addItemsWithTitles:@[
+            @"Material", @"Fill", @"Outline", @"Inner highlight", @"Detail",
+        ]];
+        [self.rampModePopup selectItemAtIndex:static_cast<NSInteger>(accumulation->field)];
         showCount(self.patternCountXRow, self.patternCountXLabel,
                   self.patternCountXSlider, self.patternCountXValue,
                   @"Growth scale", accumulation->scale);
@@ -4283,6 +4443,15 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.courseGapSlider.maxValue = 1.0;
         self.courseGapSlider.doubleValue = accumulation->variation;
         self.courseGapValue.stringValue = [NSString stringWithFormat:@"%.2f", accumulation->variation];
+        self.organicOutlineRow.hidden = NO;
+        self.organicOutlineSlider.doubleValue = accumulation->outlineWidth;
+        self.organicOutlineValue.stringValue = [NSString stringWithFormat:@"%.2f", accumulation->outlineWidth];
+        self.organicHighlightRow.hidden = NO;
+        self.organicHighlightSlider.doubleValue = accumulation->innerHighlightWidth;
+        self.organicHighlightValue.stringValue = [NSString stringWithFormat:@"%.2f", accumulation->innerHighlightWidth];
+        self.organicHighlightInsetRow.hidden = NO;
+        self.organicHighlightInsetSlider.doubleValue = accumulation->innerHighlightInset;
+        self.organicHighlightInsetValue.stringValue = [NSString stringWithFormat:@"%.2f", accumulation->innerHighlightInset];
         self.processingTargetRow.hidden = NO;
         static_cast<NSTextField*>(self.processingTargetRow.views[0]).stringValue = @"Affect";
         [self.processingTargetPopup removeAllItems];
@@ -5318,12 +5487,17 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         }
     } else if (auto* leaves =
                    std::get_if<paperweight::LeafClusterOperation>(&layer->operation)) {
-        if (sender.tag == 0) {
-            leaves->lowColour = rgba8FromColour(sender.color);
-        } else if (sender.tag == 1) {
-            leaves->highColour = rgba8FromColour(sender.color);
+        if (sender.tag > 1) return;
+        const auto colour = rgba8FromColour(sender.color);
+        if (selectedLeafPopulation_ == 0) {
+            if (sender.tag == 0) leaves->lowColour = colour;
+            else leaves->highColour = colour;
+        } else if (selectedLeafPopulation_ == 1) {
+            if (sender.tag == 0) leaves->secondaryLowColour = colour;
+            else leaves->secondaryHighColour = colour;
         } else {
-            return;
+            if (sender.tag == 0) leaves->tertiaryLowColour = colour;
+            else leaves->tertiaryHighColour = colour;
         }
     } else if (auto* growth =
                    std::get_if<paperweight::OrganicAccumulationOperation>(&layer->operation)) {
@@ -5512,6 +5686,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         }
     } else if (auto* growth =
                    std::get_if<paperweight::OrganicAccumulationOperation>(&layer->operation)) {
+        if (sender == self.rampModePopup) {
+            growth->field = static_cast<paperweight::OrganicAccumulationField>(
+                self.rampModePopup.indexOfSelectedItem);
+        }
         growth->target = processingTargetAtIndex(
             self.processingTargetPopup.indexOfSelectedItem);
     } else if (auto* filter = std::get_if<paperweight::SurfaceFilterOperation>(&layer->operation)) {
@@ -6431,9 +6609,17 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         }
     } else if (auto* leaves =
                    std::get_if<paperweight::LeafClusterOperation>(&layer->operation)) {
+        if (sender == self.organicPopulationPopup) {
+            selectedLeafPopulation_ = self.organicPopulationPopup.indexOfSelectedItem;
+            [self refreshLayerInspector];
+            return;
+        }
         if (sender == self.surfaceKindPopup) {
-            leaves->profile = static_cast<paperweight::LeafProfile>(
+            const auto profile = static_cast<paperweight::LeafProfile>(
                 self.surfaceKindPopup.indexOfSelectedItem);
+            if (selectedLeafPopulation_ == 0) leaves->profile = profile;
+            else if (selectedLeafPopulation_ == 1) leaves->secondaryProfile = profile;
+            else leaves->tertiaryProfile = profile;
         }
         if (sender == self.courseFieldPopup) {
             leaves->field = static_cast<paperweight::LeafField>(
@@ -6448,6 +6634,35 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         leaves->scaleVariation = self.courseGapSlider.doubleValue;
         leaves->rotationVariation = self.courseSoftnessSlider.doubleValue;
         leaves->directionDegrees = self.courseOverlapSlider.doubleValue;
+        if (selectedLeafPopulation_ == 1) {
+            leaves->secondaryWeight = std::min(
+                self.organicPopulationWeightSlider.doubleValue,
+                1.0 - leaves->tertiaryWeight);
+            leaves->secondaryScale = self.organicPopulationScaleSlider.doubleValue;
+        } else if (selectedLeafPopulation_ == 2) {
+            leaves->tertiaryWeight = std::min(
+                self.organicPopulationWeightSlider.doubleValue,
+                1.0 - leaves->secondaryWeight);
+            leaves->tertiaryScale = self.organicPopulationScaleSlider.doubleValue;
+        }
+        leaves->clusterColourVariation = self.organicClusterColourSlider.doubleValue;
+        leaves->instanceColourVariation = self.organicInstanceColourSlider.doubleValue;
+        leaves->edgeWidth = self.organicOutlineSlider.doubleValue;
+        leaves->innerHighlightWidth = self.organicHighlightSlider.doubleValue;
+        leaves->innerHighlightInset = self.organicHighlightInsetSlider.doubleValue;
+        const double populationWeight = selectedLeafPopulation_ == 0
+            ? 1.0 - leaves->secondaryWeight - leaves->tertiaryWeight
+            : selectedLeafPopulation_ == 1 ? leaves->secondaryWeight : leaves->tertiaryWeight;
+        self.organicPopulationWeightSlider.doubleValue = populationWeight;
+        self.organicPopulationWeightValue.stringValue = [NSString stringWithFormat:@"%.2f", populationWeight];
+        self.organicPopulationScaleValue.stringValue = [NSString
+            stringWithFormat:@"%.2f", selectedLeafPopulation_ == 0 ? 1.0
+                : selectedLeafPopulation_ == 1 ? leaves->secondaryScale : leaves->tertiaryScale];
+        self.organicClusterColourValue.stringValue = [NSString stringWithFormat:@"%.2f", leaves->clusterColourVariation];
+        self.organicInstanceColourValue.stringValue = [NSString stringWithFormat:@"%.2f", leaves->instanceColourVariation];
+        self.organicOutlineValue.stringValue = [NSString stringWithFormat:@"%.2f", leaves->edgeWidth];
+        self.organicHighlightValue.stringValue = [NSString stringWithFormat:@"%.2f", leaves->innerHighlightWidth];
+        self.organicHighlightInsetValue.stringValue = [NSString stringWithFormat:@"%.2f", leaves->innerHighlightInset];
         if (parsedSeed) {
             leaves->seedOffset = *parsedSeed;
         }
@@ -6461,12 +6676,22 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
             growth->source = static_cast<paperweight::OrganicAccumulationSource>(
                 self.courseFieldPopup.indexOfSelectedItem);
         }
+        if (sender == self.organicPopulationPopup) {
+            growth->profile = static_cast<paperweight::OrganicAccumulationProfile>(
+                self.organicPopulationPopup.indexOfSelectedItem);
+        }
         growth->scale = countX;
         growth->coverage = self.patternValueOneSlider.doubleValue;
         growth->softness = self.patternValueTwoSlider.doubleValue;
         growth->moistureBias = self.patternValueThreeSlider.doubleValue;
         growth->breakup = self.patternValueFourSlider.doubleValue;
         growth->variation = self.courseGapSlider.doubleValue;
+        growth->outlineWidth = self.organicOutlineSlider.doubleValue;
+        growth->innerHighlightWidth = self.organicHighlightSlider.doubleValue;
+        growth->innerHighlightInset = self.organicHighlightInsetSlider.doubleValue;
+        self.organicOutlineValue.stringValue = [NSString stringWithFormat:@"%.2f", growth->outlineWidth];
+        self.organicHighlightValue.stringValue = [NSString stringWithFormat:@"%.2f", growth->innerHighlightWidth];
+        self.organicHighlightInsetValue.stringValue = [NSString stringWithFormat:@"%.2f", growth->innerHighlightInset];
         if (parsedSeed) {
             growth->seedOffset = *parsedSeed;
         }

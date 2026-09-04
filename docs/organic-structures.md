@@ -1,8 +1,9 @@
 # Organic structures
 
-Paperweight v0.0.17 adds organic construction as portable, reusable graph
-operations. Cel forest bark and castle foliage are ordinary editable `.pmat`
-recipes composed from these operations; neither has a private generator.
+Paperweight v0.0.17 introduced organic construction as portable, reusable graph
+operations. Paperweight v0.0.30 extends the same operations with hierarchical
+populations, broader analytic silhouettes, reusable contour fields, ground
+scatter, and richer accumulation. No asset uses a private generator.
 
 ## Deterministic contract
 
@@ -31,12 +32,15 @@ child branch in a fixed hash order. Branch probability falls by hierarchy;
 width follows the authored taper. The same layout exposes all cracks, trunks,
 branches, hierarchy-weighted coverage, or the complementary distance field.
 
-`LeafClusterOperation` places bounded clusters and leaf instances on a periodic
-grid. Radial, fan, vine, and canopy arrangements share the same deterministic
-population contract. Ovate, lanceolate, cordate, and lobed profiles are analytic
-silhouettes with optional curvature, notches, serration, lobes, midribs, and
-secondary veins. The frontmost covering leaf is selected by exact integer
-occlusion order and supplies aligned colour, height, roughness, and region data.
+`LeafClusterOperation` places bounded clusters and instances on a periodic grid.
+Radial, fan, vine, canopy, and ground-scatter arrangements share the same
+deterministic contract. Ovate, lanceolate, cordate, lobed, blob, rosette, and
+lichen profiles are analytic silhouettes. A primary population and two optional
+weighted populations each own a profile, palette, and scale. Cluster-level and
+instance-level colour variation use independent stable hash channels. The
+frontmost covering instance is selected by exact integer occlusion order and
+supplies aligned material data plus fill, contour, inner-highlight,
+cluster-random, and population fields.
 
 `leafSpeciesPreset` returns complete editable parameters for ivy, laurel, oak,
 or ash. Presets are convenience values, not stored identities: `.pmat`
@@ -44,9 +48,10 @@ serialisation writes every resulting leaf parameter and never stores the seed
 inside a template.
 
 `OrganicAccumulationOperation` processes an accumulated graph value and active
-region. Its periodic colony and breakup fields can be biased towards cavities,
-boundaries, low surfaces, or a deliberately authored mask. Moss, lichen, and
-colour variation may affect colour, scalar surface data, or both.
+region. Periodic noise, colony, or speckle profiles can be biased towards
+cavities, boundaries, low surfaces, or a deliberately authored mask. Material,
+fill, outline, inner-highlight, and detail fields make moss and lichen reusable
+as either finished material or masks for later layers.
 
 ## Portable API
 
@@ -77,7 +82,8 @@ extent must remain below one wrapped tile, ensuring bounded lookup and an
 unambiguous periodic population. Invalid enum values, ranges, ordering, or
 extents fail material validation before generation.
 
-The tests cover exact layout reconstruction, hierarchy creation, periodic
-samples, species distinction, cluster occlusion, `.pmat` version-14 round trips,
-old-version rejection, one-versus-four-worker identity, and golden colour,
-height, normal, and roughness checksums for both v0.0.17 showcases.
+The tests cover exact layout reconstruction, population choice, periodic
+samples, species distinction, cluster occlusion, `.pmat` version-14 and
+version-22 round trips, old-version rejection, one-versus-four-worker identity,
+and golden colour, height, normal, and roughness checksums for the organic
+showcases.

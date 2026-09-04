@@ -119,7 +119,7 @@ double signedLeafDistance(
     const double phase = (boundedY + 1.0) * 0.5;
 
     double envelope = 0.0;
-    switch (operation.profile) {
+    switch (leaf.profile) {
     case LeafProfile::ovate:
         envelope = std::sqrt(std::max(0.0, 1.0 - boundedY * boundedY));
         break;
@@ -138,6 +138,31 @@ double signedLeafDistance(
                     static_cast<double>(operation.lobeCount) *
                     std::numbers::pi * phase));
         break;
+    case LeafProfile::blob:
+    case LeafProfile::rosette:
+    case LeafProfile::lichen: {
+        const double normalisedX = localX / halfWidth;
+        const double angle = std::atan2(normalisedY, normalisedX);
+        const double radius = std::hypot(normalisedX, normalisedY);
+        const double phaseOffset = unitDouble(mixBits(leaf.key ^ 0xb10bULL)) *
+            2.0 * std::numbers::pi;
+        double boundary = 1.0;
+        if (leaf.profile == LeafProfile::blob) {
+            boundary = 0.9 + operation.lobing * 0.18 *
+                std::sin(static_cast<double>(operation.lobeCount) * angle + phaseOffset);
+        } else if (leaf.profile == LeafProfile::rosette) {
+            boundary = 0.76 + (0.18 + operation.lobing * 0.22) *
+                (0.5 + 0.5 * std::cos(
+                    static_cast<double>(operation.lobeCount) * angle + phaseOffset));
+        } else {
+            boundary = 0.86 + operation.lobing * 0.16 *
+                std::sin(static_cast<double>(operation.lobeCount) * angle + phaseOffset) +
+                0.08 * std::sin(
+                    static_cast<double>(operation.lobeCount + 3U) * angle - phaseOffset * 0.7);
+        }
+        return (radius - std::max(boundary, 0.28)) *
+            std::min(halfWidth, halfLength);
+    }
     }
     envelope = std::pow(std::max(envelope, 0.0), operation.taper);
     if (operation.serration > 0.0) {
@@ -152,7 +177,7 @@ double signedLeafDistance(
     double halfWidthAtY = halfWidth * envelope;
 
     double distanceX = std::abs(localX) - halfWidthAtY;
-    if (operation.profile == LeafProfile::cordate && normalisedY < -0.62) {
+    if (leaf.profile == LeafProfile::cordate && normalisedY < -0.62) {
         const double notchDepth = std::clamp(
             (-normalisedY - 0.62) / 0.38,
             0.0,
@@ -457,6 +482,7 @@ LeafClusterLayout buildLeafClusterLayout(
                  (unitDouble(hashCoordinates(seed, column, row, 2)) - 0.5) * 0.7) /
                 static_cast<double>(operation.rows);
             const auto clusterKey = makeRegionKey(leafDomain, column, row);
+            const double clusterRandom = unitDouble(mixBits(clusterBits ^ 0xc1757eULL));
             for (std::uint32_t leafIndex = 0;
                  leafIndex < operation.leavesPerCluster;
                  ++leafIndex) {
@@ -497,6 +523,7 @@ LeafClusterLayout buildLeafClusterLayout(
                         operation.clusterSpread * 0.5;
                     break;
                 case LeafClusterPattern::canopy:
+                case LeafClusterPattern::groundScatter:
                     angleDegrees += randomAngle * 360.0;
                     break;
                 }
@@ -509,11 +536,39 @@ LeafClusterLayout buildLeafClusterLayout(
                     leafV = centreV + std::cos(
                         operation.directionDegrees * std::numbers::pi / 180.0) * radius;
                 }
-                const double scale = 1.0 + operation.scaleVariation *
+                double scale = 1.0 + operation.scaleVariation *
                     (unitDouble(mixBits(key ^ 0xc33dULL)) * 2.0 - 1.0);
                 const double aspectVariation = 1.0 + operation.scaleVariation * 0.35 *
                     (unitDouble(mixBits(key ^ 0xd44cULL)) * 2.0 - 1.0);
-                const double colourAmount = unitDouble(mixBits(key ^ 0xe55bULL));
+                const double instanceColourRandom = unitDouble(mixBits(key ^ 0xe55bULL));
+                double colourAmount = instanceColourRandom;
+                if (operation.clusterColourVariation != 0.0 ||
+                    operation.instanceColourVariation != 1.0) {
+                    colourAmount = std::clamp(
+                        0.5 + (clusterRandom - 0.5) * operation.clusterColourVariation +
+                            (instanceColourRandom - 0.5) * operation.instanceColourVariation,
+                        0.0,
+                        1.0);
+                }
+                LeafProfile profile = operation.profile;
+                const Rgba8* lowColour = &operation.lowColour;
+                const Rgba8* highColour = &operation.highColour;
+                std::uint32_t population = 0;
+                const double populationRandom = unitDouble(mixBits(key ^ 0x90a17ULL));
+                if (populationRandom < operation.secondaryWeight) {
+                    profile = operation.secondaryProfile;
+                    lowColour = &operation.secondaryLowColour;
+                    highColour = &operation.secondaryHighColour;
+                    scale *= operation.secondaryScale;
+                    population = 1;
+                } else if (populationRandom <
+                           operation.secondaryWeight + operation.tertiaryWeight) {
+                    profile = operation.tertiaryProfile;
+                    lowColour = &operation.tertiaryLowColour;
+                    highColour = &operation.tertiaryHighColour;
+                    scale *= operation.tertiaryScale;
+                    population = 2;
+                }
                 const double heightAmount = unitDouble(mixBits(key ^ 0xf66aULL));
                 const double roughnessAmount = unitDouble(mixBits(key ^ 0x1779ULL));
                 const auto instanceIndex = static_cast<std::uint32_t>(layout.instances.size());
@@ -526,7 +581,7 @@ LeafClusterLayout buildLeafClusterLayout(
                     width,
                     angleDegrees + (unitDouble(mixBits(key ^ 0x2888ULL)) - 0.5) *
                         operation.rotationVariation,
-                    interpolateColour(operation.lowColour, operation.highColour, colourAmount),
+                    interpolateColour(*lowColour, *highColour, colourAmount),
                     interpolate(operation.minimumHeight, operation.maximumHeight, heightAmount),
                     interpolate(
                         operation.minimumRoughness,
@@ -537,6 +592,9 @@ LeafClusterLayout buildLeafClusterLayout(
                     clusterKey,
                     mixBits(key ^ 0x3997ULL),
                     cellIndex,
+                    profile,
+                    population,
+                    clusterRandom,
                 });
                 const auto leafColumn = std::min(
                     static_cast<std::uint32_t>(wrapUnit(leafU) * operation.columns),
@@ -641,6 +699,14 @@ LeafSample evaluateLeafCluster(
         operation.edgeWidth * std::min(selected->width, selected->length) -
             std::abs(selectedDistance),
         operation.softness);
+    const double minimumDimension = std::min(selected->width, selected->length);
+    const double depth = std::max(-selectedDistance, 0.0);
+    const double highlightStart = operation.innerHighlightInset * minimumDimension;
+    const double highlightEnd =
+        (operation.innerHighlightInset + operation.innerHighlightWidth) * minimumDimension;
+    const double innerHighlight = selectedCoverage *
+        smoothCoverage(depth - highlightStart, operation.softness) *
+        (1.0 - smoothCoverage(depth - highlightEnd, operation.softness));
     const double localU = std::clamp(selectedLocalX / selected->width + 0.5, 0.0, 1.0);
     const double localV = std::clamp(selectedNormalisedY * 0.5 + 0.5, 0.0, 1.0);
     return {
@@ -672,6 +738,10 @@ LeafSample evaluateLeafCluster(
             true,
             selected->rotationDegrees / 360.0,
         },
+        edge,
+        innerHighlight,
+        selected->clusterRandom,
+        static_cast<double>(selected->population) * 0.5,
     };
 }
 
@@ -760,7 +830,27 @@ OrganicAccumulationSample evaluateOrganicAccumulation(
         break;
     }
     const double threshold = 1.0 - operation.coverage;
-    double colony = smoothCoverage(broad - threshold, operation.softness);
+    double colonySource = broad;
+    if (operation.profile == OrganicAccumulationProfile::colonies) {
+        colonySource = broad * 0.72 + detail * 0.28;
+    } else if (operation.profile == OrganicAccumulationProfile::speckles) {
+        colonySource = std::max(broad * 0.75, detail * detail);
+    }
+    const double fill = smoothCoverage(colonySource - threshold, operation.softness);
+    const double outline = std::clamp(
+        smoothCoverage(
+            colonySource - (threshold - operation.outlineWidth),
+            operation.softness) - fill,
+        0.0,
+        1.0);
+    const double highlightStart = threshold + operation.innerHighlightInset;
+    const double highlightEnd = highlightStart + operation.innerHighlightWidth;
+    const double innerHighlight = std::clamp(
+        smoothCoverage(colonySource - highlightStart, operation.softness) -
+            smoothCoverage(colonySource - highlightEnd, operation.softness),
+        0.0,
+        1.0);
+    double colony = fill;
     colony *= interpolate(1.0, detail, operation.breakup);
     const double amount = std::clamp(
         colony * interpolate(1.0, source, operation.moistureBias),
@@ -769,7 +859,15 @@ OrganicAccumulationSample evaluateOrganicAccumulation(
     const double stableVariation = region.valid
         ? regionRandom(materialSeed, region.key, operation.seedOffset, 17)
         : detail;
-    return {amount, stableVariation};
+    const double sourceInfluence = interpolate(1.0, source, operation.moistureBias);
+    return {
+        amount,
+        stableVariation,
+        std::clamp(fill * sourceInfluence, 0.0, 1.0),
+        std::clamp(outline * sourceInfluence, 0.0, 1.0),
+        std::clamp(innerHighlight * sourceInfluence, 0.0, 1.0),
+        detail,
+    };
 }
 
 } // namespace paperweight

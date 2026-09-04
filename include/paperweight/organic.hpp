@@ -66,6 +66,9 @@ struct LeafInstance {
     std::uint64_t clusterKey{};
     std::uint64_t occlusionOrder{};
     std::uint32_t clusterCell{};
+    LeafProfile profile{LeafProfile::ovate};
+    std::uint32_t population{};
+    double clusterRandom{};
 
     friend constexpr bool operator==(
         const LeafInstance&,
@@ -96,6 +99,10 @@ struct LeafSample {
     double roughness{};
     double random{};
     RegionSample region;
+    double outline{};
+    double innerHighlight{};
+    double clusterRandom{};
+    double population{};
 
     friend constexpr bool operator==(const LeafSample&, const LeafSample&) = default;
 };
@@ -103,6 +110,10 @@ struct LeafSample {
 struct OrganicAccumulationSample {
     double amount{};
     double variation{};
+    double fill{};
+    double outline{};
+    double innerHighlight{};
+    double detail{};
 
     friend constexpr bool operator==(
         const OrganicAccumulationSample&,

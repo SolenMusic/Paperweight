@@ -13,19 +13,25 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-v0.0.29 is the current Region-Attached Detail and Damage release. Every region
-producer exposes a stable identity and local frame, and the new portable region-
-attachment processor derives centre, edge, corner, and cavity anchors from that
-metadata. Fasteners, inlays, glyphs, chips, and structural cracks consequently
-follow their owning slab, plank, stone, shape, scattered instance, or leaf rather
-than floating in texture space.
+v0.0.30 is the current Organic Silhouettes and Hierarchical Clusters release.
+The portable organic-cluster operation now combines primary, secondary, and
+tertiary populations with independently authored analytic profiles, palettes,
+and scale. Blob, rosette, and lichen silhouettes join the existing leaf shapes;
+fill, contour, inner-highlight, cluster-random, and population fields can be
+routed through the ordinary layer graph.
 
-One attachment mask drives colour, height, roughness, metalness, occlusion, and
-emissive changes together. Damage therefore cuts and darkens the same feature in
-every relevant map, and output resolution or worker scheduling cannot change its
-choice of region or anchor. Attached Paving, Arch Stone Panel, Damaged Crate, and
-Detailed Target Panel are bundled editable showcases, golden-test inputs, and
-benchmark materials. `.pmat` version 21 stores the complete operation readably.
+Cluster-scale and instance-scale colour variation remain separate stable hash
+channels. A ground-scatter layout supports layered stones and debris, while
+organic accumulation adds noise, colony, and speckle profiles with reusable
+fill, outline, highlight, and detail fields. Hierarchical Foliage, Hierarchical
+Ground, Rich Moss Colonies, and Rich Lichen Stamps are bundled editable
+showcases, golden-test inputs, and benchmark materials. `.pmat` version 22 stores
+the complete operation readably; older materials retain their exact output.
+
+The v0.0.29 Region-Attached Detail and Damage work remains available. Every
+region producer exposes a stable identity and local frame, and the portable
+region-attachment processor derives centre, edge, corner, and cavity anchors
+for coherent fasteners, inlays, glyphs, chips, and structural cracks.
 
 The v0.0.28 Textiles and Fibres work remains available. A portable textile
 operation constructs plain, basket, and twill weaves plus loop and cut pile from
@@ -178,7 +184,7 @@ templates where appropriate. The v0.0.25 glazed, lacquered, wet, coated-metal,
 and emissive recipes use the same ordinary family workflow.
 
 Wizard results are normal editable `Material` values and human-readable
-version-21 `.pmat` files. The wizard adds no evaluator, hidden recipe state, or
+version-22 `.pmat` files. The wizard adds no evaluator, hidden recipe state, or
 new serialisation format. The v0.0.19 working-folder browser, metadata,
 diagnostics, safe file operations, and selectable 64x64 through 1024x1024
 preview resolution remain available.
@@ -190,7 +196,7 @@ The staged work is tracked in [GitHub Issues](https://github.com/SolenMusic/Pape
 ```text
 Portable C++20 core
   image buffers, deterministic primitives, periodic noise,
-  structural, course-layout, sculpting, shape, lattice, scatter, organic, textile, and surface generators,
+  structural, course-layout, sculpting, shape, lattice, scatter, hierarchical organic, textile, and surface generators,
   exact region identity, local frames, named anchors, and attached detail,
   neighbourhood filters,
   layer-to-graph compiler, graph validation/evaluation,
@@ -210,6 +216,7 @@ See [docs/architecture.md](docs/architecture.md),
 [docs/textiles-and-fibres.md](docs/textiles-and-fibres.md),
 [docs/region-attached-detail.md](docs/region-attached-detail.md),
 [docs/organic-structures.md](docs/organic-structures.md),
+[docs/organic-silhouettes-and-clusters.md](docs/organic-silhouettes-and-clusters.md),
 [docs/reference-materials.md](docs/reference-materials.md),
 [docs/material-wizard.md](docs/material-wizard.md),
 [docs/material-library.md](docs/material-library.md),
@@ -247,15 +254,17 @@ and an arc, annular-sector, and crescent motif study. Textile showcases add
 woven upholstery, alternating carpet tiles, and heraldic banner cloth.
 Region-attached showcases add decorated paving, a damaged arch stone, a broken
 crate, and a reusable target panel with local fasteners, inserts, and glyphs.
+Organic showcases add layered foliage populations, hierarchical rocky ground,
+contoured moss colonies, and lichen speckles.
 File > New from Reference Template exposes the ten Blastard targets as seedless,
 caller-instantiated recipes with compact material-specific controls. The older
 Showcase menu remains available for direct access to the wider example set.
 Region Stones demonstrates repeatable
 per-cell variation, while Course Random gives every row one stable value.
 
-Format-version-1 through version-21 `.pmat` files open. Versions 1 through 20
+Format-version-1 through version-22 `.pmat` files open. Versions 1 through 21
 retain their historical output intact; saving migrates them to canonical format
-version 21. Version 16 adds output routing and optional physical relief without
+version 22. Version 16 adds output routing and optional physical relief without
 changing the legacy default. Version 17 adds metalness routing and dielectric
 optics. Version 18 adds coating, occlusion, clear-coat, clear-coat roughness, and
 emissive routing plus anisotropy controls; older files migrate to neutral values.
@@ -265,6 +274,9 @@ Version 20 adds the opt-in textile generator; older formats contain no textile
 layers and therefore retain their previous output exactly.
 Version 21 adds opt-in region-attached detail and damage; older formats contain
 no attachment layers and retain their previous output exactly.
+Version 22 adds optional organic silhouettes, population parameters, colour
+variation channels, and accumulation fields. Version-21 and older organic
+operations acquire neutral defaults that preserve their previous bytes.
 Exact block
 and parent-course keys are evaluator metadata, not pixel channels, so they are
 never stored in lossy floating-point form.

@@ -278,6 +278,19 @@ roughness, metalness, occlusion, and emissive evaluation, so related damage
 cannot drift between maps. Stable hashes of authored values and region identity
 replace mutable random state or pixel-order placement.
 
+In v0.0.30, the existing leaf-cluster generator becomes a general hierarchical
+organic population evaluator. Each accepted instance chooses a primary,
+secondary, or tertiary analytic profile from stable hashes; profile, palette,
+scale, cluster colour, leaf colour, height, roughness, and occlusion order never
+depend on output pixels or worker scheduling. Blob, rosette, and lichen signed-
+distance profiles and a ground-scatter arrangement reuse the existing toroidal
+layout and bounded cell lookup. Reusable fill, contour, inner-highlight,
+cluster-random, and population fields feed the ordinary graph branches.
+
+Organic accumulation remains a processor, now with noise, colony, and speckle
+profiles and independent fill, outline, inner-highlight, and detail fields. It
+does not stamp stored images or introduce a second material evaluator.
+
 ### macOS frontend
 
 Located under `app/macos/`.
@@ -362,7 +375,7 @@ hit rate and bounded memory without altering the cancellation contract.
 `.pmat` is a human-readable, versioned text format. Parsing and serialisation live in the portable core. Round trips should be stable and errors should identify useful source locations.
 
 The format version is deliberately independent of the application version.
-Paperweight v0.0.29 reads `.pmat` format versions 1 through 21 and writes version 21.
+Paperweight v0.0.30 reads `.pmat` format versions 1 through 22 and writes version 22.
 Unknown keys and unsupported format versions fail explicitly instead of being
 silently ignored. Version 1 maps to the original implicit FBM source; adding an
 explicit base noise layer produces byte-identical output. Version-2 layers map
@@ -421,6 +434,11 @@ Format version 21 adds region-attached detail and damage with named anchors,
 local geometry, stable per-region selection, and coherent material-channel
 values. Versions 1 through 20 contain no attachment layer and retain every
 historical output byte.
+Format version 22 adds hierarchical organic populations, blob/rosette/lichen
+profiles, ground scatter, separate cluster/instance colour variation, reusable
+contour/highlight fields, and richer accumulation profiles. Version-21 and older
+leaf clusters and accumulation layers receive neutral defaults matching their
+previous evaluation exactly.
 Paperweight v0.0.21 adds a separate derived `.pwlib` format around canonical
 PMAT payloads. Its encoder and memory-backed reader remain in the
 portable core; filesystem discovery and save panels remain outside it. A strict
@@ -478,7 +496,7 @@ core. No workspace or window state is added to `.pmat` or `.pwlib`.
 Visual node-canvas authoring, graph-specific text persistence, WebAssembly
 bindings, game-engine adapters, arbitrary global texture
 rotation, bitmap-backed botanical stamps, and procedural GPU backends remain
-outside v0.0.29. MetalKit presents CPU-generated images with metallic/roughness,
+outside v0.0.30. MetalKit presents CPU-generated images with metallic/roughness,
 coating, occlusion, clear-coat, emissive, and anisotropic shading, or with the
 optional cel-lighting mode; it is not a
 generator backend and its lighting choices are never serialised into `.pmat`.

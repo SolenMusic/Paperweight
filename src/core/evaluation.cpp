@@ -515,6 +515,18 @@ EvaluatedSample evaluateLeafClusterOperation(
     case LeafField::instanceRandom:
         value = leaf.random * leaf.coverage;
         break;
+    case LeafField::outline:
+        value = leaf.outline;
+        break;
+    case LeafField::innerHighlight:
+        value = leaf.innerHighlight;
+        break;
+    case LeafField::clusterRandom:
+        value = leaf.clusterRandom * leaf.coverage;
+        break;
+    case LeafField::population:
+        value = leaf.population * leaf.coverage;
+        break;
     }
     auto result = sampleFromScalar(context.material, value);
     result.region = leaf.region;
@@ -864,6 +876,27 @@ EvaluatedSample evaluateOperation(
                     context.u,
                     context.v,
                     context.material.seed);
+                if (organic.field != OrganicAccumulationField::material) {
+                    double value = growth.fill;
+                    switch (organic.field) {
+                    case OrganicAccumulationField::material:
+                    case OrganicAccumulationField::fill:
+                        value = growth.fill;
+                        break;
+                    case OrganicAccumulationField::outline:
+                        value = growth.outline;
+                        break;
+                    case OrganicAccumulationField::innerHighlight:
+                        value = growth.innerHighlight;
+                        break;
+                    case OrganicAccumulationField::detail:
+                        value = growth.detail * growth.fill;
+                        break;
+                    }
+                    auto result = sampleFromScalar(context.material, value);
+                    result.region = input.region;
+                    return result;
+                }
                 auto result = input;
                 if (organic.kind == OrganicAccumulationKind::colourVariation) {
                     if (affectsColour(organic.target)) {

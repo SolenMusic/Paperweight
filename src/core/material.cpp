@@ -430,6 +430,10 @@ std::optional<std::string> validateLeafCluster(
     case LeafField::midrib:
     case LeafField::veins:
     case LeafField::instanceRandom:
+    case LeafField::outline:
+    case LeafField::innerHighlight:
+    case LeafField::clusterRandom:
+    case LeafField::population:
         break;
     default:
         return std::string(prefix) + "leaf field is not supported";
@@ -439,6 +443,9 @@ std::optional<std::string> validateLeafCluster(
     case LeafProfile::lanceolate:
     case LeafProfile::cordate:
     case LeafProfile::lobed:
+    case LeafProfile::blob:
+    case LeafProfile::rosette:
+    case LeafProfile::lichen:
         break;
     default:
         return std::string(prefix) + "leaf profile is not supported";
@@ -448,6 +455,7 @@ std::optional<std::string> validateLeafCluster(
     case LeafClusterPattern::fan:
     case LeafClusterPattern::vine:
     case LeafClusterPattern::canopy:
+    case LeafClusterPattern::groundScatter:
         break;
     default:
         return std::string(prefix) + "leaf cluster pattern is not supported";
@@ -480,9 +488,38 @@ std::optional<std::string> validateLeafCluster(
         operation.veinPairs > LayerLimits::maximumLeafDetails ||
         !validRange(operation.veinWidth, 0.0, 0.5) ||
         !validRange(operation.edgeWidth, 0.0, 0.5) ||
+        !validRange(operation.innerHighlightWidth, 0.0, 0.5) ||
+        !validRange(operation.innerHighlightInset, 0.0, 0.5) ||
+        !validRange(operation.clusterColourVariation, 0.0, 1.0) ||
+        !validRange(operation.instanceColourVariation, 0.0, 1.0) ||
         !validSoftness(operation.softness)) {
         return std::string(prefix) +
             "leaf silhouette, serration, lobe, rib, vein, edge, or softness parameter is outside its supported range";
+    }
+    const auto validPopulationProfile = [](LeafProfile profile) {
+        switch (profile) {
+        case LeafProfile::ovate:
+        case LeafProfile::lanceolate:
+        case LeafProfile::cordate:
+        case LeafProfile::lobed:
+        case LeafProfile::blob:
+        case LeafProfile::rosette:
+        case LeafProfile::lichen:
+            return true;
+        }
+        return false;
+    };
+    if (!validPopulationProfile(operation.secondaryProfile) ||
+        !validPopulationProfile(operation.tertiaryProfile) ||
+        !validRange(operation.secondaryWeight, 0.0, 1.0) ||
+        !validRange(operation.tertiaryWeight, 0.0, 1.0) ||
+        operation.secondaryWeight + operation.tertiaryWeight > 1.0 ||
+        !validRange(operation.secondaryScale, LayerLimits::minimumScatterScale,
+                    LayerLimits::maximumScatterScale) ||
+        !validRange(operation.tertiaryScale, LayerLimits::minimumScatterScale,
+                    LayerLimits::maximumScatterScale)) {
+        return std::string(prefix) +
+            "organic cluster population profiles, weights, and scales are outside their supported range";
     }
     if (!validRange(operation.minimumHeight, 0.0, 1.0) ||
         !validRange(operation.maximumHeight, 0.0, 1.0) ||
@@ -522,12 +559,33 @@ std::optional<std::string> validateOrganicAccumulation(
     default:
         return std::string(prefix) + "organic accumulation source is not supported";
     }
+    switch (operation.profile) {
+    case OrganicAccumulationProfile::noise:
+    case OrganicAccumulationProfile::colonies:
+    case OrganicAccumulationProfile::speckles:
+        break;
+    default:
+        return std::string(prefix) + "organic accumulation profile is not supported";
+    }
+    switch (operation.field) {
+    case OrganicAccumulationField::material:
+    case OrganicAccumulationField::fill:
+    case OrganicAccumulationField::outline:
+    case OrganicAccumulationField::innerHighlight:
+    case OrganicAccumulationField::detail:
+        break;
+    default:
+        return std::string(prefix) + "organic accumulation field is not supported";
+    }
     if (!validPatternCount(operation.scale) ||
         !validRange(operation.coverage, 0.0, 1.0) ||
         !validRange(operation.softness, 0.0, 0.5) ||
         !validRange(operation.moistureBias, 0.0, 1.0) ||
         !validRange(operation.breakup, 0.0, 1.0) ||
         !validRange(operation.variation, 0.0, 1.0) ||
+        !validRange(operation.outlineWidth, 0.0, 0.5) ||
+        !validRange(operation.innerHighlightWidth, 0.0, 0.5) ||
+        !validRange(operation.innerHighlightInset, 0.0, 0.5) ||
         !validProcessingTarget(operation.target)) {
         return std::string(prefix) +
             "organic accumulation scale, coverage, softness, moisture, breakup, variation, or target is outside its supported range";

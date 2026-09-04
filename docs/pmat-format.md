@@ -1,4 +1,4 @@
-# `.pmat` format version 21
+# `.pmat` format version 22
 
 Paperweight material files are UTF-8 text. They are intended to be readable,
 diffable, and small enough to embed alongside game assets.
@@ -7,7 +7,7 @@ diffable, and small enough to embed alongside game assets.
 
 ```text
 # Paperweight procedural material
-pmat.version = 21
+pmat.version = 22
 material.type = fbm
 material.seed = 18431
 material.width = 1m
@@ -252,9 +252,9 @@ The operation selects exactly one parameter group:
 | `organic_cracks` | `layer.N.organic.crack.width` | Decimal from 0.001 to 0.25 |
 | `organic_cracks` | `layer.N.organic.crack.softness` | Decimal from 0 to 0.25 |
 | `organic_cracks` | `layer.N.organic.crack.seed_offset` | Unsigned 64-bit integer |
-| `leaf_cluster` | `layer.N.leaf.field` | `material`, `fill`, `edge`, `midrib`, `veins`, or `instance_random` |
-| `leaf_cluster` | `layer.N.leaf.profile` | `ovate`, `lanceolate`, `cordate`, or `lobed` |
-| `leaf_cluster` | `layer.N.leaf.pattern` | `radial`, `fan`, `vine`, or `canopy` |
+| `leaf_cluster` | `layer.N.leaf.field` | `material`, `fill`, `edge`, `midrib`, `veins`, `instance_random`, `outline`, `inner_highlight`, `cluster_random`, or `population` |
+| `leaf_cluster` | `layer.N.leaf.profile` | `ovate`, `lanceolate`, `cordate`, `lobed`, `blob`, `rosette`, or `lichen` |
+| `leaf_cluster` | `layer.N.leaf.pattern` | `radial`, `fan`, `vine`, `canopy`, or `ground_scatter` |
 | `leaf_cluster` | `layer.N.leaf.columns`, `rows` | Cluster-grid integers from 1 to 64 |
 | `leaf_cluster` | `layer.N.leaf.per_cluster` | Integer from 1 to 24 |
 | `leaf_cluster` | `layer.N.leaf.density` | Decimal from 0 to 1 |
@@ -266,13 +266,22 @@ The operation selects exactly one parameter group:
 | `leaf_cluster` | `layer.N.leaf.midrib_width`, `vein_width`, `edge_width` | Leaf-relative widths from 0 to 0.5 |
 | `leaf_cluster` | `layer.N.leaf.softness` | Decimal from 0 to 0.25 |
 | `leaf_cluster` | `layer.N.leaf.colour_low`, `colour_high` | `0xRRGGBBAA` hexadecimal |
+| `leaf_cluster` | `layer.N.leaf.secondary_profile`, `tertiary_profile` | Any leaf profile |
+| `leaf_cluster` | `layer.N.leaf.secondary_weight`, `tertiary_weight` | Decimals from 0 to 1 whose sum is at most 1 |
+| `leaf_cluster` | `layer.N.leaf.secondary_scale`, `tertiary_scale` | Decimals from 0.1 to 4 |
+| `leaf_cluster` | `layer.N.leaf.secondary_colour_low`, `secondary_colour_high`, `tertiary_colour_low`, `tertiary_colour_high` | `0xRRGGBBAA` hexadecimal |
+| `leaf_cluster` | `layer.N.leaf.cluster_colour_variation`, `instance_colour_variation` | Independent decimals from 0 to 1 |
+| `leaf_cluster` | `layer.N.leaf.inner_highlight_width`, `inner_highlight_inset` | Shape-relative decimals from 0 to 0.5 |
 | `leaf_cluster` | `layer.N.leaf.min_height`, `max_height`, `min_roughness`, `max_roughness` | Ordered decimal ranges from 0 to 1 |
 | `leaf_cluster` | `layer.N.leaf.seed_offset` | Unsigned 64-bit integer |
 | `organic_accumulation` | `layer.N.organic.accumulation.kind` | `moss`, `lichen`, or `colour_variation` |
 | `organic_accumulation` | `layer.N.organic.accumulation.source` | `cavity`, `boundary`, `low_height`, or `authored_mask` |
+| `organic_accumulation` | `layer.N.organic.accumulation.profile` | `noise`, `colonies`, or `speckles` |
+| `organic_accumulation` | `layer.N.organic.accumulation.field` | `material`, `fill`, `outline`, `inner_highlight`, or `detail` |
 | `organic_accumulation` | `layer.N.organic.accumulation.scale` | Integer from 1 to 64 |
 | `organic_accumulation` | `layer.N.organic.accumulation.coverage`, `moisture`, `breakup`, `variation` | Decimals from 0 to 1 |
 | `organic_accumulation` | `layer.N.organic.accumulation.softness` | Decimal from 0 to 0.5 |
+| `organic_accumulation` | `layer.N.organic.accumulation.outline_width`, `inner_highlight_width`, `inner_highlight_inset` | Decimals from 0 to 0.5 |
 | `organic_accumulation` | `layer.N.organic.accumulation.colour_low`, `colour_high` | `0xRRGGBBAA` hexadecimal |
 | `organic_accumulation` | `layer.N.organic.accumulation.seed_offset` | Unsigned 64-bit integer |
 | `organic_accumulation` | `layer.N.organic.accumulation.target` | `colour`, `scalar`, or `all` |
@@ -392,15 +401,17 @@ preserving exact plate identities while exposing faces, boundaries, or one
 stable random value per plate. Organic cracks are laid out once from stable
 hashes as periodic trunks and recursively splitting branches; their field can
 select the complete network, one hierarchy, a hierarchy-weighted mask, or the
-complementary distance field. Leaf clusters similarly build one
-resolution-independent population before pixel evaluation. Ovate, lanceolate,
-cordate, and lobed boundaries are analytic, and fill, edge, midrib, and vein
-masks all address the same visible leaf after stable occlusion. Leaf colour,
-height, roughness, and region identity therefore remain aligned across every
-output. Organic accumulation is a processor: its seamless broad and breakup
-noise is biased by a cavity, boundary, low-height input, or authored mask, then
-applied to the requested channels. Moss, lichen, and colour variation differ in
-composition intent, not in hidden material-specific code.
+complementary distance field. Organic clusters similarly build one resolution-
+independent hierarchy before pixel evaluation. Ovate, lanceolate, cordate,
+lobed, blob, rosette, and lichen boundaries are analytic. Primary, secondary,
+and tertiary populations share the same stable placement and occlusion rules
+while retaining independent profile, scale, and palette. Fill, edge, contour,
+inner-highlight, midrib, vein, cluster-random, and population masks all address
+the same visible instance. Colour, height, roughness, and region identity
+therefore remain aligned across every output. Organic accumulation is a
+processor: seamless noise, colony, or speckle fields are biased by a cavity,
+boundary, low-height input, or authored mask, then returned as complete material
+or reusable fill, outline, highlight, and detail fields.
 
 Course layouts partition the complete repeat into courses and then partition
 each course into blocks. `masonry` varies widths within regular course counts,
@@ -527,7 +538,7 @@ The mask samples an independent periodic FBM field in the layer's transformed
 coordinates. Its remapped value multiplies the layer opacity, allowing smooth,
 threshold-like, or inverted spatial control without changing the operation.
 Disabled masks evaluate to exactly one. Transform, warp, and mask fields remain
-required in versions 3 through 21 even when their optional features are disabled; this
+required in versions 3 through 22 even when their optional features are disabled; this
 keeps canonical files explicit and round trips unambiguous.
 
 Noise seed offset zero reproduces the original material seed exactly. Other
@@ -545,7 +556,7 @@ formula is applied to scalar, red, green, blue, and alpha channels.
 
 ## Graph compilation
 
-Paperweight v0.0.29 retains the layer syntax, now at version 21, as the compact,
+Paperweight v0.0.30 retains the layer syntax, now at version 22, as the compact,
 human-editable authoring projection. Before generation, the portable core
 compiles it into a directed acyclic material graph:
 
@@ -558,7 +569,7 @@ compiles it into a directed acyclic material graph:
 - all ten material outputs receive explicit output nodes.
 
 Disabled layers compile as exact no-ops. Node metadata records the source layer
-for future diagnostics and incremental evaluation. Version-21 layers compile
+for future diagnostics and incremental evaluation. Version-22 layers compile
 into nine independent routed branches according to `layer.N.outputs`; normal
 continues to derive from height. Materials whose enabled layers target all branches retain
 the historical shared graph exactly. Portable C++ callers may also provide a
@@ -633,6 +644,17 @@ coverage value for colour, height, roughness, metalness, occlusion, and emissive
 Versions 1 through 20 contain no attachment layers and retain their previous
 evaluation exactly.
 
+Format version 22 extends organic clusters without adding a new operation kind.
+Blob, rosette, and lichen profiles and a ground-scatter pattern join the existing
+analytic vocabulary. A leaf cluster may select primary, secondary, and tertiary
+populations with independent profile, palette, and scale, while stable cluster-
+level and instance-level colour channels remain separately controllable. Fill,
+outline, inner-highlight, cluster-random, and population fields are reusable by
+later layers. Organic accumulation adds noise, colony, and speckle profiles plus
+material, fill, outline, inner-highlight, and detail outputs. Versions 1 through
+21 receive zero-weight secondary populations and legacy colour/accumulation
+defaults, retaining their previous generated bytes.
+
 ## Material outputs
 
 Every output derives from its routed graph branch at the same pixel centre:
@@ -664,7 +686,7 @@ generation wrap mathematically across both tile axes.
 ## Compatibility policy
 
 The `.pmat` format version and Paperweight application version are separate.
-Paperweight v0.0.29 reads versions 1 through 21 and writes version 21. A reader
+Paperweight v0.0.30 reads versions 1 through 22 and writes version 22. A reader
 rejects unsupported versions and unknown fields so that it cannot quietly
 reinterpret a future material.
 
@@ -697,7 +719,7 @@ so every version-15 material retains byte-identical output. Version 17 adds an
 opt-in metalness branch and dielectric IOR. Version-16 and older files default
 to zero metalness and IOR 1.5, preserving every historical colour, height,
 normal, and roughness byte. Saving any older format performs the explicit
-migration to version 21. Version 18 adds opt-in special-surface branches and
+migration to version 22. Version 18 adds opt-in special-surface branches and
 neutral migration defaults; version-17 colour, height, normal, roughness, and
 metalness bytes remain unchanged.
 Version 19 adds opt-in radial profiles and motif repetition. Versions 1 through
@@ -707,6 +729,9 @@ Version 20 adds an opt-in textile operation. Versions 1 through 19 contain no
 textile layers and therefore retain every historical output byte.
 Version 21 adds an opt-in region-attachment operation. Versions 1 through 20
 contain no attachment layers and therefore retain every historical output byte.
+Version 22 adds opt-in organic populations, silhouettes, contour fields, and
+accumulation profiles. Version-21 and older organic operations acquire neutral
+defaults and retain every historical output byte.
 
 The portable entry points are `paperweight::parsePmat` and
 `paperweight::serialisePmat` in `include/paperweight/pmat.hpp`.
