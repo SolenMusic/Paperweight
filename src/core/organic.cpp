@@ -670,6 +670,7 @@ LeafSample evaluateLeafCluster(
             true,
             selected->clusterKey,
             true,
+            selected->rotationDegrees / 360.0,
         },
     };
 }

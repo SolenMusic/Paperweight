@@ -13,7 +13,21 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-v0.0.28 is the current Textiles and Fibres release. A new portable textile
+v0.0.29 is the current Region-Attached Detail and Damage release. Every region
+producer exposes a stable identity and local frame, and the new portable region-
+attachment processor derives centre, edge, corner, and cavity anchors from that
+metadata. Fasteners, inlays, glyphs, chips, and structural cracks consequently
+follow their owning slab, plank, stone, shape, scattered instance, or leaf rather
+than floating in texture space.
+
+One attachment mask drives colour, height, roughness, metalness, occlusion, and
+emissive changes together. Damage therefore cuts and darkens the same feature in
+every relevant map, and output resolution or worker scheduling cannot change its
+choice of region or anchor. Attached Paving, Arch Stone Panel, Damaged Crate, and
+Detailed Target Panel are bundled editable showcases, golden-test inputs, and
+benchmark materials. `.pmat` version 21 stores the complete operation readably.
+
+The v0.0.28 Textiles and Fibres work remains available. A portable textile
 operation constructs plain, basket, and twill weaves plus loop and cut pile from
 deterministic yarn and tuft geometry. Authored warp/weft counts, over-under
 patterns, yarn profiles, fibre direction, damage, missing fibres, repair colours,
@@ -164,7 +178,7 @@ templates where appropriate. The v0.0.25 glazed, lacquered, wet, coated-metal,
 and emissive recipes use the same ordinary family workflow.
 
 Wizard results are normal editable `Material` values and human-readable
-version-20 `.pmat` files. The wizard adds no evaluator, hidden recipe state, or
+version-21 `.pmat` files. The wizard adds no evaluator, hidden recipe state, or
 new serialisation format. The v0.0.19 working-folder browser, metadata,
 diagnostics, safe file operations, and selectable 64x64 through 1024x1024
 preview resolution remain available.
@@ -177,7 +191,7 @@ The staged work is tracked in [GitHub Issues](https://github.com/SolenMusic/Pape
 Portable C++20 core
   image buffers, deterministic primitives, periodic noise,
   structural, course-layout, sculpting, shape, lattice, scatter, organic, textile, and surface generators,
-  exact region identity and fields,
+  exact region identity, local frames, named anchors, and attached detail,
   neighbourhood filters,
   layer-to-graph compiler, graph validation/evaluation,
   transforms, masks, generator API, .pmat parsing/serialisation
@@ -194,6 +208,7 @@ See [docs/architecture.md](docs/architecture.md),
 [docs/coatings-and-special-surfaces.md](docs/coatings-and-special-surfaces.md),
 [docs/metals-and-reflections.md](docs/metals-and-reflections.md),
 [docs/textiles-and-fibres.md](docs/textiles-and-fibres.md),
+[docs/region-attached-detail.md](docs/region-attached-detail.md),
 [docs/organic-structures.md](docs/organic-structures.md),
 [docs/reference-materials.md](docs/reference-materials.md),
 [docs/material-wizard.md](docs/material-wizard.md),
@@ -230,15 +245,17 @@ glazed ceramic, lacquered wood, wet stone, machinery panels, and an illuminated
 science-fiction surface. The designed-surface collection adds a radial target
 and an arc, annular-sector, and crescent motif study. Textile showcases add
 woven upholstery, alternating carpet tiles, and heraldic banner cloth.
+Region-attached showcases add decorated paving, a damaged arch stone, a broken
+crate, and a reusable target panel with local fasteners, inserts, and glyphs.
 File > New from Reference Template exposes the ten Blastard targets as seedless,
 caller-instantiated recipes with compact material-specific controls. The older
 Showcase menu remains available for direct access to the wider example set.
 Region Stones demonstrates repeatable
 per-cell variation, while Course Random gives every row one stable value.
 
-Format-version-1 through version-20 `.pmat` files open. Versions 1 through 19
+Format-version-1 through version-21 `.pmat` files open. Versions 1 through 20
 retain their historical output intact; saving migrates them to canonical format
-version 20. Version 16 adds output routing and optional physical relief without
+version 21. Version 16 adds output routing and optional physical relief without
 changing the legacy default. Version 17 adds metalness routing and dielectric
 optics. Version 18 adds coating, occlusion, clear-coat, clear-coat roughness, and
 emissive routing plus anisotropy controls; older files migrate to neutral values.
@@ -246,6 +263,8 @@ Version 19 adds opt-in radial profiles and motif repetition; older shape layers
 acquire identity defaults and retain their previous output.
 Version 20 adds the opt-in textile generator; older formats contain no textile
 layers and therefore retain their previous output exactly.
+Version 21 adds opt-in region-attached detail and damage; older formats contain
+no attachment layers and retain their previous output exactly.
 Exact block
 and parent-course keys are evaluator metadata, not pixel channels, so they are
 never stored in lossy floating-point form.
@@ -349,7 +368,8 @@ while enabled writes the clearly named baked result. See
 [the reference-material guide](docs/reference-materials.md).
 
 Choose 3D under Preview mode to inspect all ten material maps together. Select
-a square plane, sphere, cube, or cylinder; drag the object to orbit and scroll to zoom.
+a square plane, sphere, cube, cylinder, or animated Wavy Flag; drag the object to
+orbit and scroll to zoom.
 The map switches isolate colour, displacement, normal detail, roughness, and
 metalness, while separate toggles expose ambient occlusion, clear coat, emissive
 light, and anisotropy.

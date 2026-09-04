@@ -269,6 +269,15 @@ coordinates before evaluation and validates the even tile counts required for a
 periodic rotated boundary. No placement depends on output resolution, worker
 scheduling, or generated pixels.
 
+In v0.0.29, every region can expose a stable local frame in addition to its
+exact key, centre distance, boundary distance, and optional parent key. A
+portable attachment processor derives centre, edge, corner, and cavity anchors
+from that metadata and evaluates fasteners, inlays, glyphs, chips, and cracks in
+local coordinates. Material-mode coverage is shared by colour, height,
+roughness, metalness, occlusion, and emissive evaluation, so related damage
+cannot drift between maps. Stable hashes of authored values and region identity
+replace mutable random state or pixel-order placement.
+
 ### macOS frontend
 
 Located under `app/macos/`.
@@ -353,7 +362,7 @@ hit rate and bounded memory without altering the cancellation contract.
 `.pmat` is a human-readable, versioned text format. Parsing and serialisation live in the portable core. Round trips should be stable and errors should identify useful source locations.
 
 The format version is deliberately independent of the application version.
-Paperweight v0.0.28 reads `.pmat` format versions 1 through 20 and writes version 20.
+Paperweight v0.0.29 reads `.pmat` format versions 1 through 21 and writes version 21.
 Unknown keys and unsupported format versions fail explicitly instead of being
 silently ignored. Version 1 maps to the original implicit FBM source; adding an
 explicit base noise layer produces byte-identical output. Version-2 layers map
@@ -408,6 +417,10 @@ at radius zero, preserving every historical shape evaluation.
 Format version 20 adds an opt-in textile generator with weave, yarn, pile,
 fibre, defect, colour, and tile-orientation parameters. Versions 1 through 19
 contain no textile layer and retain every historical output byte.
+Format version 21 adds region-attached detail and damage with named anchors,
+local geometry, stable per-region selection, and coherent material-channel
+values. Versions 1 through 20 contain no attachment layer and retain every
+historical output byte.
 Paperweight v0.0.21 adds a separate derived `.pwlib` format around canonical
 PMAT payloads. Its encoder and memory-backed reader remain in the
 portable core; filesystem discovery and save panels remain outside it. A strict
@@ -465,7 +478,7 @@ core. No workspace or window state is added to `.pmat` or `.pwlib`.
 Visual node-canvas authoring, graph-specific text persistence, WebAssembly
 bindings, game-engine adapters, arbitrary global texture
 rotation, bitmap-backed botanical stamps, and procedural GPU backends remain
-outside v0.0.28. MetalKit presents CPU-generated images with metallic/roughness,
+outside v0.0.29. MetalKit presents CPU-generated images with metallic/roughness,
 coating, occlusion, clear-coat, emissive, and anisotropic shading, or with the
 optional cel-lighting mode; it is not a
 generator backend and its lighting choices are never serialised into `.pmat`.

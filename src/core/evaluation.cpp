@@ -3,6 +3,7 @@
 #include <paperweight/hash.hpp>
 #include <paperweight/noise.hpp>
 #include <paperweight/organic.hpp>
+#include <paperweight/region_detail.hpp>
 #include <paperweight/sculpt.hpp>
 #include <paperweight/scatter.hpp>
 #include <paperweight/shape.hpp>
@@ -704,6 +705,75 @@ EvaluatedSample evaluateOperation(
                     result.green = value;
                     result.blue = value;
                 }
+                return result;
+            },
+            [&input, &context](const RegionAttachmentOperation& attachment) {
+                const auto sample = evaluateRegionAttachment(
+                    attachment,
+                    input.region,
+                    context.material.seed);
+                double value = sample.coverage;
+                if (attachment.field == RegionAttachmentField::distance) {
+                    value = std::clamp(
+                        1.0 - std::max(sample.signedDistance, 0.0) /
+                            std::max(attachment.size, 1.0e-9),
+                        0.0,
+                        1.0);
+                }
+                auto result = input;
+                if (attachment.field == RegionAttachmentField::material) {
+                    double target = attachment.height;
+                    switch (context.output) {
+                    case MaterialOutput::colour:
+                    case MaterialOutput::normal:
+                        target = attachment.height;
+                        break;
+                    case MaterialOutput::height:
+                        target = attachment.height;
+                        break;
+                    case MaterialOutput::roughness:
+                        target = attachment.roughness;
+                        break;
+                    case MaterialOutput::metalness:
+                        target = attachment.metalness;
+                        break;
+                    case MaterialOutput::occlusion:
+                        target = attachment.occlusion;
+                        break;
+                    case MaterialOutput::emissive:
+                        target = attachment.emissive;
+                        break;
+                    case MaterialOutput::coating:
+                    case MaterialOutput::clearCoat:
+                    case MaterialOutput::clearCoatRoughness:
+                        target = input.scalar;
+                        break;
+                    }
+                    result.scalar = input.scalar +
+                        (target - input.scalar) * sample.coverage;
+                    const double colourVariation = 0.86 + sample.variation * 0.28;
+                    const auto blend = [amount = sample.coverage, colourVariation](
+                        double from,
+                        std::uint8_t to) {
+                        const double targetChannel = std::clamp(
+                            static_cast<double>(to) / 255.0 * colourVariation,
+                            0.0,
+                            1.0);
+                        return from + (targetChannel - from) * amount;
+                    };
+                    result.red = blend(input.red, attachment.colour.red);
+                    result.green = blend(input.green, attachment.colour.green);
+                    result.blue = blend(input.blue, attachment.colour.blue);
+                    result.alpha = input.alpha +
+                        (static_cast<double>(attachment.colour.alpha) / 255.0 - input.alpha) *
+                            sample.coverage;
+                } else {
+                    result.scalar = value;
+                    result.red = value;
+                    result.green = value;
+                    result.blue = value;
+                }
+                result.region = input.region;
                 return result;
             },
             [&context](const OrganicCellOperation& organic) {

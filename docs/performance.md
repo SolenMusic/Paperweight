@@ -7,7 +7,7 @@ generator algorithm, output, dimensions, physical coverage, and pixel format.
 ## Running the benchmark in the app
 
 Choose **Tools > Performance Benchmark** (Command-Option-B) in the native app.
-The separate window runs all 49 bundled material recipes at 64 x 64, 128 x 128,
+The separate window runs all 55 bundled material recipes at 64 x 64, 128 x 128,
 256 x 256, 512 x 512, and 1024 x 1024. It defaults to the coordinated complete
 ten-map material set, or can isolate any one of the ten outputs.
 

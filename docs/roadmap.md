@@ -424,6 +424,29 @@ generation. Seam probes, round-trips, one/four-worker identity, showcase golden
 hashes, and ARM64/x86-64 builds remain release gates. Tracked by
 [roadmap issue #285](https://github.com/SolenMusic/Paperweight/issues/285).
 
+## v0.0.29 - Region-Attached Detail and Damage
+
+Implemented: extend portable region metadata with an oriented local frame and
+introduce deterministic centre, edge, corner, and cavity anchors. One reusable
+Region Attachment processor places fasteners, inlays, glyphs, chips, cracks,
+and combined damage inside regions produced by existing generators. Attachment
+indices and rejection are stable hashes of authored values and region identity,
+never output pixels or worker scheduling.
+
+Material-mode attachments use the same coverage across colour, height,
+roughness, metalness, occlusion, and emissive branches. This keeps a chipped,
+cracked, engraved, or inserted feature coherent across the complete material.
+Attached Paving, Arch Stone Panel, Damaged Crate, and Detailed Target Panel
+demonstrate paving, arch, crate, and target construction without introducing
+asset-specific generator types.
+
+PMAT format 21 stores the complete attachment operation explicitly. The native
+editor exposes its profile, named anchors, local geometry, stable selection,
+and material-channel values through the existing layer workflow. Anchor repeat,
+format migration rejection, exact round-trips, one/four-worker identity,
+showcase golden hashes, and ARM64/x86-64 builds remain release gates. Tracked by
+[roadmap issue #292](https://github.com/SolenMusic/Paperweight/issues/292).
+
 ## v0.1.0 - Game Library
 
 Stabilise the embedding API and add material-definition versioning, generator

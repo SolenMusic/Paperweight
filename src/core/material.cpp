@@ -627,6 +627,73 @@ std::optional<std::string> validateTextile(
     return std::nullopt;
 }
 
+std::optional<std::string> validateRegionAttachment(
+    const RegionAttachmentOperation& operation,
+    std::string_view prefix)
+{
+    switch (operation.kind) {
+    case RegionAttachmentKind::fastener:
+    case RegionAttachmentKind::inlay:
+    case RegionAttachmentKind::glyph:
+    case RegionAttachmentKind::chip:
+    case RegionAttachmentKind::crack:
+    case RegionAttachmentKind::damage:
+        break;
+    default:
+        return std::string(prefix) + "region attachment kind is not supported";
+    }
+    switch (operation.field) {
+    case RegionAttachmentField::material:
+    case RegionAttachmentField::mask:
+    case RegionAttachmentField::distance:
+        break;
+    default:
+        return std::string(prefix) + "region attachment field is not supported";
+    }
+    const auto validAnchor = [](RegionAnchor anchor) {
+        return anchor == RegionAnchor::centre || anchor == RegionAnchor::edge ||
+            anchor == RegionAnchor::corner || anchor == RegionAnchor::cavity;
+    };
+    if (!validAnchor(operation.startAnchor) || !validAnchor(operation.endAnchor)) {
+        return std::string(prefix) + "region attachment anchor is not supported";
+    }
+    switch (operation.glyph) {
+    case RegionGlyph::cross:
+    case RegionGlyph::chevron:
+    case RegionGlyph::triangle:
+    case RegionGlyph::rune:
+        break;
+    default:
+        return std::string(prefix) + "region attachment glyph is not supported";
+    }
+    if (operation.count == 0 ||
+        operation.count > LayerLimits::maximumRegionAttachments) {
+        return std::string(prefix) + "region attachment count must be between 1 and 8";
+    }
+    if (!validRange(operation.size, 0.01, 1.0) ||
+        !validRange(operation.aspect, 0.2, 5.0) ||
+        !validRange(operation.inset, 0.0, 0.45) ||
+        !validRange(operation.rotationDegrees, -360.0, 360.0) ||
+        !validRange(operation.jitter, 0.0, 1.0) ||
+        !validRange(operation.selection, 0.0, 1.0) ||
+        !validRange(operation.lineWidth, 0.001, 0.5) ||
+        !validRange(operation.length, 0.01, 1.5) ||
+        !validRange(operation.branching, 0.0, 1.0) ||
+        !validRange(operation.softness, 0.0, 0.25)) {
+        return std::string(prefix) +
+            "region attachment geometry is outside its supported range";
+    }
+    if (!validRange(operation.height, 0.0, 1.0) ||
+        !validRange(operation.roughness, 0.0, 1.0) ||
+        !validRange(operation.metalness, 0.0, 1.0) ||
+        !validRange(operation.occlusion, 0.0, 1.0) ||
+        !validRange(operation.emissive, 0.0, 1.0)) {
+        return std::string(prefix) +
+            "region attachment material values must be finite and between 0 and 1";
+    }
+    return std::nullopt;
+}
+
 } // namespace
 
 bool isCanonicalMaterialUid(std::string_view uid)
@@ -1207,6 +1274,11 @@ std::optional<std::string> validateMaterial(const Material& material)
                     }
                 } else if constexpr (std::is_same_v<Operation, TextileOperation>) {
                     if (const auto error = validateTextile(operation, prefix)) {
+                        return error;
+                    }
+                } else if constexpr (
+                    std::is_same_v<Operation, RegionAttachmentOperation>) {
+                    if (const auto error = validateRegionAttachment(operation, prefix)) {
                         return error;
                     }
                 } else if constexpr (

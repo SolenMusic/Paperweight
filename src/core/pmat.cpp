@@ -125,6 +125,7 @@ enum class OperationKind {
     organicAccumulation,
     surfaceValue,
     textile,
+    regionAttachment,
 };
 
 enum class BrickSizing {
@@ -433,6 +434,29 @@ struct LayerBuilder {
     ParsedValue<Rgba8> textileAccentColour;
     ParsedValue<Rgba8> textileDamageColour;
     ParsedValue<std::uint64_t> textileSeedOffset;
+    ParsedValue<RegionAttachmentKind> attachmentKind;
+    ParsedValue<RegionAttachmentField> attachmentField;
+    ParsedValue<RegionAnchor> attachmentStartAnchor;
+    ParsedValue<RegionAnchor> attachmentEndAnchor;
+    ParsedValue<RegionGlyph> attachmentGlyph;
+    ParsedValue<std::uint32_t> attachmentCount;
+    ParsedValue<double> attachmentSize;
+    ParsedValue<double> attachmentAspect;
+    ParsedValue<double> attachmentInset;
+    ParsedValue<double> attachmentRotation;
+    ParsedValue<double> attachmentJitter;
+    ParsedValue<double> attachmentSelection;
+    ParsedValue<double> attachmentLineWidth;
+    ParsedValue<double> attachmentLength;
+    ParsedValue<double> attachmentBranching;
+    ParsedValue<double> attachmentSoftness;
+    ParsedValue<Rgba8> attachmentColour;
+    ParsedValue<double> attachmentHeight;
+    ParsedValue<double> attachmentRoughness;
+    ParsedValue<double> attachmentMetalness;
+    ParsedValue<double> attachmentOcclusion;
+    ParsedValue<double> attachmentEmissive;
+    ParsedValue<std::uint64_t> attachmentSeedOffset;
 };
 
 std::string_view trim(std::string_view value)
@@ -786,6 +810,46 @@ std::optional<OperationKind> parseOperationKind(std::string_view value)
     if (value == "textile") {
         return OperationKind::textile;
     }
+    if (value == "region_attachment") {
+        return OperationKind::regionAttachment;
+    }
+    return std::nullopt;
+}
+
+std::optional<RegionAttachmentKind> parseRegionAttachmentKind(std::string_view value)
+{
+    if (value == "fastener") return RegionAttachmentKind::fastener;
+    if (value == "inlay") return RegionAttachmentKind::inlay;
+    if (value == "glyph") return RegionAttachmentKind::glyph;
+    if (value == "chip") return RegionAttachmentKind::chip;
+    if (value == "crack") return RegionAttachmentKind::crack;
+    if (value == "damage") return RegionAttachmentKind::damage;
+    return std::nullopt;
+}
+
+std::optional<RegionAttachmentField> parseRegionAttachmentField(std::string_view value)
+{
+    if (value == "material") return RegionAttachmentField::material;
+    if (value == "mask") return RegionAttachmentField::mask;
+    if (value == "distance") return RegionAttachmentField::distance;
+    return std::nullopt;
+}
+
+std::optional<RegionAnchor> parseRegionAnchor(std::string_view value)
+{
+    if (value == "centre") return RegionAnchor::centre;
+    if (value == "edge") return RegionAnchor::edge;
+    if (value == "corner") return RegionAnchor::corner;
+    if (value == "cavity") return RegionAnchor::cavity;
+    return std::nullopt;
+}
+
+std::optional<RegionGlyph> parseRegionGlyph(std::string_view value)
+{
+    if (value == "cross") return RegionGlyph::cross;
+    if (value == "chevron") return RegionGlyph::chevron;
+    if (value == "triangle") return RegionGlyph::triangle;
+    if (value == "rune") return RegionGlyph::rune;
     return std::nullopt;
 }
 
@@ -1501,6 +1565,22 @@ bool hasVersionTwentyFields(const LayerBuilder& builder)
         builder.textileSeedOffset.value;
 }
 
+bool hasVersionTwentyOneFields(const LayerBuilder& builder)
+{
+    return builder.attachmentKind.value || builder.attachmentField.value ||
+        builder.attachmentStartAnchor.value || builder.attachmentEndAnchor.value ||
+        builder.attachmentGlyph.value || builder.attachmentCount.value ||
+        builder.attachmentSize.value || builder.attachmentAspect.value ||
+        builder.attachmentInset.value || builder.attachmentRotation.value ||
+        builder.attachmentJitter.value || builder.attachmentSelection.value ||
+        builder.attachmentLineWidth.value || builder.attachmentLength.value ||
+        builder.attachmentBranching.value || builder.attachmentSoftness.value ||
+        builder.attachmentColour.value || builder.attachmentHeight.value ||
+        builder.attachmentRoughness.value || builder.attachmentMetalness.value ||
+        builder.attachmentOcclusion.value || builder.attachmentEmissive.value ||
+        builder.attachmentSeedOffset.value;
+}
+
 bool hasStructuralFields(const LayerBuilder& builder)
 {
     return hasVersionFourFields(builder) || hasVersionFiveFields(builder) ||
@@ -1508,7 +1588,8 @@ bool hasStructuralFields(const LayerBuilder& builder)
         hasVersionEightFields(builder) || hasVersionNineFields(builder) ||
         hasVersionTenFields(builder) || hasVersionElevenFields(builder) ||
         hasVersionTwelveFields(builder) || hasVersionThirteenFields(builder) ||
-        hasVersionFourteenFields(builder) || hasVersionTwentyFields(builder);
+        hasVersionFourteenFields(builder) || hasVersionTwentyFields(builder) ||
+        hasVersionTwentyOneFields(builder);
 }
 
 template<typename Value>
@@ -3523,6 +3604,74 @@ ParseResult parsePmat(std::string_view text)
                         return diagnostic(lineNumber, valueColumn, "invalid textile property");
                     }
                     if (!storeValue(*destination, parsed, lineNumber, valueColumn)) return duplicate();
+                } else if (property == "attachment.kind") {
+                    const auto parsed = parseRegionAttachmentKind(value);
+                    if (!parsed || !storeValue(builder.attachmentKind, *parsed, lineNumber, valueColumn)) {
+                        return parsed ? duplicate() : diagnostic(lineNumber, valueColumn, "attachment kind must be 'fastener', 'inlay', 'glyph', 'chip', 'crack', or 'damage'");
+                    }
+                } else if (property == "attachment.field") {
+                    const auto parsed = parseRegionAttachmentField(value);
+                    if (!parsed || !storeValue(builder.attachmentField, *parsed, lineNumber, valueColumn)) {
+                        return parsed ? duplicate() : diagnostic(lineNumber, valueColumn, "attachment field must be 'material', 'mask', or 'distance'");
+                    }
+                } else if (property == "attachment.start_anchor" ||
+                           property == "attachment.end_anchor") {
+                    const auto parsed = parseRegionAnchor(value);
+                    if (!parsed) {
+                        return diagnostic(lineNumber, valueColumn, "attachment anchor must be 'centre', 'edge', 'corner', or 'cavity'");
+                    }
+                    auto& destination = property == "attachment.start_anchor"
+                        ? builder.attachmentStartAnchor : builder.attachmentEndAnchor;
+                    if (!storeValue(destination, *parsed, lineNumber, valueColumn)) return duplicate();
+                } else if (property == "attachment.glyph") {
+                    const auto parsed = parseRegionGlyph(value);
+                    if (!parsed || !storeValue(builder.attachmentGlyph, *parsed, lineNumber, valueColumn)) {
+                        return parsed ? duplicate() : diagnostic(lineNumber, valueColumn, "attachment glyph must be 'cross', 'chevron', 'triangle', or 'rune'");
+                    }
+                } else if (property == "attachment.count") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "attachment count must be an integer");
+                    }
+                    if (!storeValue(builder.attachmentCount, parsed, lineNumber, valueColumn)) return duplicate();
+                } else if (property == "attachment.colour") {
+                    Rgba8 parsed{};
+                    if (!parseColour(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "attachment colour must use 0xRRGGBBAA hexadecimal notation");
+                    }
+                    if (!storeValue(builder.attachmentColour, parsed, lineNumber, valueColumn)) return duplicate();
+                } else if (property == "attachment.seed_offset") {
+                    std::uint64_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "attachment seed offset must be an unsigned integer");
+                    }
+                    if (!storeValue(builder.attachmentSeedOffset, parsed, lineNumber, valueColumn)) return duplicate();
+                } else if (property.starts_with("attachment.")) {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "attachment parameter must be a decimal number");
+                    }
+                    ParsedValue<double>* destination =
+                        property == "attachment.size" ? &builder.attachmentSize
+                        : property == "attachment.aspect" ? &builder.attachmentAspect
+                        : property == "attachment.inset" ? &builder.attachmentInset
+                        : property == "attachment.rotation" ? &builder.attachmentRotation
+                        : property == "attachment.jitter" ? &builder.attachmentJitter
+                        : property == "attachment.selection" ? &builder.attachmentSelection
+                        : property == "attachment.line_width" ? &builder.attachmentLineWidth
+                        : property == "attachment.length" ? &builder.attachmentLength
+                        : property == "attachment.branching" ? &builder.attachmentBranching
+                        : property == "attachment.softness" ? &builder.attachmentSoftness
+                        : property == "attachment.height" ? &builder.attachmentHeight
+                        : property == "attachment.roughness" ? &builder.attachmentRoughness
+                        : property == "attachment.metalness" ? &builder.attachmentMetalness
+                        : property == "attachment.occlusion" ? &builder.attachmentOcclusion
+                        : property == "attachment.emissive" ? &builder.attachmentEmissive
+                        : nullptr;
+                    if (destination == nullptr) {
+                        return diagnostic(lineNumber, valueColumn, "invalid attachment property");
+                    }
+                    if (!storeValue(*destination, parsed, lineNumber, valueColumn)) return duplicate();
                 } else if (property == "transform.scale_x") {
                     std::uint32_t parsed = 0;
                     if (!parseInteger(value, parsed)) {
@@ -3935,6 +4084,15 @@ ParseResult parsePmat(std::string_view text)
                     "textiles and fibres require .pmat version 20");
             }
 
+            if (formatVersion < 21 &&
+                (hasVersionTwentyOneFields(builder) ||
+                 *builder.operation.value == OperationKind::regionAttachment)) {
+                return diagnostic(
+                    lineNumber + 1,
+                    1,
+                    "region-attached detail and damage require .pmat version 21");
+            }
+
             if (formatVersion < 4 &&
                 (hasVersionFourFields(builder) ||
                  isStructuralOperation(*builder.operation.value))) {
@@ -4142,6 +4300,7 @@ ParseResult parsePmat(std::string_view text)
             const bool hasScatterFields = hasVersionThirteenFields(builder);
             const bool hasOrganicFields = hasVersionFourteenFields(builder);
             const bool hasTextileFields = hasVersionTwentyFields(builder);
+            const bool hasAttachmentFields = hasVersionTwentyOneFields(builder);
             const bool shapeBelongsToScatter =
                 *builder.operation.value == OperationKind::scatter;
             const int operationGroupCount = static_cast<int>(hasBrickFields) +
@@ -4158,7 +4317,8 @@ ParseResult parsePmat(std::string_view text)
                 static_cast<int>(hasScatterFields ||
                     (shapeBelongsToScatter && hasShapeFields)) +
                 static_cast<int>(hasOrganicFields) +
-                static_cast<int>(hasTextileFields);
+                static_cast<int>(hasTextileFields) +
+                static_cast<int>(hasAttachmentFields);
 
             const bool hasClassicFields = builder.seedOffset.value || builder.solidColour.value ||
                 builder.levelsLow.value || builder.levelsHigh.value ||
@@ -5188,6 +5348,57 @@ ParseResult parsePmat(std::string_view text)
                     *builder.textileSeedOffset.value,
                 };
                 break;
+            case OperationKind::regionAttachment:
+                if (!builder.attachmentKind.value) return missingLayerField(lineNumber + 1, index, "attachment.kind");
+                if (!builder.attachmentField.value) return missingLayerField(lineNumber + 1, index, "attachment.field");
+                if (!builder.attachmentStartAnchor.value) return missingLayerField(lineNumber + 1, index, "attachment.start_anchor");
+                if (!builder.attachmentEndAnchor.value) return missingLayerField(lineNumber + 1, index, "attachment.end_anchor");
+                if (!builder.attachmentGlyph.value) return missingLayerField(lineNumber + 1, index, "attachment.glyph");
+                if (!builder.attachmentCount.value) return missingLayerField(lineNumber + 1, index, "attachment.count");
+                if (!builder.attachmentSize.value) return missingLayerField(lineNumber + 1, index, "attachment.size");
+                if (!builder.attachmentAspect.value) return missingLayerField(lineNumber + 1, index, "attachment.aspect");
+                if (!builder.attachmentInset.value) return missingLayerField(lineNumber + 1, index, "attachment.inset");
+                if (!builder.attachmentRotation.value) return missingLayerField(lineNumber + 1, index, "attachment.rotation");
+                if (!builder.attachmentJitter.value) return missingLayerField(lineNumber + 1, index, "attachment.jitter");
+                if (!builder.attachmentSelection.value) return missingLayerField(lineNumber + 1, index, "attachment.selection");
+                if (!builder.attachmentLineWidth.value) return missingLayerField(lineNumber + 1, index, "attachment.line_width");
+                if (!builder.attachmentLength.value) return missingLayerField(lineNumber + 1, index, "attachment.length");
+                if (!builder.attachmentBranching.value) return missingLayerField(lineNumber + 1, index, "attachment.branching");
+                if (!builder.attachmentSoftness.value) return missingLayerField(lineNumber + 1, index, "attachment.softness");
+                if (!builder.attachmentColour.value) return missingLayerField(lineNumber + 1, index, "attachment.colour");
+                if (!builder.attachmentHeight.value) return missingLayerField(lineNumber + 1, index, "attachment.height");
+                if (!builder.attachmentRoughness.value) return missingLayerField(lineNumber + 1, index, "attachment.roughness");
+                if (!builder.attachmentMetalness.value) return missingLayerField(lineNumber + 1, index, "attachment.metalness");
+                if (!builder.attachmentOcclusion.value) return missingLayerField(lineNumber + 1, index, "attachment.occlusion");
+                if (!builder.attachmentEmissive.value) return missingLayerField(lineNumber + 1, index, "attachment.emissive");
+                if (!builder.attachmentSeedOffset.value) return missingLayerField(lineNumber + 1, index, "attachment.seed_offset");
+                if (hasClassicFields || operationGroupCount != 1) return crossOperationError();
+                layer.operation = RegionAttachmentOperation{
+                    *builder.attachmentKind.value,
+                    *builder.attachmentField.value,
+                    *builder.attachmentStartAnchor.value,
+                    *builder.attachmentEndAnchor.value,
+                    *builder.attachmentGlyph.value,
+                    *builder.attachmentCount.value,
+                    *builder.attachmentSize.value,
+                    *builder.attachmentAspect.value,
+                    *builder.attachmentInset.value,
+                    *builder.attachmentRotation.value,
+                    *builder.attachmentJitter.value,
+                    *builder.attachmentSelection.value,
+                    *builder.attachmentLineWidth.value,
+                    *builder.attachmentLength.value,
+                    *builder.attachmentBranching.value,
+                    *builder.attachmentSoftness.value,
+                    *builder.attachmentColour.value,
+                    *builder.attachmentHeight.value,
+                    *builder.attachmentRoughness.value,
+                    *builder.attachmentMetalness.value,
+                    *builder.attachmentOcclusion.value,
+                    *builder.attachmentEmissive.value,
+                    *builder.attachmentSeedOffset.value,
+                };
+                break;
             case OperationKind::lattice:
                 if (!builder.latticeKind.value) {
                     return missingLayerField(lineNumber + 1, index, "lattice.kind");
@@ -6087,6 +6298,49 @@ SerialisationResult serialisePmat(const Material& material)
             output += prefix + "textile.colour_accent = " + formatColour(textile->accentColour) + "\n";
             output += prefix + "textile.colour_damage = " + formatColour(textile->damageColour) + "\n";
             output += prefix + "textile.seed_offset = " + std::to_string(textile->seedOffset) + "\n";
+        } else if (const auto* attachment =
+                       std::get_if<RegionAttachmentOperation>(&layer.operation)) {
+            output += prefix + "attachment.kind = " +
+                std::string(regionAttachmentKindName(attachment->kind)) + "\n";
+            output += prefix + "attachment.field = " +
+                std::string(regionAttachmentFieldName(attachment->field)) + "\n";
+            output += prefix + "attachment.start_anchor = " +
+                std::string(regionAnchorName(attachment->startAnchor)) + "\n";
+            output += prefix + "attachment.end_anchor = " +
+                std::string(regionAnchorName(attachment->endAnchor)) + "\n";
+            output += prefix + "attachment.glyph = " +
+                std::string(regionGlyphName(attachment->glyph)) + "\n";
+            output += prefix + "attachment.count = " +
+                std::to_string(attachment->count) + "\n";
+            const std::array<std::pair<std::string_view, double>, 15> values{{
+                {"size", attachment->size},
+                {"aspect", attachment->aspect},
+                {"inset", attachment->inset},
+                {"rotation", attachment->rotationDegrees},
+                {"jitter", attachment->jitter},
+                {"selection", attachment->selection},
+                {"line_width", attachment->lineWidth},
+                {"length", attachment->length},
+                {"branching", attachment->branching},
+                {"softness", attachment->softness},
+                {"height", attachment->height},
+                {"roughness", attachment->roughness},
+                {"metalness", attachment->metalness},
+                {"occlusion", attachment->occlusion},
+                {"emissive", attachment->emissive},
+            }};
+            for (const auto& [name, value] : values) {
+                const auto formatted = formatDouble(value);
+                if (formatted.empty()) {
+                    return SerialisationError{"could not format region attachment parameters"};
+                }
+                output += prefix + "attachment." + std::string(name) + " = " +
+                    formatted + "\n";
+            }
+            output += prefix + "attachment.colour = " +
+                formatColour(attachment->colour) + "\n";
+            output += prefix + "attachment.seed_offset = " +
+                std::to_string(attachment->seedOffset) + "\n";
         } else if (const auto* levels = std::get_if<LevelsOperation>(&layer.operation)) {
             const auto low = formatDouble(levels->inputLow);
             const auto high = formatDouble(levels->inputHigh);

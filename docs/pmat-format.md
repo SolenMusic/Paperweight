@@ -1,4 +1,4 @@
-# `.pmat` format version 20
+# `.pmat` format version 21
 
 Paperweight material files are UTF-8 text. They are intended to be readable,
 diffable, and small enough to embed alongside game assets.
@@ -7,7 +7,7 @@ diffable, and small enough to embed alongside game assets.
 
 ```text
 # Paperweight procedural material
-pmat.version = 20
+pmat.version = 21
 material.type = fbm
 material.seed = 18431
 material.width = 1m
@@ -84,7 +84,7 @@ no material; it never returns a partially accepted definition.
 
 | Key | Meaning | Accepted value |
 | --- | --- | --- |
-| `pmat.version` | File-format version | `1` through `20`; the serialiser writes `20` |
+| `pmat.version` | File-format version | `1` through `21`; the serialiser writes `21` |
 | `material.type` | Generator model | `fbm` |
 | `material.seed` | Deterministic seed | Unsigned 64-bit integer |
 | `material.width` | Width of one seamless material repeat | Metre value from `0.000001m` to `1000000m` |
@@ -338,6 +338,15 @@ The operation selects exactly one parameter group:
 | `region_surface` | `layer.N.sculpt.seed_offset` | Unsigned 64-bit integer |
 | `region_surface` | `layer.N.sculpt.faceted_normals` | Whether normal evaluation strengthens planar facets |
 | `region_surface` | `layer.N.sculpt.target` | `colour`, `scalar`, or `all` |
+| `region_attachment` | `layer.N.attachment.kind` | `fastener`, `inlay`, `glyph`, `chip`, `crack`, or `damage` |
+| `region_attachment` | `layer.N.attachment.field` | `material`, `mask`, or `distance` |
+| `region_attachment` | `layer.N.attachment.start_anchor`, `end_anchor` | `centre`, `edge`, `corner`, or `cavity` |
+| `region_attachment` | `layer.N.attachment.glyph` | `cross`, `chevron`, `triangle`, or `rune` |
+| `region_attachment` | `layer.N.attachment.count` | Attachments per source region from 1 to 8 |
+| `region_attachment` | `layer.N.attachment.size`, `aspect`, `inset`, `rotation`, `jitter`, `selection`, `line_width`, `length`, `branching`, `softness` | Local-frame geometry and stable placement controls |
+| `region_attachment` | `layer.N.attachment.colour` | Attached material colour as `0xRRGGBBAA` |
+| `region_attachment` | `layer.N.attachment.height`, `roughness`, `metalness`, `occlusion`, `emissive` | Attached material-channel values from 0 to 1 |
+| `region_attachment` | `layer.N.attachment.seed_offset` | Unsigned 64-bit integer |
 
 Brick and tile values are one inside each unit and zero in mortar or grout.
 With relative brick `mortar_space = cell`, mortar is a fraction of each repeated cell,
@@ -518,7 +527,7 @@ The mask samples an independent periodic FBM field in the layer's transformed
 coordinates. Its remapped value multiplies the layer opacity, allowing smooth,
 threshold-like, or inverted spatial control without changing the operation.
 Disabled masks evaluate to exactly one. Transform, warp, and mask fields remain
-required in versions 3 through 20 even when their optional features are disabled; this
+required in versions 3 through 21 even when their optional features are disabled; this
 keeps canonical files explicit and round trips unambiguous.
 
 Noise seed offset zero reproduces the original material seed exactly. Other
@@ -536,20 +545,20 @@ formula is applied to scalar, red, green, blue, and alpha channels.
 
 ## Graph compilation
 
-Paperweight v0.0.28 retains the layer syntax, now at version 20, as the compact,
+Paperweight v0.0.29 retains the layer syntax, now at version 21, as the compact,
 human-editable authoring projection. Before generation, the portable core
 compiles it into a directed acyclic material graph:
 
 - source operations become generator nodes;
 - levels, threshold, shape Boolean, surface filters, posterise, colour ramps,
-  palettes, ink contours, region fields, and region surfaces become unary
+  palettes, ink contours, region fields, region surfaces, and region attachments become unary
   processing nodes;
 - enabled procedural masks become mask nodes;
 - layer composition behaviour becomes composite processing nodes;
 - all ten material outputs receive explicit output nodes.
 
 Disabled layers compile as exact no-ops. Node metadata records the source layer
-for future diagnostics and incremental evaluation. Version-20 layers compile
+for future diagnostics and incremental evaluation. Version-21 layers compile
 into nine independent routed branches according to `layer.N.outputs`; normal
 continues to derive from height. Materials whose enabled layers target all branches retain
 the historical shared graph exactly. Portable C++ callers may also provide a
@@ -618,6 +627,12 @@ fibre, defect, colour, output-field, and alternating-orientation parameters
 compile to an ordinary generator node. Older materials contain no textile layer
 and retain their previous evaluation exactly.
 
+Format version 21 adds region-attached detail and damage. Stable named anchors
+derive from exact source-region identity, and material-mode attachments use one
+coverage value for colour, height, roughness, metalness, occlusion, and emissive.
+Versions 1 through 20 contain no attachment layers and retain their previous
+evaluation exactly.
+
 ## Material outputs
 
 Every output derives from its routed graph branch at the same pixel centre:
@@ -649,7 +664,7 @@ generation wrap mathematically across both tile axes.
 ## Compatibility policy
 
 The `.pmat` format version and Paperweight application version are separate.
-Paperweight v0.0.28 reads versions 1 through 20 and writes version 20. A reader
+Paperweight v0.0.29 reads versions 1 through 21 and writes version 21. A reader
 rejects unsupported versions and unknown fields so that it cannot quietly
 reinterpret a future material.
 
@@ -682,7 +697,7 @@ so every version-15 material retains byte-identical output. Version 17 adds an
 opt-in metalness branch and dielectric IOR. Version-16 and older files default
 to zero metalness and IOR 1.5, preserving every historical colour, height,
 normal, and roughness byte. Saving any older format performs the explicit
-migration to version 20. Version 18 adds opt-in special-surface branches and
+migration to version 21. Version 18 adds opt-in special-surface branches and
 neutral migration defaults; version-17 colour, height, normal, roughness, and
 metalness bytes remain unchanged.
 Version 19 adds opt-in radial profiles and motif repetition. Versions 1 through
@@ -690,6 +705,8 @@ Version 19 adds opt-in radial profiles and motif repetition. Versions 1 through
 output.
 Version 20 adds an opt-in textile operation. Versions 1 through 19 contain no
 textile layers and therefore retain every historical output byte.
+Version 21 adds an opt-in region-attachment operation. Versions 1 through 20
+contain no attachment layers and therefore retain every historical output byte.
 
 The portable entry points are `paperweight::parsePmat` and
 `paperweight::serialisePmat` in `include/paperweight/pmat.hpp`.
