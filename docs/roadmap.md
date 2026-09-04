@@ -472,6 +472,27 @@ Exact torus sampling, parser compatibility, one/four-worker identity, showcase
 golden hashes, and ARM64/x86-64 builds remain release gates. Tracked by
 [roadmap issue #299](https://github.com/SolenMusic/Paperweight/issues/299).
 
+## v0.0.31 - Layer Stack Workflow
+
+Implemented: replace the hand-built layer-button list with a native AppKit table
+that supports standard contiguous and discontiguous multi-selection. Selected
+layers can be dragged as one stable block with native insertion feedback and
+auto-scroll, moved with Option-Up/Down, duplicated, deleted, cut, copied, and
+pasted through focus-aware Edit menu commands.
+
+A portable, explicitly versioned layer-fragment codec serialises every current
+layer operation and authored field losslessly. The clipboard exposes both a
+Paperweight-specific pasteboard type and readable text, but paste deliberately
+accepts only the typed fragment. Cross-tab paste keeps evaluation order, assigns
+fresh editor identities, and never imports material-level state such as the
+source document seed.
+
+Add, remove, duplicate, paste, cut, drag, and keyboard reorder participate in a
+bounded structural undo/redo history. Each accepted structure change invalidates
+the conservatively affected output set and supersedes obsolete preview work.
+`.pmat` stays at format 22 and every generated output remains byte-identical.
+Tracked by [roadmap issue #307](https://github.com/SolenMusic/Paperweight/issues/307).
+
 ## v0.1.0 - Game Library
 
 Stabilise the embedding API and add material-definition versioning, generator

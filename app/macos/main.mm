@@ -12,6 +12,7 @@
 #include <paperweight/generator.hpp>
 #include <paperweight/hash.hpp>
 #include <paperweight/layer.hpp>
+#include <paperweight/layer_fragment.hpp>
 #include <paperweight/material_template.hpp>
 #include <paperweight/material_wizard.hpp>
 #include <paperweight/organic.hpp>
@@ -49,6 +50,62 @@
 {
     return YES;
 }
+@end
+
+@interface PWLayerTableView : NSTableView <NSMenuItemValidation>
+@end
+
+@implementation PWLayerTableView
+
+- (void)forwardLayerCommand:(SEL)action sender:(id)sender
+{
+    [NSApp sendAction:action to:NSApp.delegate from:sender];
+}
+
+- (void)undo:(id)sender { [self forwardLayerCommand:_cmd sender:sender]; }
+- (void)redo:(id)sender { [self forwardLayerCommand:_cmd sender:sender]; }
+- (void)cut:(id)sender { [self forwardLayerCommand:_cmd sender:sender]; }
+- (void)copy:(id)sender { [self forwardLayerCommand:_cmd sender:sender]; }
+- (void)paste:(id)sender { [self forwardLayerCommand:_cmd sender:sender]; }
+- (void)duplicateLayers:(id)sender { [self forwardLayerCommand:_cmd sender:sender]; }
+- (void)deleteSelectedLayers:(id)sender { [self forwardLayerCommand:_cmd sender:sender]; }
+- (void)moveSelectedLayersUp:(id)sender { [self forwardLayerCommand:_cmd sender:sender]; }
+- (void)moveSelectedLayersDown:(id)sender { [self forwardLayerCommand:_cmd sender:sender]; }
+
+- (BOOL)validateMenuItem:(NSMenuItem*)menuItem
+{
+    id delegate = NSApp.delegate;
+    if ([delegate respondsToSelector:@selector(validateMenuItem:)]) {
+        return [delegate validateMenuItem:menuItem];
+    }
+    return YES;
+}
+
+- (void)keyDown:(NSEvent*)event
+{
+    const NSEventModifierFlags modifiers = event.modifierFlags &
+        NSEventModifierFlagDeviceIndependentFlagsMask;
+    if ((event.keyCode == 51 || event.keyCode == 117) &&
+        (modifiers == 0 || modifiers == NSEventModifierFlagNumericPad)) {
+        [self forwardLayerCommand:@selector(deleteSelectedLayers:) sender:self];
+        return;
+    }
+    [super keyDown:event];
+}
+
+@end
+
+@interface PWLayerStackSnapshot : NSObject {
+@public
+    std::vector<paperweight::MaterialLayer> layers;
+}
+
+@property(nonatomic, strong) NSArray<NSString*>* identities;
+@property(nonatomic, strong) NSIndexSet* selection;
+
+@end
+
+@implementation PWLayerStackSnapshot
 @end
 
 @implementation MaterialPreviewView
@@ -130,7 +187,8 @@
 
 @end
 
-@interface AppDelegate : NSObject <NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation>
+@interface AppDelegate : NSObject <NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation,
+    NSTableViewDataSource, NSTableViewDelegate>
 
 @property(nonatomic, strong) NSWindow* window;
 @property(nonatomic, strong) BenchmarkWindowController* benchmarkWindowController;
@@ -269,11 +327,16 @@
 @property(nonatomic, strong) MaterialLibraryNavigatorController* libraryNavigatorController;
 @property(nonatomic, strong) NSLayoutConstraint* libraryNavigatorWidthConstraint;
 @property(nonatomic) BOOL libraryNavigatorVisible;
-@property(nonatomic, strong) NSStackView* layerListStack;
+@property(nonatomic, strong) NSTableView* layerTableView;
+@property(nonatomic, strong) NSScrollView* layerScrollView;
+@property(nonatomic, strong) NSIndexSet* selectedLayerIndexes;
+@property(nonatomic, strong) NSMutableArray<NSString*>* layerIdentities;
+@property(nonatomic, strong) NSUndoManager* layerUndoManager;
+@property(nonatomic, copy) NSString* layerDragIdentifier;
+@property(nonatomic) BOOL updatingLayerSelection;
 @property(nonatomic, strong) NSPopUpButton* addOperationPopup;
 @property(nonatomic, strong) NSButton* removeLayerButton;
-@property(nonatomic, strong) NSButton* moveLayerUpButton;
-@property(nonatomic, strong) NSButton* moveLayerDownButton;
+@property(nonatomic, strong) NSButton* duplicateLayerButton;
 @property(nonatomic, strong) NSTextField* layerTypeLabel;
 @property(nonatomic, strong) NSSegmentedControl* layerInspectorTabs;
 @property(nonatomic, strong) NSStackView* layerSettingsGroup;
@@ -443,6 +506,11 @@
 @end
 
 namespace {
+
+NSPasteboardType const layerFragmentPasteboardType =
+    @"com.solenmusic.paperweight.layer-fragment";
+NSPasteboardType const layerReorderPasteboardType =
+    @"com.solenmusic.paperweight.layer-reorder";
 
 NSTextField* makeLabel(NSString* text)
 {
@@ -941,6 +1009,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     std::shared_ptr<std::atomic_bool> previewCancellation_;
     std::uint64_t previewRevision_;
     bool dirty_;
+    bool performingStructuralChange_;
+    std::optional<paperweight::Material> savedMaterial_;
     NSInteger selectedLayer_;
     NSInteger selectedScatterPopulation_;
     NSInteger selectedLeafPopulation_;
@@ -980,6 +1050,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     activeTemplate_ = nullptr;
     material_.reliefDepthMetres = 0.003;
     material_.layers.push_back(paperweight::makeNoiseLayer());
+    savedMaterial_ = material_;
     previewCoverage_ = material_.physicalSize;
     const NSInteger savedPreviewResolution =
         [NSUserDefaults.standardUserDefaults integerForKey:@"previewResolution"];
@@ -989,6 +1060,11 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         ? static_cast<std::uint32_t>(savedPreviewResolution)
         : 512;
     selectedLayer_ = 0;
+    self.selectedLayerIndexes = [NSIndexSet indexSetWithIndex:0];
+    self.layerIdentities = [NSMutableArray arrayWithObject:NSUUID.UUID.UUIDString];
+    self.layerUndoManager = [[NSUndoManager alloc] init];
+    self.layerUndoManager.levelsOfUndo = 100;
+    self.layerDragIdentifier = NSUUID.UUID.UUIDString;
     previewQueue_ = dispatch_queue_create(
         "org.solen-music.paperweight.preview",
         DISPATCH_QUEUE_SERIAL);
@@ -1352,9 +1428,32 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     auto* editMenuItem = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
     [mainMenu addItem:editMenuItem];
     auto* editMenu = [[NSMenu alloc] initWithTitle:@"Edit"];
+    [editMenu addItemWithTitle:@"Undo" action:@selector(undo:) keyEquivalent:@"z"];
+    auto* redoItem = [editMenu addItemWithTitle:@"Redo"
+                                         action:@selector(redo:)
+                                  keyEquivalent:@"z"];
+    redoItem.keyEquivalentModifierMask =
+        NSEventModifierFlagCommand | NSEventModifierFlagShift;
+    [editMenu addItem:[NSMenuItem separatorItem]];
+    [editMenu addItemWithTitle:@"Cut" action:@selector(cut:) keyEquivalent:@"x"];
     [editMenu addItemWithTitle:@"Copy" action:@selector(copy:) keyEquivalent:@"c"];
     [editMenu addItemWithTitle:@"Paste" action:@selector(paste:) keyEquivalent:@"v"];
+    [editMenu addItemWithTitle:@"Duplicate Layers"
+                        action:@selector(duplicateLayers:)
+                 keyEquivalent:@"d"];
+    [editMenu addItemWithTitle:@"Delete Layers"
+                        action:@selector(deleteSelectedLayers:)
+                 keyEquivalent:@""];
     [editMenu addItemWithTitle:@"Select All" action:@selector(selectAll:) keyEquivalent:@"a"];
+    [editMenu addItem:[NSMenuItem separatorItem]];
+    auto* moveUpItem = [editMenu addItemWithTitle:@"Move Layers Up"
+                                           action:@selector(moveSelectedLayersUp:)
+                                    keyEquivalent:@"\uF700"];
+    moveUpItem.keyEquivalentModifierMask = NSEventModifierFlagOption;
+    auto* moveDownItem = [editMenu addItemWithTitle:@"Move Layers Down"
+                                             action:@selector(moveSelectedLayersDown:)
+                                      keyEquivalent:@"\uF701"];
+    moveDownItem.keyEquivalentModifierMask = NSEventModifierFlagOption;
     editMenuItem.submenu = editMenu;
 
     auto* viewMenuItem = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
@@ -1423,6 +1522,46 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 
 - (BOOL)validateMenuItem:(NSMenuItem*)menuItem
 {
+    if (menuItem.action == @selector(undo:) || menuItem.action == @selector(redo:) ||
+        menuItem.action == @selector(cut:) || menuItem.action == @selector(copy:) ||
+        menuItem.action == @selector(paste:) || menuItem.action == @selector(selectAll:) ||
+        menuItem.action == @selector(duplicateLayers:) ||
+        menuItem.action == @selector(deleteSelectedLayers:) ||
+        menuItem.action == @selector(moveSelectedLayersUp:) ||
+        menuItem.action == @selector(moveSelectedLayersDown:)) {
+        AppDelegate* editor = [self activeMaterialEditor];
+        if (editor == nil || ![editor layerTableHasFocus]) {
+            return NO;
+        }
+        const NSUInteger selected = editor.selectedLayerIndexes.count;
+        if (menuItem.action == @selector(undo:)) {
+            menuItem.title = editor.layerUndoManager.undoMenuItemTitle;
+            return editor.layerUndoManager.canUndo;
+        }
+        if (menuItem.action == @selector(redo:)) {
+            menuItem.title = editor.layerUndoManager.redoMenuItemTitle;
+            return editor.layerUndoManager.canRedo;
+        }
+        if (menuItem.action == @selector(paste:)) {
+            return [editor canPasteLayerFragment];
+        }
+        if (menuItem.action == @selector(cut:) ||
+            menuItem.action == @selector(deleteSelectedLayers:)) {
+            return selected > 0 && selected < editor->material_.layers.size();
+        }
+        if (menuItem.action == @selector(duplicateLayers:)) {
+            return selected > 0 && editor->material_.layers.size() + selected <=
+                paperweight::LayerLimits::maximumLayers;
+        }
+        if (menuItem.action == @selector(moveSelectedLayersUp:)) {
+            return selected > 0 && editor.layerTableView.selectedRowIndexes.firstIndex > 0;
+        }
+        if (menuItem.action == @selector(moveSelectedLayersDown:)) {
+            return selected > 0 && editor.layerTableView.selectedRowIndexes.lastIndex + 1 <
+                editor->material_.layers.size();
+        }
+        return selected > 0;
+    }
     if (menuItem.action == @selector(toggleLibraryNavigator:)) {
         AppDelegate* editor = [self activeMaterialEditor];
         menuItem.title = editor == nil || !editor.libraryNavigatorVisible
@@ -1491,6 +1630,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
             AppDelegate* editor = [strongSelf createMaterialEditor];
             editor->material_ = material;
             editor->selectedLayer_ = 0;
+            editor->savedMaterial_.reset();
+            [editor resetLayerIdentities];
+            [editor setSelectedModelLayerIndexes:[NSIndexSet indexSetWithIndex:0]];
+            [editor.layerUndoManager removeAllActions];
             editor.currentFileURL = nil;
             editor->dirty_ = true;
             const auto* descriptor = templateIdentifier.UTF8String == nullptr
@@ -2526,30 +2669,33 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     auto* layersSubtitle = makeLabel(@"Evaluated from bottom to top");
     layersSubtitle.textColor = NSColor.secondaryLabelColor;
 
-    self.layerListStack = [[NSStackView alloc] initWithFrame:NSZeroRect];
-    self.layerListStack.translatesAutoresizingMaskIntoConstraints = NO;
-    self.layerListStack.orientation = NSUserInterfaceLayoutOrientationVertical;
-    self.layerListStack.alignment = NSLayoutAttributeLeading;
-    self.layerListStack.spacing = 4.0;
+    self.layerTableView = [[PWLayerTableView alloc] initWithFrame:NSZeroRect];
+    self.layerTableView.dataSource = self;
+    self.layerTableView.delegate = self;
+    self.layerTableView.headerView = nil;
+    self.layerTableView.rowHeight = 27.0;
+    self.layerTableView.intercellSpacing = NSMakeSize(0.0, 2.0);
+    self.layerTableView.allowsMultipleSelection = YES;
+    self.layerTableView.allowsEmptySelection = NO;
+    self.layerTableView.usesAlternatingRowBackgroundColors = YES;
+    self.layerTableView.selectionHighlightStyle = NSTableViewSelectionHighlightStyleRegular;
+    self.layerTableView.accessibilityLabel = @"Material layer stack";
+    self.layerTableView.accessibilityHelp =
+        @"Use Shift or Command to select layers. Drag selected layers to reorder them.";
+    auto* layerColumn = [[NSTableColumn alloc] initWithIdentifier:@"layer"];
+    layerColumn.resizingMask = NSTableColumnAutoresizingMask;
+    [self.layerTableView addTableColumn:layerColumn];
+    [self.layerTableView registerForDraggedTypes:@[layerReorderPasteboardType]];
+    [self.layerTableView setDraggingSourceOperationMask:NSDragOperationMove forLocal:YES];
 
-    auto* layerListDocument = [[FlippedView alloc] initWithFrame:NSZeroRect];
-    layerListDocument.translatesAutoresizingMaskIntoConstraints = NO;
-    [layerListDocument addSubview:self.layerListStack];
-    [NSLayoutConstraint activateConstraints:@[
-        [self.layerListStack.leadingAnchor constraintEqualToAnchor:layerListDocument.leadingAnchor],
-        [self.layerListStack.trailingAnchor constraintEqualToAnchor:layerListDocument.trailingAnchor],
-        [self.layerListStack.topAnchor constraintEqualToAnchor:layerListDocument.topAnchor],
-        [self.layerListStack.bottomAnchor constraintLessThanOrEqualToAnchor:layerListDocument.bottomAnchor],
-        [layerListDocument.widthAnchor constraintEqualToAnchor:self.layerListStack.widthAnchor],
-    ]];
-
-    auto* layerScrollView = [[NSScrollView alloc] initWithFrame:NSZeroRect];
-    layerScrollView.translatesAutoresizingMaskIntoConstraints = NO;
-    layerScrollView.documentView = layerListDocument;
-    layerScrollView.hasVerticalScroller = YES;
-    layerScrollView.drawsBackground = NO;
-    layerScrollView.borderType = NSBezelBorder;
-    [layerScrollView.heightAnchor constraintEqualToConstant:210.0].active = YES;
+    self.layerScrollView = [[NSScrollView alloc] initWithFrame:NSZeroRect];
+    self.layerScrollView.translatesAutoresizingMaskIntoConstraints = NO;
+    self.layerScrollView.documentView = self.layerTableView;
+    self.layerScrollView.hasVerticalScroller = YES;
+    self.layerScrollView.autohidesScrollers = YES;
+    self.layerScrollView.drawsBackground = NO;
+    self.layerScrollView.borderType = NSBezelBorder;
+    [self.layerScrollView.heightAnchor constraintEqualToConstant:210.0].active = YES;
 
     self.addOperationPopup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
     [self.addOperationPopup addItemsWithTitles:@[
@@ -2600,16 +2746,12 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.removeLayerButton = [NSButton buttonWithTitle:@"Remove"
                                                  target:self
                                                  action:@selector(removeLayer:)];
-    self.moveLayerDownButton = [NSButton buttonWithTitle:@"Move Down"
+    self.duplicateLayerButton = [NSButton buttonWithTitle:@"Duplicate"
                                                    target:self
-                                                   action:@selector(moveLayerDown:)];
-    self.moveLayerUpButton = [NSButton buttonWithTitle:@"Move Up"
-                                                 target:self
-                                                 action:@selector(moveLayerUp:)];
+                                                   action:@selector(duplicateLayers:)];
     auto* arrangeRow = [NSStackView stackViewWithViews:@[
+        self.duplicateLayerButton,
         self.removeLayerButton,
-        self.moveLayerDownButton,
-        self.moveLayerUpButton,
     ]];
     arrangeRow.orientation = NSUserInterfaceLayoutOrientationHorizontal;
     arrangeRow.distribution = NSStackViewDistributionFillEqually;
@@ -3261,7 +3403,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         layersTitle,
         layersSubtitle,
         makeSeparator(),
-        layerScrollView,
+        self.layerScrollView,
         addRow,
         arrangeRow,
         makeSeparator(),
@@ -3281,7 +3423,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         [layerStack.leadingAnchor constraintEqualToAnchor:layersPanel.leadingAnchor constant:18.0],
         [layerStack.trailingAnchor constraintEqualToAnchor:layersPanel.trailingAnchor constant:-18.0],
         [layerStack.topAnchor constraintEqualToAnchor:layersPanel.topAnchor constant:24.0],
-        [layerScrollView.widthAnchor constraintEqualToAnchor:layerStack.widthAnchor],
+        [self.layerScrollView.widthAnchor constraintEqualToAnchor:layerStack.widthAnchor],
         [addRow.widthAnchor constraintEqualToAnchor:layerStack.widthAnchor],
         [arrangeRow.widthAnchor constraintEqualToAnchor:layerStack.widthAnchor],
         [self.layerInspectorTabs.widthAnchor constraintEqualToAnchor:layerStack.widthAnchor],
@@ -3354,45 +3496,129 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 
 - (void)rebuildLayerList
 {
-    for (NSView* view in [self.layerListStack.arrangedSubviews copy]) {
-        [self.layerListStack removeArrangedSubview:view];
-        [view removeFromSuperview];
+    if (self.layerIdentities == nil) {
+        self.layerIdentities = [NSMutableArray array];
+    }
+    while (self.layerIdentities.count < material_.layers.size()) {
+        [self.layerIdentities addObject:NSUUID.UUID.UUIDString];
+    }
+    while (self.layerIdentities.count > material_.layers.size()) {
+        [self.layerIdentities removeLastObject];
     }
 
-    for (std::size_t displayIndex = material_.layers.size();
-         displayIndex > 0;
-         --displayIndex) {
-        const std::size_t index = displayIndex - 1;
-        const auto& layer = material_.layers[index];
-        auto* enabled = [NSButton checkboxWithTitle:@""
-                                            target:self
-                                            action:@selector(layerListEnabledChanged:)];
-        enabled.tag = static_cast<NSInteger>(index);
-        enabled.state = layer.enabled ? NSControlStateValueOn : NSControlStateValueOff;
-        enabled.accessibilityLabel = [NSString
-            stringWithFormat:@"Enable layer %zu", index + 1];
-        [enabled.widthAnchor constraintEqualToConstant:22.0].active = YES;
-
-        NSString* marker = selectedLayer_ == static_cast<NSInteger>(index) ? @"› " : @"  ";
-        NSString* name = [NSString
-            stringWithFormat:@"%@%zu  %@", marker, index + 1, operationDisplayName(layer.operation)];
-        auto* select = [NSButton buttonWithTitle:name
-                                          target:self
-                                          action:@selector(selectLayer:)];
-        select.tag = static_cast<NSInteger>(index);
-        select.bezelStyle = NSBezelStyleInline;
-        select.alignment = NSTextAlignmentLeft;
-        select.font = selectedLayer_ == static_cast<NSInteger>(index)
-            ? [NSFont systemFontOfSize:13.0 weight:NSFontWeightSemibold]
-            : [NSFont systemFontOfSize:13.0 weight:NSFontWeightRegular];
-
-        auto* row = [NSStackView stackViewWithViews:@[ enabled, select ]];
-        row.orientation = NSUserInterfaceLayoutOrientationHorizontal;
-        row.alignment = NSLayoutAttributeCenterY;
-        row.spacing = 3.0;
-        [self.layerListStack addArrangedSubview:row];
-        [row.widthAnchor constraintEqualToAnchor:self.layerListStack.widthAnchor].active = YES;
+    auto* validSelection = [NSMutableIndexSet indexSet];
+    [self.selectedLayerIndexes enumerateIndexesUsingBlock:
+        ^(NSUInteger index, BOOL* stop) {
+            static_cast<void>(stop);
+            if (index < material_.layers.size()) {
+                [validSelection addIndex:index];
+            }
+        }];
+    if (validSelection.count == 0 && !material_.layers.empty()) {
+        const auto fallback = static_cast<NSUInteger>(std::clamp<NSInteger>(
+            selectedLayer_, 0, static_cast<NSInteger>(material_.layers.size() - 1)));
+        [validSelection addIndex:fallback];
     }
+    self.selectedLayerIndexes = validSelection;
+
+    [self.layerTableView reloadData];
+    auto* displayRows = [NSMutableIndexSet indexSet];
+    [validSelection enumerateIndexesUsingBlock:^(NSUInteger index, BOOL* stop) {
+        static_cast<void>(stop);
+        [displayRows addIndex:material_.layers.size() - 1 - index];
+    }];
+    self.updatingLayerSelection = YES;
+    [self.layerTableView selectRowIndexes:displayRows byExtendingSelection:NO];
+    self.updatingLayerSelection = NO;
+    self.layerTableView.accessibilityLabel = [NSString stringWithFormat:
+        @"Material layer stack, %zu layers, %lu selected",
+        material_.layers.size(),
+        static_cast<unsigned long>(validSelection.count)];
+    if (displayRows.count == 1) {
+        [self.layerTableView scrollRowToVisible:static_cast<NSInteger>(displayRows.firstIndex)];
+    }
+}
+
+- (NSInteger)numberOfRowsInTableView:(NSTableView*)tableView
+{
+    static_cast<void>(tableView);
+    return static_cast<NSInteger>(material_.layers.size());
+}
+
+- (std::optional<std::size_t>)layerIndexForDisplayRow:(NSInteger)row
+{
+    if (row < 0 || static_cast<std::size_t>(row) >= material_.layers.size()) {
+        return std::nullopt;
+    }
+    return material_.layers.size() - 1 - static_cast<std::size_t>(row);
+}
+
+- (NSIndexSet*)modelLayerIndexesForDisplayRows:(NSIndexSet*)displayRows
+{
+    auto* indexes = [NSMutableIndexSet indexSet];
+    [displayRows enumerateIndexesUsingBlock:^(NSUInteger row, BOOL* stop) {
+        static_cast<void>(stop);
+        if (row < material_.layers.size()) {
+            [indexes addIndex:material_.layers.size() - 1 - row];
+        }
+    }];
+    return indexes;
+}
+
+- (NSView*)tableView:(NSTableView*)tableView
+    viewForTableColumn:(NSTableColumn*)tableColumn
+                  row:(NSInteger)row
+{
+    static_cast<void>(tableView);
+    static_cast<void>(tableColumn);
+    const auto index = [self layerIndexForDisplayRow:row];
+    if (!index) {
+        return nil;
+    }
+    const auto& layer = material_.layers[*index];
+
+    auto* cell = [[NSTableCellView alloc] initWithFrame:NSZeroRect];
+    auto* enabled = [NSButton checkboxWithTitle:@""
+                                         target:self
+                                         action:@selector(layerListEnabledChanged:)];
+    enabled.translatesAutoresizingMaskIntoConstraints = NO;
+    enabled.tag = static_cast<NSInteger>(*index);
+    enabled.state = layer.enabled ? NSControlStateValueOn : NSControlStateValueOff;
+    enabled.accessibilityLabel = [NSString
+        stringWithFormat:@"Enable layer %zu", *index + 1];
+
+    auto* label = [NSTextField labelWithString:[NSString
+        stringWithFormat:@"%zu  %@", *index + 1, operationDisplayName(layer.operation)]];
+    label.translatesAutoresizingMaskIntoConstraints = NO;
+    label.lineBreakMode = NSLineBreakByTruncatingTail;
+    label.font = [NSFont systemFontOfSize:13.0 weight:NSFontWeightRegular];
+    label.accessibilityLabel = [NSString stringWithFormat:
+        @"Layer %zu, %@, %@", *index + 1, operationDisplayName(layer.operation),
+        layer.enabled ? @"enabled" : @"disabled"];
+    cell.textField = label;
+    [cell addSubview:enabled];
+    [cell addSubview:label];
+    [NSLayoutConstraint activateConstraints:@[
+        [enabled.leadingAnchor constraintEqualToAnchor:cell.leadingAnchor constant:5.0],
+        [enabled.centerYAnchor constraintEqualToAnchor:cell.centerYAnchor],
+        [enabled.widthAnchor constraintEqualToConstant:20.0],
+        [label.leadingAnchor constraintEqualToAnchor:enabled.trailingAnchor constant:4.0],
+        [label.trailingAnchor constraintEqualToAnchor:cell.trailingAnchor constant:-5.0],
+        [label.centerYAnchor constraintEqualToAnchor:cell.centerYAnchor],
+    ]];
+    return cell;
+}
+
+- (void)tableViewSelectionDidChange:(NSNotification*)notification
+{
+    if (self.updatingLayerSelection || notification.object != self.layerTableView) {
+        return;
+    }
+    self.selectedLayerIndexes = [self
+        modelLayerIndexesForDisplayRows:self.layerTableView.selectedRowIndexes];
+    const auto selected = [self layerIndexForDisplayRow:self.layerTableView.selectedRow];
+    selectedLayer_ = selected ? static_cast<NSInteger>(*selected) : -1;
+    [self refreshLayerInspector];
 }
 
 - (void)updateLayerInspectorLiveValueLabels
@@ -3457,12 +3683,13 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.materialWidthField.toolTip = repeatToolTip;
     self.materialHeightField.toolTip = repeatToolTip;
 
+    const NSUInteger selectedCount = self.selectedLayerIndexes.count;
     auto* layer = layerAt(material_, selectedLayer_);
-    const BOOL hasLayer = layer != nullptr;
-    self.removeLayerButton.enabled = material_.layers.size() > 1;
-    self.moveLayerDownButton.enabled = hasLayer && selectedLayer_ > 0;
-    self.moveLayerUpButton.enabled = hasLayer &&
-        static_cast<std::size_t>(selectedLayer_ + 1) < material_.layers.size();
+    const BOOL hasLayer = selectedCount == 1 && layer != nullptr;
+    self.removeLayerButton.enabled = selectedCount > 0 &&
+        selectedCount < material_.layers.size();
+    self.duplicateLayerButton.enabled = selectedCount > 0 &&
+        material_.layers.size() + selectedCount <= paperweight::LayerLimits::maximumLayers;
     self.layerEnabledCheckbox.enabled = hasLayer;
     self.layerCompositeControl.enabled = hasLayer;
     for (NSButton* button in self.layerOutputButtons) {
@@ -3471,7 +3698,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.layerOpacitySlider.enabled = hasLayer;
     self.layerInspectorTabs.enabled = hasLayer;
     if (!hasLayer) {
-        self.layerTypeLabel.stringValue = @"No layer selected";
+        self.layerTypeLabel.stringValue = selectedCount > 1
+            ? [NSString stringWithFormat:@"%lu layers selected",
+                static_cast<unsigned long>(selectedCount)]
+            : @"No layer selected";
         self.noiseSeedRow.hidden = YES;
         self.solidColourRow.hidden = YES;
         self.surfaceValueRow.hidden = YES;
@@ -5212,7 +5442,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 
 - (void)updateLayerInspectorTabVisibility
 {
-    const BOOL hasLayer = layerAt(material_, selectedLayer_) != nullptr;
+    const BOOL hasLayer = self.selectedLayerIndexes.count == 1 &&
+        layerAt(material_, selectedLayer_) != nullptr;
     const NSInteger tab = self.layerInspectorTabs.selectedSegment;
     self.layerSettingsGroup.hidden = !hasLayer || tab != 0;
     self.transformSettingsGroup.hidden = !hasLayer || tab != 1;
@@ -5225,13 +5456,6 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     [self updateLayerInspectorTabVisibility];
 }
 
-- (void)selectLayer:(NSButton*)sender
-{
-    selectedLayer_ = sender.tag;
-    [self rebuildLayerList];
-    [self refreshLayerInspector];
-}
-
 - (void)layerListEnabledChanged:(NSButton*)sender
 {
     const auto before = material_;
@@ -5241,10 +5465,485 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     }
     layer->enabled = sender.state == NSControlStateValueOn;
     selectedLayer_ = sender.tag;
+    self.selectedLayerIndexes = [NSIndexSet indexSetWithIndex:
+        static_cast<NSUInteger>(selectedLayer_)];
     [self rebuildLayerList];
     [self refreshLayerInspector];
     [self regeneratePreviewForOutputs:paperweight::affectedMaterialOutputs(before, material_)];
     [self markDirty];
+}
+
+- (BOOL)layerTableHasFocus
+{
+    NSResponder* firstResponder = self.window.firstResponder;
+    if (firstResponder == self.layerTableView) {
+        return YES;
+    }
+    if ([firstResponder isKindOfClass:NSView.class]) {
+        return [static_cast<NSView*>(firstResponder) isDescendantOf:self.layerTableView];
+    }
+    return NO;
+}
+
+- (void)resetLayerIdentities
+{
+    self.layerIdentities = [NSMutableArray arrayWithCapacity:material_.layers.size()];
+    for (std::size_t index = 0; index < material_.layers.size(); ++index) {
+        [self.layerIdentities addObject:NSUUID.UUID.UUIDString];
+    }
+}
+
+- (void)setSelectedModelLayerIndexes:(NSIndexSet*)indexes
+{
+    self.selectedLayerIndexes = [indexes copy];
+    if (indexes.count == 0) {
+        selectedLayer_ = -1;
+    } else {
+        selectedLayer_ = static_cast<NSInteger>(indexes.lastIndex);
+    }
+}
+
+- (void)registerLayerStackUndoWithName:(NSString*)actionName
+{
+    if (self.layerUndoManager == nil) {
+        return;
+    }
+    auto* snapshot = [[PWLayerStackSnapshot alloc] init];
+    snapshot->layers = material_.layers;
+    snapshot.identities = [self.layerIdentities copy];
+    snapshot.selection = [self.selectedLayerIndexes copy];
+    [self.layerUndoManager registerUndoWithTarget:self handler:
+        ^(AppDelegate* target) {
+            [target restoreLayerStackSnapshot:snapshot actionName:actionName];
+        }];
+    self.layerUndoManager.actionName = actionName;
+}
+
+- (void)finishLayerStructureChangeForOutputs:
+    (paperweight::MaterialOutputSelection)outputs
+{
+    [self rebuildLayerList];
+    [self refreshLayerInspector];
+    [self regeneratePreviewForOutputs:outputs];
+    performingStructuralChange_ = true;
+    [self markDirty];
+    performingStructuralChange_ = false;
+}
+
+- (void)restoreLayerStackSnapshot:(PWLayerStackSnapshot*)snapshot
+                       actionName:(NSString*)actionName
+{
+    const auto before = material_;
+    [self registerLayerStackUndoWithName:actionName];
+    material_.layers = snapshot->layers;
+    self.layerIdentities = [snapshot.identities mutableCopy];
+    [self setSelectedModelLayerIndexes:snapshot.selection];
+    [self finishLayerStructureChangeForOutputs:
+        paperweight::affectedMaterialOutputs(before, material_)];
+}
+
+- (std::vector<paperweight::MaterialLayer>)selectedLayersInEvaluationOrder
+{
+    std::vector<paperweight::MaterialLayer> layers;
+    layers.reserve(self.selectedLayerIndexes.count);
+    for (NSUInteger index = self.selectedLayerIndexes.firstIndex;
+         index != NSNotFound;
+         index = [self.selectedLayerIndexes indexGreaterThanIndex:index]) {
+        if (index < material_.layers.size()) {
+            layers.push_back(material_.layers[index]);
+        }
+    }
+    return layers;
+}
+
+- (BOOL)writeSelectedLayersToPasteboard:(NSPasteboard*)pasteboard
+{
+    const auto layers = [self selectedLayersInEvaluationOrder];
+    const auto encoded = paperweight::serialiseLayerFragment(layers);
+    if (const auto* error = std::get_if<paperweight::SerialisationError>(&encoded)) {
+        self.statusLabel.stringValue = [NSString stringWithUTF8String:error->message.c_str()];
+        self.statusLabel.textColor = NSColor.systemRedColor;
+        return NO;
+    }
+    const auto& text = std::get<std::string>(encoded);
+    auto* value = [[NSString alloc] initWithBytes:text.data()
+                                           length:text.size()
+                                         encoding:NSUTF8StringEncoding];
+    if (value == nil) {
+        return NO;
+    }
+    [pasteboard clearContents];
+    [pasteboard setString:value forType:layerFragmentPasteboardType];
+    [pasteboard setString:value forType:NSPasteboardTypeString];
+    self.statusLabel.stringValue = [NSString stringWithFormat:
+        @"Copied %lu %@", static_cast<unsigned long>(layers.size()),
+        layers.size() == 1 ? @"layer" : @"layers"];
+    self.statusLabel.textColor = NSColor.secondaryLabelColor;
+    return YES;
+}
+
+- (BOOL)canPasteLayerFragment
+{
+    NSString* value = [NSPasteboard.generalPasteboard
+        stringForType:layerFragmentPasteboardType];
+    if (value == nil || value.UTF8String == nullptr) {
+        return NO;
+    }
+    const auto decoded = paperweight::parseLayerFragment(value.UTF8String);
+    const auto* fragment = std::get_if<paperweight::LayerFragment>(&decoded);
+    return fragment != nullptr && !fragment->layers.empty() &&
+        material_.layers.size() + fragment->layers.size() <=
+            paperweight::LayerLimits::maximumLayers;
+}
+
+- (void)copy:(id)sender
+{
+    if (self.applicationCoordinatorMode) {
+        AppDelegate* editor = [self activeMaterialEditor];
+        if (editor != nil) {
+            [editor copy:sender];
+        }
+        return;
+    }
+    static_cast<void>(sender);
+    if ([self layerTableHasFocus]) {
+        [self writeSelectedLayersToPasteboard:NSPasteboard.generalPasteboard];
+    }
+}
+
+- (BOOL)deleteSelectedLayersWithActionName:(NSString*)actionName
+{
+    NSIndexSet* selection = self.selectedLayerIndexes;
+    if (selection.count == 0 || selection.count >= material_.layers.size()) {
+        self.statusLabel.stringValue = @"A material must retain at least one layer.";
+        self.statusLabel.textColor = NSColor.systemRedColor;
+        return NO;
+    }
+
+    const auto before = material_;
+    [self registerLayerStackUndoWithName:actionName];
+    const NSUInteger nextIndex = std::min(
+        selection.firstIndex,
+        static_cast<NSUInteger>(material_.layers.size() - selection.count - 1));
+    [selection enumerateIndexesWithOptions:NSEnumerationReverse
+                                usingBlock:^(NSUInteger index, BOOL* stop) {
+        static_cast<void>(stop);
+        material_.layers.erase(material_.layers.begin() + static_cast<std::ptrdiff_t>(index));
+        [self.layerIdentities removeObjectAtIndex:index];
+    }];
+    [self setSelectedModelLayerIndexes:[NSIndexSet indexSetWithIndex:nextIndex]];
+    [self finishLayerStructureChangeForOutputs:
+        paperweight::affectedMaterialOutputs(before, material_)];
+    return YES;
+}
+
+- (void)cut:(id)sender
+{
+    if (self.applicationCoordinatorMode) {
+        AppDelegate* editor = [self activeMaterialEditor];
+        if (editor != nil) {
+            [editor cut:sender];
+        }
+        return;
+    }
+    static_cast<void>(sender);
+    if ([self layerTableHasFocus] &&
+        [self writeSelectedLayersToPasteboard:NSPasteboard.generalPasteboard]) {
+        [self deleteSelectedLayersWithActionName:@"Cut Layers"];
+    }
+}
+
+- (void)paste:(id)sender
+{
+    if (self.applicationCoordinatorMode) {
+        AppDelegate* editor = [self activeMaterialEditor];
+        if (editor != nil) {
+            [editor paste:sender];
+        }
+        return;
+    }
+    static_cast<void>(sender);
+    if (![self layerTableHasFocus]) {
+        return;
+    }
+    NSString* value = [NSPasteboard.generalPasteboard
+        stringForType:layerFragmentPasteboardType];
+    if (value == nil || value.UTF8String == nullptr) {
+        return;
+    }
+    const auto decoded = paperweight::parseLayerFragment(value.UTF8String);
+    if (const auto* diagnostic = std::get_if<paperweight::ParseDiagnostic>(&decoded)) {
+        self.statusLabel.stringValue = [NSString stringWithFormat:
+            @"Layer paste failed at line %zu: %s", diagnostic->line,
+            diagnostic->message.c_str()];
+        self.statusLabel.textColor = NSColor.systemRedColor;
+        return;
+    }
+    const auto& pasted = std::get<paperweight::LayerFragment>(decoded).layers;
+    if (material_.layers.size() + pasted.size() > paperweight::LayerLimits::maximumLayers) {
+        self.statusLabel.stringValue = [NSString stringWithFormat:
+            @"Pasting %zu layers would exceed the 32-layer limit.", pasted.size()];
+        self.statusLabel.textColor = NSColor.systemRedColor;
+        return;
+    }
+
+    const auto before = material_;
+    [self registerLayerStackUndoWithName:@"Paste Layers"];
+    const std::size_t insertionIndex = self.selectedLayerIndexes.count == 0
+        ? material_.layers.size()
+        : std::min<std::size_t>(self.selectedLayerIndexes.lastIndex + 1,
+              material_.layers.size());
+    material_.layers.insert(
+        material_.layers.begin() + static_cast<std::ptrdiff_t>(insertionIndex),
+        pasted.begin(), pasted.end());
+    for (std::size_t offset = 0; offset < pasted.size(); ++offset) {
+        [self.layerIdentities insertObject:NSUUID.UUID.UUIDString
+                                   atIndex:insertionIndex + offset];
+    }
+    [self setSelectedModelLayerIndexes:[NSIndexSet indexSetWithIndexesInRange:
+        NSMakeRange(insertionIndex, pasted.size())]];
+    [self finishLayerStructureChangeForOutputs:
+        paperweight::affectedMaterialOutputs(before, material_)];
+}
+
+- (void)duplicateLayers:(id)sender
+{
+    if (self.applicationCoordinatorMode) {
+        AppDelegate* editor = [self activeMaterialEditor];
+        if (editor != nil) {
+            [editor duplicateLayers:sender];
+        }
+        return;
+    }
+    static_cast<void>(sender);
+    const auto selected = [self selectedLayersInEvaluationOrder];
+    if (selected.empty() ||
+        material_.layers.size() + selected.size() > paperweight::LayerLimits::maximumLayers) {
+        return;
+    }
+    const auto before = material_;
+    [self registerLayerStackUndoWithName:@"Duplicate Layers"];
+    const std::size_t insertionIndex = self.selectedLayerIndexes.lastIndex + 1;
+    material_.layers.insert(
+        material_.layers.begin() + static_cast<std::ptrdiff_t>(insertionIndex),
+        selected.begin(), selected.end());
+    for (std::size_t offset = 0; offset < selected.size(); ++offset) {
+        [self.layerIdentities insertObject:NSUUID.UUID.UUIDString
+                                   atIndex:insertionIndex + offset];
+    }
+    [self setSelectedModelLayerIndexes:[NSIndexSet indexSetWithIndexesInRange:
+        NSMakeRange(insertionIndex, selected.size())]];
+    [self finishLayerStructureChangeForOutputs:
+        paperweight::affectedMaterialOutputs(before, material_)];
+}
+
+- (void)deleteSelectedLayers:(id)sender
+{
+    if (self.applicationCoordinatorMode) {
+        AppDelegate* editor = [self activeMaterialEditor];
+        if (editor != nil) {
+            [editor deleteSelectedLayers:sender];
+        }
+        return;
+    }
+    static_cast<void>(sender);
+    if ([self layerTableHasFocus]) {
+        [self deleteSelectedLayersWithActionName:@"Delete Layers"];
+    }
+}
+
+- (void)selectAll:(id)sender
+{
+    if (self.applicationCoordinatorMode) {
+        AppDelegate* editor = [self activeMaterialEditor];
+        if (editor != nil) {
+            [editor selectAll:sender];
+        }
+        return;
+    }
+    static_cast<void>(sender);
+    if (![self layerTableHasFocus] || material_.layers.empty()) {
+        return;
+    }
+    [self setSelectedModelLayerIndexes:[NSIndexSet indexSetWithIndexesInRange:
+        NSMakeRange(0, material_.layers.size())]];
+    [self rebuildLayerList];
+    [self refreshLayerInspector];
+}
+
+- (void)undo:(id)sender
+{
+    if (self.applicationCoordinatorMode) {
+        AppDelegate* editor = [self activeMaterialEditor];
+        if (editor != nil) {
+            [editor undo:sender];
+        }
+        return;
+    }
+    static_cast<void>(sender);
+    if ([self layerTableHasFocus] && self.layerUndoManager.canUndo) {
+        [self.layerUndoManager undo];
+    }
+}
+
+- (void)redo:(id)sender
+{
+    if (self.applicationCoordinatorMode) {
+        AppDelegate* editor = [self activeMaterialEditor];
+        if (editor != nil) {
+            [editor redo:sender];
+        }
+        return;
+    }
+    static_cast<void>(sender);
+    if ([self layerTableHasFocus] && self.layerUndoManager.canRedo) {
+        [self.layerUndoManager redo];
+    }
+}
+
+- (BOOL)moveSelectedLayersToDisplayRow:(NSInteger)proposedRow
+{
+    NSIndexSet* displaySelection = self.layerTableView.selectedRowIndexes;
+    const NSUInteger layerCount = material_.layers.size();
+    if (displaySelection.count == 0 || proposedRow < 0 ||
+        static_cast<NSUInteger>(proposedRow) > layerCount) {
+        return NO;
+    }
+
+    const NSUInteger dropRow = static_cast<NSUInteger>(proposedRow);
+    const NSUInteger removedBeforeDrop = [displaySelection
+        countOfIndexesInRange:NSMakeRange(0, dropRow)];
+    const NSUInteger insertionRow = dropRow - removedBeforeDrop;
+
+    std::vector<paperweight::MaterialLayer> displayLayers(
+        material_.layers.rbegin(), material_.layers.rend());
+    std::vector<paperweight::MaterialLayer> movingLayers;
+    std::vector<paperweight::MaterialLayer> remainingLayers;
+    movingLayers.reserve(displaySelection.count);
+    remainingLayers.reserve(layerCount - displaySelection.count);
+    for (std::size_t row = 0; row < displayLayers.size(); ++row) {
+        if ([displaySelection containsIndex:row]) {
+            movingLayers.push_back(displayLayers[row]);
+        } else {
+            remainingLayers.push_back(displayLayers[row]);
+        }
+    }
+    remainingLayers.insert(
+        remainingLayers.begin() + static_cast<std::ptrdiff_t>(insertionRow),
+        movingLayers.begin(), movingLayers.end());
+    std::vector<paperweight::MaterialLayer> reordered(
+        remainingLayers.rbegin(), remainingLayers.rend());
+    if (reordered == material_.layers) {
+        return NO;
+    }
+
+    NSArray<NSString*>* displayIdentities =
+        self.layerIdentities.reverseObjectEnumerator.allObjects;
+    NSArray<NSString*>* movingIdentities =
+        [displayIdentities objectsAtIndexes:displaySelection];
+    NSMutableArray<NSString*>* remainingIdentities = [displayIdentities mutableCopy];
+    [remainingIdentities removeObjectsAtIndexes:displaySelection];
+    NSIndexSet* insertionIndexes = [NSIndexSet indexSetWithIndexesInRange:
+        NSMakeRange(insertionRow, movingIdentities.count)];
+    [remainingIdentities insertObjects:movingIdentities atIndexes:insertionIndexes];
+
+    const auto before = material_;
+    [self registerLayerStackUndoWithName:@"Reorder Layers"];
+    material_.layers = std::move(reordered);
+    self.layerIdentities =
+        [remainingIdentities.reverseObjectEnumerator.allObjects mutableCopy];
+    auto* newModelSelection = [NSMutableIndexSet indexSet];
+    for (NSUInteger row = insertionRow;
+         row < insertionRow + movingIdentities.count;
+         ++row) {
+        [newModelSelection addIndex:layerCount - 1 - row];
+    }
+    [self setSelectedModelLayerIndexes:newModelSelection];
+    [self finishLayerStructureChangeForOutputs:
+        paperweight::affectedMaterialOutputs(before, material_)];
+    return YES;
+}
+
+- (void)moveSelectedLayersUp:(id)sender
+{
+    if (self.applicationCoordinatorMode) {
+        AppDelegate* editor = [self activeMaterialEditor];
+        if (editor != nil) {
+            [editor moveSelectedLayersUp:sender];
+        }
+        return;
+    }
+    static_cast<void>(sender);
+    if (![self layerTableHasFocus]) {
+        return;
+    }
+    NSIndexSet* rows = self.layerTableView.selectedRowIndexes;
+    if (rows.count != 0 && rows.firstIndex > 0) {
+        [self moveSelectedLayersToDisplayRow:static_cast<NSInteger>(rows.firstIndex - 1)];
+    }
+}
+
+- (void)moveSelectedLayersDown:(id)sender
+{
+    if (self.applicationCoordinatorMode) {
+        AppDelegate* editor = [self activeMaterialEditor];
+        if (editor != nil) {
+            [editor moveSelectedLayersDown:sender];
+        }
+        return;
+    }
+    static_cast<void>(sender);
+    if (![self layerTableHasFocus]) {
+        return;
+    }
+    NSIndexSet* rows = self.layerTableView.selectedRowIndexes;
+    if (rows.count != 0 && rows.lastIndex + 1 < material_.layers.size()) {
+        [self moveSelectedLayersToDisplayRow:static_cast<NSInteger>(rows.lastIndex + 2)];
+    }
+}
+
+- (BOOL)tableView:(NSTableView*)tableView
+    writeRowsWithIndexes:(NSIndexSet*)rowIndexes
+            toPasteboard:(NSPasteboard*)pasteboard
+{
+    if (tableView != self.layerTableView || rowIndexes.count == 0) {
+        return NO;
+    }
+    [self setSelectedModelLayerIndexes:
+        [self modelLayerIndexesForDisplayRows:rowIndexes]];
+    [pasteboard declareTypes:@[layerReorderPasteboardType] owner:nil];
+    return [pasteboard setString:self.layerDragIdentifier
+                         forType:layerReorderPasteboardType];
+}
+
+- (NSDragOperation)tableView:(NSTableView*)tableView
+                 validateDrop:(id<NSDraggingInfo>)draggingInfo
+                  proposedRow:(NSInteger)row
+        proposedDropOperation:(NSTableViewDropOperation)dropOperation
+{
+    static_cast<void>(dropOperation);
+    if (tableView != self.layerTableView || row < 0 ||
+        static_cast<std::size_t>(row) > material_.layers.size()) {
+        return NSDragOperationNone;
+    }
+    NSString* source = [draggingInfo.draggingPasteboard
+        stringForType:layerReorderPasteboardType];
+    if (![source isEqualToString:self.layerDragIdentifier]) {
+        return NSDragOperationNone;
+    }
+    [tableView setDropRow:row dropOperation:NSTableViewDropAbove];
+    return NSDragOperationMove;
+}
+
+- (BOOL)tableView:(NSTableView*)tableView
+        acceptDrop:(id<NSDraggingInfo>)draggingInfo
+               row:(NSInteger)row
+     dropOperation:(NSTableViewDropOperation)dropOperation
+{
+    static_cast<void>(draggingInfo);
+    static_cast<void>(dropOperation);
+    return tableView == self.layerTableView &&
+        [self moveSelectedLayersToDisplayRow:row];
 }
 
 - (void)layerEnabledChanged:(NSButton*)sender
@@ -5268,6 +5967,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.statusLabel.textColor = NSColor.systemRedColor;
         return;
     }
+    const auto before = material_;
+    [self registerLayerStackUndoWithName:@"Add Layer"];
     switch (self.addOperationPopup.indexOfSelectedItem) {
     case 0:
         material_.layers.push_back(paperweight::makeNoiseLayer(material_.layers.size()));
@@ -5381,61 +6082,21 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         material_.layers.push_back(paperweight::makeRegionAttachmentLayer());
         break;
     default:
+        [self.layerUndoManager removeAllActions];
         return;
     }
     selectedLayer_ = static_cast<NSInteger>(material_.layers.size() - 1);
-    [self rebuildLayerList];
-    [self refreshLayerInspector];
-    [self regeneratePreview];
-    [self markDirty];
+    [self.layerIdentities addObject:NSUUID.UUID.UUIDString];
+    [self setSelectedModelLayerIndexes:[NSIndexSet indexSetWithIndex:
+        static_cast<NSUInteger>(selectedLayer_)]];
+    [self finishLayerStructureChangeForOutputs:
+        paperweight::affectedMaterialOutputs(before, material_)];
 }
 
 - (void)removeLayer:(id)sender
 {
     static_cast<void>(sender);
-    if (material_.layers.size() <= 1 || layerAt(material_, selectedLayer_) == nullptr) {
-        return;
-    }
-    material_.layers.erase(material_.layers.begin() + selectedLayer_);
-    selectedLayer_ = std::min(
-        selectedLayer_, static_cast<NSInteger>(material_.layers.size() - 1));
-    [self rebuildLayerList];
-    [self refreshLayerInspector];
-    [self regeneratePreview];
-    [self markDirty];
-}
-
-- (void)moveLayerDown:(id)sender
-{
-    static_cast<void>(sender);
-    if (selectedLayer_ <= 0 || layerAt(material_, selectedLayer_) == nullptr) {
-        return;
-    }
-    std::swap(
-        material_.layers[static_cast<std::size_t>(selectedLayer_)],
-        material_.layers[static_cast<std::size_t>(selectedLayer_ - 1)]);
-    --selectedLayer_;
-    [self rebuildLayerList];
-    [self refreshLayerInspector];
-    [self regeneratePreview];
-    [self markDirty];
-}
-
-- (void)moveLayerUp:(id)sender
-{
-    static_cast<void>(sender);
-    if (selectedLayer_ < 0 ||
-        static_cast<std::size_t>(selectedLayer_ + 1) >= material_.layers.size()) {
-        return;
-    }
-    std::swap(
-        material_.layers[static_cast<std::size_t>(selectedLayer_)],
-        material_.layers[static_cast<std::size_t>(selectedLayer_ + 1)]);
-    ++selectedLayer_;
-    [self rebuildLayerList];
-    [self refreshLayerInspector];
-    [self regeneratePreview];
-    [self markDirty];
+    [self deleteSelectedLayersWithActionName:@"Remove Layers"];
 }
 
 - (void)layerColourChanged:(id)sender
@@ -7037,6 +7698,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     material_.layers.push_back(paperweight::makeNoiseLayer());
     previewCoverage_ = material_.physicalSize;
     selectedLayer_ = 0;
+    [self resetLayerIdentities];
+    [self setSelectedModelLayerIndexes:[NSIndexSet indexSetWithIndex:0]];
     self.seedField.stringValue = [NSString stringWithFormat:@"%llu", material_.seed];
     self.materialWidthField.stringValue = [NSString
         stringWithFormat:@"%.6g", material_.physicalSize.widthMetres];
@@ -7950,7 +8613,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 
 - (void)markDirty
 {
-    dirty_ = true;
+    if (!performingStructuralChange_) {
+        [self.layerUndoManager removeAllActions];
+    }
+    dirty_ = !savedMaterial_ || material_ != *savedMaterial_;
     [self updateWindowTitle];
 }
 
@@ -8039,6 +8705,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     }
 
     self.currentFileURL = url;
+    savedMaterial_ = material_;
     dirty_ = false;
     [self updateWindowTitle];
     [NSDocumentController.sharedDocumentController noteNewRecentDocumentURL:url];
@@ -8121,6 +8788,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
             AppDelegate* editor = [strongSelf createMaterialEditor];
             editor->material_ = std::move(material);
             editor->selectedLayer_ = 0;
+            editor->savedMaterial_.reset();
+            [editor resetLayerIdentities];
+            [editor setSelectedModelLayerIndexes:[NSIndexSet indexSetWithIndex:0]];
+            [editor.layerUndoManager removeAllActions];
             editor.currentFileURL = nil;
             editor->dirty_ = true;
             [editor setActiveReferenceTemplate:nullptr];
@@ -8192,6 +8863,10 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         paperweight::makeMaterialRecipe(*authored),
         chosenSeed);
     selectedLayer_ = 0;
+    savedMaterial_.reset();
+    [self resetLayerIdentities];
+    [self setSelectedModelLayerIndexes:[NSIndexSet indexSetWithIndex:0]];
+    [self.layerUndoManager removeAllActions];
     self.currentFileURL = nil;
     dirty_ = true;
     [self setActiveReferenceTemplate:descriptor];
@@ -8308,6 +8983,14 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
 
     material_ = std::get<paperweight::Material>(parsed);
     selectedLayer_ = 0;
+    if (asShowcase) {
+        savedMaterial_.reset();
+    } else {
+        savedMaterial_ = material_;
+    }
+    [self resetLayerIdentities];
+    [self setSelectedModelLayerIndexes:[NSIndexSet indexSetWithIndex:0]];
+    [self.layerUndoManager removeAllActions];
     [self setActiveReferenceTemplate:nullptr];
     self.currentFileURL = asShowcase ? nil : url;
     dirty_ = asShowcase;
