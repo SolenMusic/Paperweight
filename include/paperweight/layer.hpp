@@ -925,6 +925,90 @@ struct InkContourOperation {
         const InkContourOperation&) = default;
 };
 
+enum class RegionalDetailField : std::uint8_t {
+    material = 0,
+    macro = 1,
+    meso = 2,
+    micro = 3,
+    centreGradient = 4,
+    directionalGradient = 5,
+    planarGradient = 6,
+    mottling = 7,
+    grain = 8,
+    directionalStrokes = 9,
+    outerShadow = 10,
+    bevel = 11,
+    body = 12,
+    innerHighlight = 13,
+    wear = 14,
+    combined = 15,
+    palette = 16,
+};
+
+enum class RegionalDetailOrientation : std::uint8_t {
+    texture = 0,
+    region = 1,
+};
+
+enum class RegionalVariationScope : std::uint8_t {
+    material = 0,
+    group = 1,
+    parentRegion = 2,
+    region = 3,
+};
+
+enum class RegionalWearBias : std::uint8_t {
+    exposedEdges = 0,
+    cavities = 1,
+    upwardFaces = 2,
+    localPatches = 3,
+    mixed = 4,
+};
+
+// A reusable authored-surface processor. All spatial dimensions are expressed
+// in metres and converted through Material::physicalSize and RegionSample
+// extents. A field layer exposes one mask; material mode uses the exact same
+// stable signals to coordinate colour and physical channels.
+struct RegionalDetailOperation {
+    RegionalDetailField field{RegionalDetailField::material};
+    RegionalDetailOrientation orientation{RegionalDetailOrientation::region};
+    RegionalVariationScope variationScope{RegionalVariationScope::region};
+    RegionalWearBias wearBias{RegionalWearBias::mixed};
+    double macroScaleMetres{0.24};
+    double mesoScaleMetres{0.055};
+    double microScaleMetres{0.008};
+    double macroStrength{0.22};
+    double mesoStrength{0.16};
+    double microStrength{0.08};
+    double gradientStrength{0.12};
+    double gradientAngleDegrees{315.0};
+    double mottlingStrength{0.18};
+    double grainStrength{0.1};
+    double strokeStrength{0.08};
+    double outerBandMetres{0.004};
+    double bevelBandMetres{0.009};
+    double innerBandMetres{0.003};
+    double edgeIrregularity{0.3};
+    double edgeBreakup{0.12};
+    double edgeTaper{0.2};
+    double wearAmount{0.18};
+    double wearScaleMetres{0.04};
+    Rgba8 paletteLow{62, 68, 72, 255};
+    Rgba8 paletteHigh{156, 160, 154, 255};
+    std::uint32_t paletteSteps{};
+    double colourAmount{0.72};
+    double heightAmount{0.08};
+    double roughnessAmount{0.14};
+    double coatingWear{0.55};
+    double occlusionAmount{0.22};
+    std::uint64_t seedOffset{};
+    ProcessingTarget target{ProcessingTarget::colourAndScalar};
+
+    friend constexpr bool operator==(
+        const RegionalDetailOperation&,
+        const RegionalDetailOperation&) = default;
+};
+
 using LayerOperation = std::variant<
     NoiseOperation,
     SolidColourOperation,
@@ -956,7 +1040,8 @@ using LayerOperation = std::variant<
     OrganicAccumulationOperation,
     SurfaceValueOperation,
     TextileOperation,
-    RegionAttachmentOperation>;
+    RegionAttachmentOperation,
+    RegionalDetailOperation>;
 
 struct LayerOutputRouting {
     bool colour{true};
@@ -1137,6 +1222,9 @@ struct LayerLimits {
     static constexpr std::uint32_t maximumWeaveSpan = 8;
     static constexpr std::uint32_t maximumFibreFrequency = 64;
     static constexpr std::uint32_t maximumRegionAttachments = 8;
+    static constexpr double minimumPhysicalDetailScale = 0.000001;
+    static constexpr double maximumPhysicalDetailScale = 1000000.0;
+    static constexpr std::uint32_t maximumRegionalPaletteSteps = 16;
 };
 
 [[nodiscard]] constexpr MaterialLayer makeNoiseLayer(std::uint64_t seedOffset = 0)
@@ -1518,6 +1606,18 @@ struct LayerLimits {
         {}};
 }
 
+[[nodiscard]] constexpr MaterialLayer makeRegionalDetailLayer()
+{
+    return MaterialLayer{
+        true,
+        1.0,
+        CompositeMode::blend,
+        RegionalDetailOperation{},
+        {},
+        {},
+        {}};
+}
+
 [[nodiscard]] constexpr std::uint32_t rotationDegrees(QuarterTurn rotation)
 {
     return static_cast<std::uint32_t>(rotation) * 90U;
@@ -1607,9 +1707,71 @@ struct LayerLimits {
         return "textile";
     case 30:
         return "region_attachment";
+    case 31:
+        return "regional_detail";
     default:
         return "unknown";
     }
+}
+
+[[nodiscard]] constexpr std::string_view regionalDetailFieldName(
+    RegionalDetailField field)
+{
+    switch (field) {
+    case RegionalDetailField::material: return "material";
+    case RegionalDetailField::macro: return "macro";
+    case RegionalDetailField::meso: return "meso";
+    case RegionalDetailField::micro: return "micro";
+    case RegionalDetailField::centreGradient: return "centre_gradient";
+    case RegionalDetailField::directionalGradient: return "directional_gradient";
+    case RegionalDetailField::planarGradient: return "planar_gradient";
+    case RegionalDetailField::mottling: return "mottling";
+    case RegionalDetailField::grain: return "grain";
+    case RegionalDetailField::directionalStrokes: return "directional_strokes";
+    case RegionalDetailField::outerShadow: return "outer_shadow";
+    case RegionalDetailField::bevel: return "bevel";
+    case RegionalDetailField::body: return "body";
+    case RegionalDetailField::innerHighlight: return "inner_highlight";
+    case RegionalDetailField::wear: return "wear";
+    case RegionalDetailField::combined: return "combined";
+    case RegionalDetailField::palette: return "palette";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view regionalDetailOrientationName(
+    RegionalDetailOrientation orientation)
+{
+    switch (orientation) {
+    case RegionalDetailOrientation::texture: return "texture";
+    case RegionalDetailOrientation::region: return "region";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view regionalVariationScopeName(
+    RegionalVariationScope scope)
+{
+    switch (scope) {
+    case RegionalVariationScope::material: return "material";
+    case RegionalVariationScope::group: return "group";
+    case RegionalVariationScope::parentRegion: return "parent_region";
+    case RegionalVariationScope::region: return "region";
+    }
+    return "unknown";
+}
+
+[[nodiscard]] constexpr std::string_view regionalWearBiasName(
+    RegionalWearBias bias)
+{
+    switch (bias) {
+    case RegionalWearBias::exposedEdges: return "exposed_edges";
+    case RegionalWearBias::cavities: return "cavities";
+    case RegionalWearBias::upwardFaces: return "upward_faces";
+    case RegionalWearBias::localPatches: return "local_patches";
+    case RegionalWearBias::mixed: return "mixed";
+    }
+    return "unknown";
 }
 
 [[nodiscard]] constexpr std::string_view regionAttachmentKindName(

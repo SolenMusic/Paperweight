@@ -128,6 +128,7 @@ enum class OperationKind {
     surfaceValue,
     textile,
     regionAttachment,
+    regionalDetail,
 };
 
 enum class BrickSizing {
@@ -480,6 +481,39 @@ struct LayerBuilder {
     ParsedValue<double> attachmentOcclusion;
     ParsedValue<double> attachmentEmissive;
     ParsedValue<std::uint64_t> attachmentSeedOffset;
+    ParsedValue<RegionalDetailField> detailField;
+    ParsedValue<RegionalDetailOrientation> detailOrientation;
+    ParsedValue<RegionalVariationScope> detailVariationScope;
+    ParsedValue<RegionalWearBias> detailWearBias;
+    ParsedValue<double> detailMacroScaleMetres;
+    ParsedValue<double> detailMesoScaleMetres;
+    ParsedValue<double> detailMicroScaleMetres;
+    ParsedValue<double> detailMacroStrength;
+    ParsedValue<double> detailMesoStrength;
+    ParsedValue<double> detailMicroStrength;
+    ParsedValue<double> detailGradientStrength;
+    ParsedValue<double> detailGradientAngle;
+    ParsedValue<double> detailMottlingStrength;
+    ParsedValue<double> detailGrainStrength;
+    ParsedValue<double> detailStrokeStrength;
+    ParsedValue<double> detailOuterBandMetres;
+    ParsedValue<double> detailBevelBandMetres;
+    ParsedValue<double> detailInnerBandMetres;
+    ParsedValue<double> detailEdgeIrregularity;
+    ParsedValue<double> detailEdgeBreakup;
+    ParsedValue<double> detailEdgeTaper;
+    ParsedValue<double> detailWearAmount;
+    ParsedValue<double> detailWearScaleMetres;
+    ParsedValue<Rgba8> detailPaletteLow;
+    ParsedValue<Rgba8> detailPaletteHigh;
+    ParsedValue<std::uint32_t> detailPaletteSteps;
+    ParsedValue<double> detailColourAmount;
+    ParsedValue<double> detailHeightAmount;
+    ParsedValue<double> detailRoughnessAmount;
+    ParsedValue<double> detailCoatingWear;
+    ParsedValue<double> detailOcclusionAmount;
+    ParsedValue<std::uint64_t> detailSeedOffset;
+    ParsedValue<ProcessingTarget> detailTarget;
 };
 
 struct GroupBuilder {
@@ -881,6 +915,59 @@ std::optional<OperationKind> parseOperationKind(std::string_view value)
     if (value == "region_attachment") {
         return OperationKind::regionAttachment;
     }
+    if (value == "regional_detail") {
+        return OperationKind::regionalDetail;
+    }
+    return std::nullopt;
+}
+
+std::optional<RegionalDetailField> parseRegionalDetailField(std::string_view value)
+{
+    if (value == "material") return RegionalDetailField::material;
+    if (value == "macro") return RegionalDetailField::macro;
+    if (value == "meso") return RegionalDetailField::meso;
+    if (value == "micro") return RegionalDetailField::micro;
+    if (value == "centre_gradient") return RegionalDetailField::centreGradient;
+    if (value == "directional_gradient") return RegionalDetailField::directionalGradient;
+    if (value == "planar_gradient") return RegionalDetailField::planarGradient;
+    if (value == "mottling") return RegionalDetailField::mottling;
+    if (value == "grain") return RegionalDetailField::grain;
+    if (value == "directional_strokes") return RegionalDetailField::directionalStrokes;
+    if (value == "outer_shadow") return RegionalDetailField::outerShadow;
+    if (value == "bevel") return RegionalDetailField::bevel;
+    if (value == "body") return RegionalDetailField::body;
+    if (value == "inner_highlight") return RegionalDetailField::innerHighlight;
+    if (value == "wear") return RegionalDetailField::wear;
+    if (value == "combined") return RegionalDetailField::combined;
+    if (value == "palette") return RegionalDetailField::palette;
+    return std::nullopt;
+}
+
+std::optional<RegionalDetailOrientation> parseRegionalDetailOrientation(
+    std::string_view value)
+{
+    if (value == "texture") return RegionalDetailOrientation::texture;
+    if (value == "region") return RegionalDetailOrientation::region;
+    return std::nullopt;
+}
+
+std::optional<RegionalVariationScope> parseRegionalVariationScope(
+    std::string_view value)
+{
+    if (value == "material") return RegionalVariationScope::material;
+    if (value == "group") return RegionalVariationScope::group;
+    if (value == "parent_region") return RegionalVariationScope::parentRegion;
+    if (value == "region") return RegionalVariationScope::region;
+    return std::nullopt;
+}
+
+std::optional<RegionalWearBias> parseRegionalWearBias(std::string_view value)
+{
+    if (value == "exposed_edges") return RegionalWearBias::exposedEdges;
+    if (value == "cavities") return RegionalWearBias::cavities;
+    if (value == "upward_faces") return RegionalWearBias::upwardFaces;
+    if (value == "local_patches") return RegionalWearBias::localPatches;
+    if (value == "mixed") return RegionalWearBias::mixed;
     return std::nullopt;
 }
 
@@ -1695,6 +1782,27 @@ bool hasVersionTwentyTwoFields(const LayerBuilder& builder)
         builder.organicAccumulationInnerHighlightInset.value;
 }
 
+bool hasVersionTwentyFourFields(const LayerBuilder& builder)
+{
+    return builder.detailField.value || builder.detailOrientation.value ||
+        builder.detailVariationScope.value || builder.detailWearBias.value ||
+        builder.detailMacroScaleMetres.value || builder.detailMesoScaleMetres.value ||
+        builder.detailMicroScaleMetres.value || builder.detailMacroStrength.value ||
+        builder.detailMesoStrength.value || builder.detailMicroStrength.value ||
+        builder.detailGradientStrength.value || builder.detailGradientAngle.value ||
+        builder.detailMottlingStrength.value || builder.detailGrainStrength.value ||
+        builder.detailStrokeStrength.value || builder.detailOuterBandMetres.value ||
+        builder.detailBevelBandMetres.value || builder.detailInnerBandMetres.value ||
+        builder.detailEdgeIrregularity.value || builder.detailEdgeBreakup.value ||
+        builder.detailEdgeTaper.value || builder.detailWearAmount.value ||
+        builder.detailWearScaleMetres.value || builder.detailPaletteLow.value ||
+        builder.detailPaletteHigh.value || builder.detailPaletteSteps.value ||
+        builder.detailColourAmount.value || builder.detailHeightAmount.value ||
+        builder.detailRoughnessAmount.value || builder.detailCoatingWear.value ||
+        builder.detailOcclusionAmount.value || builder.detailSeedOffset.value ||
+        builder.detailTarget.value;
+}
+
 bool hasStructuralFields(const LayerBuilder& builder)
 {
     return hasVersionFourFields(builder) || hasVersionFiveFields(builder) ||
@@ -1703,7 +1811,8 @@ bool hasStructuralFields(const LayerBuilder& builder)
         hasVersionTenFields(builder) || hasVersionElevenFields(builder) ||
         hasVersionTwelveFields(builder) || hasVersionThirteenFields(builder) ||
         hasVersionFourteenFields(builder) || hasVersionTwentyFields(builder) ||
-        hasVersionTwentyOneFields(builder) || hasVersionTwentyTwoFields(builder);
+        hasVersionTwentyOneFields(builder) || hasVersionTwentyTwoFields(builder) ||
+        hasVersionTwentyFourFields(builder);
 }
 
 template<typename Value>
@@ -3994,6 +4103,100 @@ ParseResult parsePmat(std::string_view text)
                         return diagnostic(lineNumber, valueColumn, "invalid attachment property");
                     }
                     if (!storeValue(*destination, parsed, lineNumber, valueColumn)) return duplicate();
+                } else if (property == "detail.field") {
+                    const auto parsed = parseRegionalDetailField(value);
+                    if (!parsed || !storeValue(builder.detailField, *parsed, lineNumber, valueColumn)) {
+                        return parsed ? duplicate() : diagnostic(lineNumber, valueColumn, "invalid regional detail field");
+                    }
+                } else if (property == "detail.orientation") {
+                    const auto parsed = parseRegionalDetailOrientation(value);
+                    if (!parsed || !storeValue(builder.detailOrientation, *parsed, lineNumber, valueColumn)) {
+                        return parsed ? duplicate() : diagnostic(lineNumber, valueColumn, "detail orientation must be 'texture' or 'region'");
+                    }
+                } else if (property == "detail.variation_scope") {
+                    const auto parsed = parseRegionalVariationScope(value);
+                    if (!parsed || !storeValue(builder.detailVariationScope, *parsed, lineNumber, valueColumn)) {
+                        return parsed ? duplicate() : diagnostic(lineNumber, valueColumn, "detail variation scope must be 'material', 'group', 'parent_region', or 'region'");
+                    }
+                } else if (property == "detail.wear_bias") {
+                    const auto parsed = parseRegionalWearBias(value);
+                    if (!parsed || !storeValue(builder.detailWearBias, *parsed, lineNumber, valueColumn)) {
+                        return parsed ? duplicate() : diagnostic(lineNumber, valueColumn, "invalid regional wear bias");
+                    }
+                } else if (property == "detail.target") {
+                    const auto parsed = parseProcessingTarget(value);
+                    if (!parsed || !storeValue(builder.detailTarget, *parsed, lineNumber, valueColumn)) {
+                        return parsed ? duplicate() : diagnostic(lineNumber, valueColumn, "detail target must be 'colour', 'scalar', or 'all'");
+                    }
+                } else if (property == "detail.palette_low" ||
+                           property == "detail.palette_high") {
+                    Rgba8 parsed{};
+                    if (!parseColour(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "detail palette colour must use 0xRRGGBBAA hexadecimal notation");
+                    }
+                    auto& destination = property == "detail.palette_low"
+                        ? builder.detailPaletteLow : builder.detailPaletteHigh;
+                    if (!storeValue(destination, parsed, lineNumber, valueColumn)) return duplicate();
+                } else if (property == "detail.palette_steps") {
+                    std::uint32_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "detail palette steps must be an integer");
+                    }
+                    if (!storeValue(builder.detailPaletteSteps, parsed, lineNumber, valueColumn)) return duplicate();
+                } else if (property == "detail.seed_offset") {
+                    std::uint64_t parsed = 0;
+                    if (!parseInteger(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "detail seed offset must be an unsigned integer");
+                    }
+                    if (!storeValue(builder.detailSeedOffset, parsed, lineNumber, valueColumn)) return duplicate();
+                } else if (property == "detail.macro_scale" ||
+                           property == "detail.meso_scale" ||
+                           property == "detail.micro_scale" ||
+                           property == "detail.outer_band" ||
+                           property == "detail.bevel_band" ||
+                           property == "detail.inner_band" ||
+                           property == "detail.wear_scale") {
+                    double parsed = 0.0;
+                    if (!parseMetres(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "regional detail physical dimensions must be metre values such as 0.008m");
+                    }
+                    ParsedValue<double>* destination =
+                        property == "detail.macro_scale" ? &builder.detailMacroScaleMetres
+                        : property == "detail.meso_scale" ? &builder.detailMesoScaleMetres
+                        : property == "detail.micro_scale" ? &builder.detailMicroScaleMetres
+                        : property == "detail.outer_band" ? &builder.detailOuterBandMetres
+                        : property == "detail.bevel_band" ? &builder.detailBevelBandMetres
+                        : property == "detail.inner_band" ? &builder.detailInnerBandMetres
+                        : &builder.detailWearScaleMetres;
+                    if (!storeValue(*destination, parsed, lineNumber, valueColumn)) return duplicate();
+                } else if (property.starts_with("detail.")) {
+                    double parsed = 0.0;
+                    if (!parseDouble(value, parsed)) {
+                        return diagnostic(lineNumber, valueColumn, "regional detail parameter must be a decimal number");
+                    }
+                    ParsedValue<double>* destination =
+                        property == "detail.macro_strength" ? &builder.detailMacroStrength
+                        : property == "detail.meso_strength" ? &builder.detailMesoStrength
+                        : property == "detail.micro_strength" ? &builder.detailMicroStrength
+                        : property == "detail.gradient_strength" ? &builder.detailGradientStrength
+                        : property == "detail.gradient_angle" ? &builder.detailGradientAngle
+                        : property == "detail.mottling" ? &builder.detailMottlingStrength
+                        : property == "detail.grain" ? &builder.detailGrainStrength
+                        : property == "detail.strokes" ? &builder.detailStrokeStrength
+                        : property == "detail.edge_irregularity" ? &builder.detailEdgeIrregularity
+                        : property == "detail.edge_breakup" ? &builder.detailEdgeBreakup
+                        : property == "detail.edge_taper" ? &builder.detailEdgeTaper
+                        : property == "detail.wear" ? &builder.detailWearAmount
+                        : property == "detail.colour_amount" ? &builder.detailColourAmount
+                        : property == "detail.height_amount" ? &builder.detailHeightAmount
+                        : property == "detail.roughness_amount" ? &builder.detailRoughnessAmount
+                        : property == "detail.coating_wear" ? &builder.detailCoatingWear
+                        : property == "detail.occlusion_amount" ? &builder.detailOcclusionAmount
+                        : nullptr;
+                    if (destination == nullptr) {
+                        return diagnostic(lineNumber, valueColumn, "invalid regional detail property");
+                    }
+                    if (!storeValue(*destination, parsed, lineNumber, valueColumn)) return duplicate();
                 } else if (property == "transform.scale_x") {
                     std::uint32_t parsed = 0;
                     if (!parseInteger(value, parsed)) {
@@ -4529,6 +4732,15 @@ ParseResult parsePmat(std::string_view text)
                     "organic silhouettes and hierarchical clusters require .pmat version 22");
             }
 
+            if (formatVersion < 24 &&
+                (hasVersionTwentyFourFields(builder) ||
+                 *builder.operation.value == OperationKind::regionalDetail)) {
+                return diagnostic(
+                    lineNumber + 1,
+                    1,
+                    "regional surface detail requires .pmat version 24");
+            }
+
             if (formatVersion < 4 &&
                 (hasVersionFourFields(builder) ||
                  isStructuralOperation(*builder.operation.value))) {
@@ -4738,6 +4950,7 @@ ParseResult parsePmat(std::string_view text)
                 hasVersionFourteenFields(builder) || hasVersionTwentyTwoFields(builder);
             const bool hasTextileFields = hasVersionTwentyFields(builder);
             const bool hasAttachmentFields = hasVersionTwentyOneFields(builder);
+            const bool hasRegionalDetailFields = hasVersionTwentyFourFields(builder);
             const bool shapeBelongsToScatter =
                 *builder.operation.value == OperationKind::scatter;
             const int operationGroupCount = static_cast<int>(hasBrickFields) +
@@ -4755,7 +4968,8 @@ ParseResult parsePmat(std::string_view text)
                     (shapeBelongsToScatter && hasShapeFields)) +
                 static_cast<int>(hasOrganicFields) +
                 static_cast<int>(hasTextileFields) +
-                static_cast<int>(hasAttachmentFields);
+                static_cast<int>(hasAttachmentFields) +
+                static_cast<int>(hasRegionalDetailFields);
 
             const bool hasClassicFields = builder.seedOffset.value || builder.solidColour.value ||
                 builder.levelsLow.value || builder.levelsHigh.value ||
@@ -5878,6 +6092,81 @@ ParseResult parsePmat(std::string_view text)
                     *builder.attachmentSeedOffset.value,
                 };
                 break;
+            case OperationKind::regionalDetail: {
+#define PW_REQUIRE_DETAIL(field, key) \
+                if (!builder.field.value) return missingLayerField(lineNumber + 1, index, key)
+                PW_REQUIRE_DETAIL(detailField, "detail.field");
+                PW_REQUIRE_DETAIL(detailOrientation, "detail.orientation");
+                PW_REQUIRE_DETAIL(detailVariationScope, "detail.variation_scope");
+                PW_REQUIRE_DETAIL(detailWearBias, "detail.wear_bias");
+                PW_REQUIRE_DETAIL(detailMacroScaleMetres, "detail.macro_scale");
+                PW_REQUIRE_DETAIL(detailMesoScaleMetres, "detail.meso_scale");
+                PW_REQUIRE_DETAIL(detailMicroScaleMetres, "detail.micro_scale");
+                PW_REQUIRE_DETAIL(detailMacroStrength, "detail.macro_strength");
+                PW_REQUIRE_DETAIL(detailMesoStrength, "detail.meso_strength");
+                PW_REQUIRE_DETAIL(detailMicroStrength, "detail.micro_strength");
+                PW_REQUIRE_DETAIL(detailGradientStrength, "detail.gradient_strength");
+                PW_REQUIRE_DETAIL(detailGradientAngle, "detail.gradient_angle");
+                PW_REQUIRE_DETAIL(detailMottlingStrength, "detail.mottling");
+                PW_REQUIRE_DETAIL(detailGrainStrength, "detail.grain");
+                PW_REQUIRE_DETAIL(detailStrokeStrength, "detail.strokes");
+                PW_REQUIRE_DETAIL(detailOuterBandMetres, "detail.outer_band");
+                PW_REQUIRE_DETAIL(detailBevelBandMetres, "detail.bevel_band");
+                PW_REQUIRE_DETAIL(detailInnerBandMetres, "detail.inner_band");
+                PW_REQUIRE_DETAIL(detailEdgeIrregularity, "detail.edge_irregularity");
+                PW_REQUIRE_DETAIL(detailEdgeBreakup, "detail.edge_breakup");
+                PW_REQUIRE_DETAIL(detailEdgeTaper, "detail.edge_taper");
+                PW_REQUIRE_DETAIL(detailWearAmount, "detail.wear");
+                PW_REQUIRE_DETAIL(detailWearScaleMetres, "detail.wear_scale");
+                PW_REQUIRE_DETAIL(detailPaletteLow, "detail.palette_low");
+                PW_REQUIRE_DETAIL(detailPaletteHigh, "detail.palette_high");
+                PW_REQUIRE_DETAIL(detailPaletteSteps, "detail.palette_steps");
+                PW_REQUIRE_DETAIL(detailColourAmount, "detail.colour_amount");
+                PW_REQUIRE_DETAIL(detailHeightAmount, "detail.height_amount");
+                PW_REQUIRE_DETAIL(detailRoughnessAmount, "detail.roughness_amount");
+                PW_REQUIRE_DETAIL(detailCoatingWear, "detail.coating_wear");
+                PW_REQUIRE_DETAIL(detailOcclusionAmount, "detail.occlusion_amount");
+                PW_REQUIRE_DETAIL(detailSeedOffset, "detail.seed_offset");
+                PW_REQUIRE_DETAIL(detailTarget, "detail.target");
+#undef PW_REQUIRE_DETAIL
+                if (hasClassicFields || operationGroupCount != 1) return crossOperationError();
+                layer.operation = RegionalDetailOperation{
+                    *builder.detailField.value,
+                    *builder.detailOrientation.value,
+                    *builder.detailVariationScope.value,
+                    *builder.detailWearBias.value,
+                    *builder.detailMacroScaleMetres.value,
+                    *builder.detailMesoScaleMetres.value,
+                    *builder.detailMicroScaleMetres.value,
+                    *builder.detailMacroStrength.value,
+                    *builder.detailMesoStrength.value,
+                    *builder.detailMicroStrength.value,
+                    *builder.detailGradientStrength.value,
+                    *builder.detailGradientAngle.value,
+                    *builder.detailMottlingStrength.value,
+                    *builder.detailGrainStrength.value,
+                    *builder.detailStrokeStrength.value,
+                    *builder.detailOuterBandMetres.value,
+                    *builder.detailBevelBandMetres.value,
+                    *builder.detailInnerBandMetres.value,
+                    *builder.detailEdgeIrregularity.value,
+                    *builder.detailEdgeBreakup.value,
+                    *builder.detailEdgeTaper.value,
+                    *builder.detailWearAmount.value,
+                    *builder.detailWearScaleMetres.value,
+                    *builder.detailPaletteLow.value,
+                    *builder.detailPaletteHigh.value,
+                    *builder.detailPaletteSteps.value,
+                    *builder.detailColourAmount.value,
+                    *builder.detailHeightAmount.value,
+                    *builder.detailRoughnessAmount.value,
+                    *builder.detailCoatingWear.value,
+                    *builder.detailOcclusionAmount.value,
+                    *builder.detailSeedOffset.value,
+                    *builder.detailTarget.value,
+                };
+                break;
+            }
             case OperationKind::lattice:
                 if (!builder.latticeKind.value) {
                     return missingLayerField(lineNumber + 1, index, "lattice.kind");
@@ -6882,6 +7171,66 @@ SerialisationResult serialisePmat(const Material& material)
                 formatColour(attachment->colour) + "\n";
             output += prefix + "attachment.seed_offset = " +
                 std::to_string(attachment->seedOffset) + "\n";
+        } else if (const auto* detail =
+                       std::get_if<RegionalDetailOperation>(&layer.operation)) {
+            output += prefix + "detail.field = " +
+                std::string(regionalDetailFieldName(detail->field)) + "\n";
+            output += prefix + "detail.orientation = " +
+                std::string(regionalDetailOrientationName(detail->orientation)) + "\n";
+            output += prefix + "detail.variation_scope = " +
+                std::string(regionalVariationScopeName(detail->variationScope)) + "\n";
+            output += prefix + "detail.wear_bias = " +
+                std::string(regionalWearBiasName(detail->wearBias)) + "\n";
+            const std::array<std::pair<std::string_view, double>, 7> physicalValues{{
+                {"macro_scale", detail->macroScaleMetres},
+                {"meso_scale", detail->mesoScaleMetres},
+                {"micro_scale", detail->microScaleMetres},
+                {"outer_band", detail->outerBandMetres},
+                {"bevel_band", detail->bevelBandMetres},
+                {"inner_band", detail->innerBandMetres},
+                {"wear_scale", detail->wearScaleMetres},
+            }};
+            for (const auto& [name, value] : physicalValues) {
+                const auto formatted = formatMetres(value);
+                if (formatted.empty()) {
+                    return SerialisationError{"could not format regional detail physical dimensions"};
+                }
+                output += prefix + "detail." + std::string(name) + " = " + formatted + "\n";
+            }
+            const std::array<std::pair<std::string_view, double>, 17> values{{
+                {"macro_strength", detail->macroStrength},
+                {"meso_strength", detail->mesoStrength},
+                {"micro_strength", detail->microStrength},
+                {"gradient_strength", detail->gradientStrength},
+                {"gradient_angle", detail->gradientAngleDegrees},
+                {"mottling", detail->mottlingStrength},
+                {"grain", detail->grainStrength},
+                {"strokes", detail->strokeStrength},
+                {"edge_irregularity", detail->edgeIrregularity},
+                {"edge_breakup", detail->edgeBreakup},
+                {"edge_taper", detail->edgeTaper},
+                {"wear", detail->wearAmount},
+                {"colour_amount", detail->colourAmount},
+                {"height_amount", detail->heightAmount},
+                {"roughness_amount", detail->roughnessAmount},
+                {"coating_wear", detail->coatingWear},
+                {"occlusion_amount", detail->occlusionAmount},
+            }};
+            for (const auto& [name, value] : values) {
+                const auto formatted = formatDouble(value);
+                if (formatted.empty()) {
+                    return SerialisationError{"could not format regional detail parameters"};
+                }
+                output += prefix + "detail." + std::string(name) + " = " + formatted + "\n";
+            }
+            output += prefix + "detail.palette_low = " + formatColour(detail->paletteLow) + "\n";
+            output += prefix + "detail.palette_high = " + formatColour(detail->paletteHigh) + "\n";
+            output += prefix + "detail.palette_steps = " +
+                std::to_string(detail->paletteSteps) + "\n";
+            output += prefix + "detail.seed_offset = " +
+                std::to_string(detail->seedOffset) + "\n";
+            output += prefix + "detail.target = " +
+                std::string(processingTargetName(detail->target)) + "\n";
         } else if (const auto* levels = std::get_if<LevelsOperation>(&layer.operation)) {
             const auto low = formatDouble(levels->inputLow);
             const auto high = formatDouble(levels->inputHigh);

@@ -402,6 +402,9 @@ CourseLayoutSample evaluateCourseLayoutFields(
         true,
         parent,
         true,
+        0.0,
+        blockWidth,
+        courseHeight,
     };
     return {
         blocks,

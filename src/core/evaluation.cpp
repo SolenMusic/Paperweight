@@ -4,6 +4,7 @@
 #include <paperweight/noise.hpp>
 #include <paperweight/organic.hpp>
 #include <paperweight/region_detail.hpp>
+#include <paperweight/regional_detail.hpp>
 #include <paperweight/sculpt.hpp>
 #include <paperweight/scatter.hpp>
 #include <paperweight/shape.hpp>
@@ -787,6 +788,9 @@ EvaluatedSample evaluateOperation(
                 }
                 result.region = input.region;
                 return result;
+            },
+            [&input, &context](const RegionalDetailOperation& detail) {
+                return evaluateRegionalDetail(detail, context, input);
             },
             [&context](const OrganicCellOperation& organic) {
                 const auto sample = evaluateOrganicCells(

@@ -13,7 +13,23 @@ Paperweight is planned as a deterministic, seamless procedural material generato
 
 ## Status
 
-v0.0.32 is the current Layer Groups and Reusable Overlays release. The AppKit
+v0.0.33 is the current Regional Surface Detail and Visual Richness release. A
+single reusable processor now adds physically scaled macro, meso, and micro
+variation; centre, directional, and seeded planar gradients; mottling, grain,
+and directional strokes; and metre-sized multi-band edges. Stable hashes break,
+taper, and wear those contours without depending on pixels, worker order, or
+architecture. The same wear signal can coordinate colour, relief, roughness,
+coating, and occlusion, while raw masks remain independently routable.
+
+The native inspector exposes the vocabulary in material language rather than
+shader terminology. Five representative production showcases—arch stone,
+paving, hierarchical foliage, woven upholstery, and a constructed target
+panel—now demonstrate that the added richness works for colour alone and gains
+physical definition from height, normal, roughness, coating, and AO. `.pmat`
+format 24 stores every parameter readably; older definitions retain their exact
+generation paths.
+
+The v0.0.32 Layer Groups and Reusable Overlays work remains available. The AppKit
 layer stack is now a collapsible native outline. Contiguous sibling layers can
 be grouped and groups can be nested, renamed, enabled, masked, routed, and
 composited with one coherent opacity across colour, height, roughness,

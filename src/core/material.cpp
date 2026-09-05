@@ -1728,6 +1728,119 @@ std::optional<std::string> validateMaterial(const Material& material)
                     if (!validProcessingTarget(operation.target)) {
                         return prefix + "region surface target is not supported";
                     }
+                } else if constexpr (
+                    std::is_same_v<Operation, RegionalDetailOperation>) {
+                    switch (operation.field) {
+                    case RegionalDetailField::material:
+                    case RegionalDetailField::macro:
+                    case RegionalDetailField::meso:
+                    case RegionalDetailField::micro:
+                    case RegionalDetailField::centreGradient:
+                    case RegionalDetailField::directionalGradient:
+                    case RegionalDetailField::planarGradient:
+                    case RegionalDetailField::mottling:
+                    case RegionalDetailField::grain:
+                    case RegionalDetailField::directionalStrokes:
+                    case RegionalDetailField::outerShadow:
+                    case RegionalDetailField::bevel:
+                    case RegionalDetailField::body:
+                    case RegionalDetailField::innerHighlight:
+                    case RegionalDetailField::wear:
+                    case RegionalDetailField::combined:
+                    case RegionalDetailField::palette:
+                        break;
+                    default:
+                        return prefix + "regional detail field is not supported";
+                    }
+                    switch (operation.orientation) {
+                    case RegionalDetailOrientation::texture:
+                    case RegionalDetailOrientation::region:
+                        break;
+                    default:
+                        return prefix + "regional detail orientation is not supported";
+                    }
+                    switch (operation.variationScope) {
+                    case RegionalVariationScope::material:
+                    case RegionalVariationScope::group:
+                    case RegionalVariationScope::parentRegion:
+                    case RegionalVariationScope::region:
+                        break;
+                    default:
+                        return prefix + "regional variation scope is not supported";
+                    }
+                    switch (operation.wearBias) {
+                    case RegionalWearBias::exposedEdges:
+                    case RegionalWearBias::cavities:
+                    case RegionalWearBias::upwardFaces:
+                    case RegionalWearBias::localPatches:
+                    case RegionalWearBias::mixed:
+                        break;
+                    default:
+                        return prefix + "regional wear bias is not supported";
+                    }
+                    const auto physicalScale = [](double value) {
+                        return validRange(
+                            value,
+                            LayerLimits::minimumPhysicalDetailScale,
+                            LayerLimits::maximumPhysicalDetailScale);
+                    };
+                    if (!physicalScale(operation.macroScaleMetres) ||
+                        !physicalScale(operation.mesoScaleMetres) ||
+                        !physicalScale(operation.microScaleMetres) ||
+                        !physicalScale(operation.wearScaleMetres)) {
+                        return prefix +
+                            "regional detail scales must be finite positive metre values";
+                    }
+                    if (!validRange(
+                            operation.outerBandMetres,
+                            0.0,
+                            LayerLimits::maximumPhysicalDetailScale) ||
+                        !validRange(
+                            operation.bevelBandMetres,
+                            0.0,
+                            LayerLimits::maximumPhysicalDetailScale) ||
+                        !validRange(
+                            operation.innerBandMetres,
+                            0.0,
+                            LayerLimits::maximumPhysicalDetailScale)) {
+                        return prefix +
+                            "regional edge-band widths must be finite non-negative metre values";
+                    }
+                    if (!validRange(operation.gradientAngleDegrees, -360.0, 360.0)) {
+                        return prefix + "regional gradient angle must be between -360 and 360";
+                    }
+                    const std::array controls{
+                        operation.macroStrength,
+                        operation.mesoStrength,
+                        operation.microStrength,
+                        operation.gradientStrength,
+                        operation.mottlingStrength,
+                        operation.grainStrength,
+                        operation.strokeStrength,
+                        operation.edgeIrregularity,
+                        operation.edgeBreakup,
+                        operation.edgeTaper,
+                        operation.wearAmount,
+                        operation.colourAmount,
+                        operation.heightAmount,
+                        operation.roughnessAmount,
+                        operation.coatingWear,
+                        operation.occlusionAmount,
+                    };
+                    if (!std::all_of(controls.begin(), controls.end(), [](double value) {
+                            return validRange(value, 0.0, 1.0);
+                        })) {
+                        return prefix +
+                            "regional detail strengths and material influences must be finite and between 0 and 1";
+                    }
+                    if (operation.paletteSteps == 1U ||
+                        operation.paletteSteps > LayerLimits::maximumRegionalPaletteSteps) {
+                        return prefix +
+                            "regional palette steps must be zero or between 2 and 16";
+                    }
+                    if (!validProcessingTarget(operation.target)) {
+                        return prefix + "regional detail target is not supported";
+                    }
                 }
                 return std::nullopt;
             },

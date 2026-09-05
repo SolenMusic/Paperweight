@@ -2,6 +2,7 @@
 
 #include <paperweight/scatter.hpp>
 #include <paperweight/organic.hpp>
+#include <paperweight/regional_detail.hpp>
 #include <paperweight/surface.hpp>
 
 #include <algorithm>
@@ -114,6 +115,12 @@ struct RegionAttachmentPlan {
     RegionAttachmentOperation parameters;
 };
 
+struct RegionalDetailPlan {
+    std::size_t input;
+    RegionalDetailOperation parameters;
+    std::uint64_t groupScopeKey{};
+};
+
 struct ShapeBooleanPlan {
     std::size_t input{};
     ShapeBooleanOperation parameters;
@@ -149,6 +156,7 @@ using EvaluationPlan = std::variant<
     RegionFieldPlan,
     RegionSurfacePlan,
     RegionAttachmentPlan,
+    RegionalDetailPlan,
     ShapeBooleanPlan,
     OrganicAccumulationPlan,
     MaskPlan,
@@ -309,6 +317,14 @@ public:
                                     return RegionAttachmentPlan{
                                         indexOf(attachment.input),
                                         attachment.parameters,
+                                    };
+                                },
+                                [&indexOf](
+                                    const RegionalDetailProcessing& detail) -> EvaluationPlan {
+                                    return RegionalDetailPlan{
+                                        indexOf(detail.input),
+                                        detail.parameters,
+                                        detail.groupScopeKey,
                                     };
                                 },
                                 [&indexOf](
@@ -644,6 +660,17 @@ private:
                         LayerOperation{attachment.parameters},
                         context,
                         input);
+                },
+                [this, &context, cacheResult](const RegionalDetailPlan& detail) {
+                    const auto input = evaluateNode(
+                        detail.input,
+                        context,
+                        cacheResult);
+                    return evaluateRegionalDetail(
+                        detail.parameters,
+                        context,
+                        input,
+                        detail.groupScopeKey);
                 },
                 [this, &context, cacheResult](const ShapeBooleanPlan& shape) {
                     const auto input = evaluateNode(shape.input, context, cacheResult);

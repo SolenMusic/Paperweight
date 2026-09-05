@@ -43,7 +43,9 @@ double rectangleCoverage(
 RegionSample gridRegion(
     std::uint64_t domain,
     const RepeatedCoordinate& horizontal,
-    const RepeatedCoordinate& vertical)
+    const RepeatedCoordinate& vertical,
+    double extentU,
+    double extentV)
 {
     const double centreDistance = std::clamp(
         std::sqrt(horizontal.local * horizontal.local +
@@ -63,6 +65,11 @@ RegionSample gridRegion(
         centreDistance,
         boundaryDistance,
         true,
+        0,
+        false,
+        0.0,
+        extentU,
+        extentV,
     };
 }
 
@@ -128,7 +135,10 @@ StructuralSample evaluateBrickGridSample(
             ? operation.stagger / static_cast<double>(columns)
             : 0.0;
         const auto horizontal = repeatedCoordinate(u - offset, columns);
-        const auto region = gridRegion(regionDomain, horizontal, vertical);
+        const auto region = gridRegion(
+            regionDomain, horizontal, vertical,
+            1.0 / static_cast<double>(columns),
+            1.0 / static_cast<double>(rows));
         if (physical.mortarMetres == 0.0) {
             return {1.0, region};
         }
@@ -152,7 +162,10 @@ StructuralSample evaluateBrickGridSample(
         ? operation.stagger / static_cast<double>(operation.columns)
         : 0.0;
     const auto horizontal = repeatedCoordinate(u - offset, operation.columns);
-    const auto region = gridRegion(regionDomain, horizontal, vertical);
+    const auto region = gridRegion(
+        regionDomain, horizontal, vertical,
+        1.0 / static_cast<double>(operation.columns),
+        1.0 / static_cast<double>(operation.rows));
     if (operation.mortar == 0.0) {
         return {1.0, region};
     }
@@ -198,7 +211,10 @@ StructuralSample evaluateTileGridSample(
     constexpr std::uint64_t regionDomain = 0x74696c6567726964ULL;
     const auto horizontal = repeatedCoordinate(u, operation.columns);
     const auto vertical = repeatedCoordinate(v, operation.rows);
-    const auto region = gridRegion(regionDomain, horizontal, vertical);
+    const auto region = gridRegion(
+        regionDomain, horizontal, vertical,
+        1.0 / static_cast<double>(operation.columns),
+        1.0 / static_cast<double>(operation.rows));
     if (operation.grout == 0.0) {
         return {1.0, region};
     }
@@ -282,6 +298,11 @@ StructuralSample evaluateWorleyCellsSample(
             std::clamp(std::sqrt(nearest) / std::sqrt(2.0), 0.0, 1.0),
             value,
             true,
+            0,
+            false,
+            0.0,
+            1.0 / static_cast<double>(operation.columns),
+            1.0 / static_cast<double>(operation.rows),
         },
     };
 }
@@ -308,7 +329,10 @@ StructuralSample evaluateRandomCellsSample(
     constexpr std::uint64_t regionDomain = 0x72616e646f6d6365ULL;
     return {
         unitDouble(hashCoordinates(seed, horizontal.index, vertical.index)),
-        gridRegion(regionDomain, horizontal, vertical),
+        gridRegion(
+            regionDomain, horizontal, vertical,
+            1.0 / static_cast<double>(operation.columns),
+            1.0 / static_cast<double>(operation.rows)),
     };
 }
 
@@ -340,6 +364,13 @@ StructuralSample evaluateLinesSample(
                 std::clamp(std::abs(repeated.local) * 2.0, 0.0, 1.0),
                 std::clamp(1.0 - std::abs(repeated.local) * 2.0, 0.0, 1.0),
                 true,
+                0,
+                false,
+                0.0,
+                operation.direction == LineDirection::vertical
+                    ? 1.0 / static_cast<double>(operation.count) : 1.0,
+                operation.direction == LineDirection::horizontal
+                    ? 1.0 / static_cast<double>(operation.count) : 1.0,
             },
         };
     }
@@ -358,6 +389,13 @@ StructuralSample evaluateLinesSample(
             std::clamp(std::abs(repeated.local) * 2.0, 0.0, 1.0),
             std::clamp(1.0 - std::abs(repeated.local) * 2.0, 0.0, 1.0),
             true,
+            0,
+            false,
+            0.0,
+            operation.direction == LineDirection::vertical
+                ? 1.0 / static_cast<double>(operation.count) : 1.0,
+            operation.direction == LineDirection::horizontal
+                ? 1.0 / static_cast<double>(operation.count) : 1.0,
         },
     };
 }
@@ -385,7 +423,10 @@ StructuralSample evaluateRectanglesSample(
             operation.width,
             operation.height,
             operation.softness),
-        gridRegion(regionDomain, horizontal, vertical),
+        gridRegion(
+            regionDomain, horizontal, vertical,
+            1.0 / static_cast<double>(operation.columns),
+            1.0 / static_cast<double>(operation.rows)),
     };
 }
 
@@ -409,7 +450,10 @@ StructuralSample evaluateCirclesSample(
     constexpr std::uint64_t regionDomain = 0x636972636c657265ULL;
     return {
         smoothCoverage(distance, operation.softness),
-        gridRegion(regionDomain, horizontal, vertical),
+        gridRegion(
+            regionDomain, horizontal, vertical,
+            1.0 / static_cast<double>(operation.columns),
+            1.0 / static_cast<double>(operation.rows)),
     };
 }
 

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <functional>
+#include <string_view>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
@@ -40,6 +41,18 @@ bool validMaterialOutput(MaterialOutput output)
     return false;
 }
 
+std::uint64_t stableIdentityKey(std::string_view identity)
+{
+    constexpr std::uint64_t offset = 14695981039346656037ULL;
+    constexpr std::uint64_t prime = 1099511628211ULL;
+    std::uint64_t result = offset;
+    for (const auto character : identity) {
+        result ^= static_cast<unsigned char>(character);
+        result *= prime;
+    }
+    return result;
+}
+
 LayerOperation layerOperation(const GeneratorOperation& operation)
 {
     return std::visit(
@@ -64,6 +77,7 @@ std::optional<GeneratorOperation> generatorOperation(const LayerOperation& opera
                           std::is_same_v<Operation, RegionFieldOperation> ||
                           std::is_same_v<Operation, RegionSurfaceOperation> ||
                           std::is_same_v<Operation, RegionAttachmentOperation> ||
+                          std::is_same_v<Operation, RegionalDetailOperation> ||
                           std::is_same_v<Operation, ShapeBooleanOperation> ||
                           std::is_same_v<Operation, OrganicAccumulationOperation>) {
                 return std::nullopt;
@@ -128,6 +142,9 @@ std::optional<std::string> validateProcessingNode(const ProcessingNode& node)
             },
             [&layer](const RegionAttachmentProcessing& attachment) {
                 layer.operation = attachment.parameters;
+            },
+            [&layer](const RegionalDetailProcessing& detail) {
+                layer.operation = detail.parameters;
             },
             [&layer](const ShapeBooleanProcessing& shape) {
                 layer.operation = shape.parameters;
@@ -205,6 +222,9 @@ std::vector<GraphNodeId> dependencies(const GraphNode& node)
                         },
                         [](const RegionAttachmentProcessing& attachment) {
                             return std::vector<GraphNodeId>{attachment.input};
+                        },
+                        [](const RegionalDetailProcessing& detail) {
+                            return std::vector<GraphNodeId>{detail.input};
                         },
                         [](const ShapeBooleanProcessing& shape) {
                             return std::vector<GraphNodeId>{shape.input};
@@ -416,6 +436,11 @@ std::optional<GraphError> validateMaterialGraph(const MaterialGraph& graph)
                                     attachment.input,
                                     GraphNodeCategory::generator);
                             },
+                            [&checkInput](const RegionalDetailProcessing& detail) {
+                                return checkInput(
+                                    detail.input,
+                                    GraphNodeCategory::generator);
+                            },
                             [&checkInput](const ShapeBooleanProcessing& shape) {
                                 return checkInput(
                                     shape.input,
@@ -528,7 +553,8 @@ GraphCompilationResult compileMaterialGraph(const Material& material)
     using LayerCompilation = std::variant<GraphNodeId, GraphError>;
     const auto compileLayer = [&](GraphNodeId accumulated,
                                   const MaterialLayer& layer,
-                                  std::size_t layerIndex) -> LayerCompilation {
+                                  std::size_t layerIndex,
+                                  std::uint64_t groupScopeKey) -> LayerCompilation {
             GraphNodeId source = invalidGraphNodeId;
             if (const auto* levels = std::get_if<LevelsOperation>(&layer.operation)) {
                 source = addProcessing(
@@ -578,6 +604,11 @@ GraphCompilationResult compileMaterialGraph(const Material& material)
                            std::get_if<RegionAttachmentOperation>(&layer.operation)) {
                 source = addProcessing(
                     RegionAttachmentProcessing{accumulated, *attachment},
+                    layerIndex);
+            } else if (const auto* detail =
+                           std::get_if<RegionalDetailOperation>(&layer.operation)) {
+                source = addProcessing(
+                    RegionalDetailProcessing{accumulated, *detail, groupScopeKey},
                     layerIndex);
             } else if (const auto* shape =
                            std::get_if<ShapeBooleanOperation>(&layer.operation)) {
@@ -669,11 +700,13 @@ GraphCompilationResult compileMaterialGraph(const Material& material)
     std::function<StackCompilationResult(
         const StackItem&,
         GraphNodeId,
-        std::optional<MaterialOutput>)>
+        std::optional<MaterialOutput>,
+        std::uint64_t)>
         compileStack;
     compileStack = [&](const StackItem& container,
                        GraphNodeId initial,
-                       std::optional<MaterialOutput> route) -> StackCompilationResult {
+                       std::optional<MaterialOutput> route,
+                       std::uint64_t groupScopeKey) -> StackCompilationResult {
         StackCompilation result{initial, false};
         for (const auto& item : container.children) {
             if (item.layerIndex) {
@@ -682,7 +715,11 @@ GraphCompilationResult compileMaterialGraph(const Material& material)
                 if (!layer.enabled || (route && !layer.outputs.includes(*route))) {
                     continue;
                 }
-                auto compiled = compileLayer(result.accumulated, layer, layerIndex);
+                auto compiled = compileLayer(
+                    result.accumulated,
+                    layer,
+                    layerIndex,
+                    groupScopeKey);
                 if (const auto* error = std::get_if<GraphError>(&compiled)) {
                     return *error;
                 }
@@ -700,7 +737,11 @@ GraphCompilationResult compileMaterialGraph(const Material& material)
             // contiguous layer range in a 100%-opaque, unmasked blend group is
             // pixel-preserving. Opacity and masks blend the complete before/
             // after group result coherently for every routed output.
-            auto childResultVariant = compileStack(item, result.accumulated, route);
+            auto childResultVariant = compileStack(
+                item,
+                result.accumulated,
+                route,
+                stableIdentityKey(group.identity));
             if (const auto* error = std::get_if<GraphError>(&childResultVariant)) {
                 return *error;
             }
@@ -771,7 +812,7 @@ GraphCompilationResult compileMaterialGraph(const Material& material)
                     return !group.enabled || group.outputs.isLegacyAll();
                 });
         if (useLegacySharedGraph) {
-            auto compiled = compileStack(stackRoot, base, std::nullopt);
+            auto compiled = compileStack(stackRoot, base, std::nullopt, 0);
             if (const auto* error = std::get_if<GraphError>(&compiled)) {
                 return *error;
             }
@@ -803,7 +844,8 @@ GraphCompilationResult compileMaterialGraph(const Material& material)
                 auto compiled = compileStack(
                     stackRoot,
                     accumulated[route],
-                    routedOutputs[route]);
+                    routedOutputs[route],
+                    0);
                 if (const auto* error = std::get_if<GraphError>(&compiled)) {
                     return *error;
                 }

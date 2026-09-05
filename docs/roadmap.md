@@ -516,6 +516,29 @@ paste. The seedless `.pwoverlay` envelope supports reusable source overlays;
 Polished Moss and Polished Lichen ship as editable examples. Tracked by
 [roadmap issue #308](https://github.com/SolenMusic/Paperweight/issues/308).
 
+## v0.0.33 - Regional Surface Detail and Visual Richness
+
+Implemented: add one reusable regional-detail processor for production-quality
+surface variation instead of material-specific shortcuts. Macro, meso, and
+micro bands are authored in metres and remain recognisable from 64 through 1024
+pixels. Centre, directional, and seeded planar gradients; mottling; grain; and
+directional strokes can follow texture space or each region's stable local
+frame, with variation keyed per material, group, parent region, or region.
+
+Multi-band edges separate outer shadow/cavity, bevel, body, and inner highlight.
+Physical widths, stable contour breakup, taper, irregularity, and coordinated
+wear produce richer silhouettes while preserving the earlier Ink Contour tool
+for deliberately simple one-pixel treatments. The shared wear signal can affect
+colour, height, roughness, coating, clear coat, coat roughness, and occlusion;
+every raw field is also available as a normal routable processor output.
+
+PMAT format 24 stores the full operation. Older documents contain no regional-
+detail layer and retain byte-identical output. Arch Stone Panel, Attached
+Paving, Hierarchical Foliage, Woven Upholstery, and Detailed Target Panel receive
+the production showcase pass. Exact torus sampling, one/four-worker identity,
+golden hashes, and universal ARM64/x86-64 builds remain release gates. Tracked
+by [roadmap issue #310](https://github.com/SolenMusic/Paperweight/issues/310).
+
 ## v0.1.0 - Game Library
 
 Stabilise the embedding API and add material-definition versioning, generator

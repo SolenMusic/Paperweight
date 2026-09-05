@@ -920,6 +920,8 @@ NSString* operationDisplayName(const paperweight::LayerOperation& operation)
         return @"Textile / Fibres";
     case 30:
         return @"Region Attachment";
+    case 31:
+        return @"Regional Surface Detail";
     default:
         return @"Unknown";
     }
@@ -2810,6 +2812,7 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         @"Surface Value",
         @"Textile / Fibres",
         @"Region Attachment",
+        @"Regional Surface Detail",
     ]];
     auto* addLayerButton = [NSButton buttonWithTitle:@"Add"
                                               target:self
@@ -3883,10 +3886,15 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     self.thresholdValue.stringValue = [NSString
         stringWithFormat:@"%.2f", self.thresholdSlider.doubleValue];
 
+    const auto* selectedLayer = layerAt(material_, selectedLayer_);
+    const bool regionalDetail = selectedLayer != nullptr && std::holds_alternative<
+        paperweight::RegionalDetailOperation>(selectedLayer->operation);
     self.patternCountXValue.stringValue = [NSString
-        stringWithFormat:@"%.0f", self.patternCountXSlider.doubleValue];
+        stringWithFormat:regionalDetail ? @"%.2f" : @"%.0f",
+        self.patternCountXSlider.doubleValue];
     self.patternCountYValue.stringValue = [NSString
-        stringWithFormat:@"%.0f", self.patternCountYSlider.doubleValue];
+        stringWithFormat:regionalDetail ? @"%.2f" : @"%.0f",
+        self.patternCountYSlider.doubleValue];
     self.patternValueOneValue.stringValue = [NSString
         stringWithFormat:@"%.2f", self.patternValueOneSlider.doubleValue];
     self.patternValueTwoValue.stringValue = [NSString
@@ -4175,6 +4183,8 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     const auto* textile = std::get_if<paperweight::TextileOperation>(&layer->operation);
     const auto* attachment =
         std::get_if<paperweight::RegionAttachmentOperation>(&layer->operation);
+    const auto* regionalDetail =
+        std::get_if<paperweight::RegionalDetailOperation>(&layer->operation);
     self.noiseSeedRow.hidden = noise == nullptr;
     self.solidColourRow.hidden = solid == nullptr;
     self.surfaceValueRow.hidden = surfaceValue == nullptr;
@@ -5047,6 +5057,169 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.patternSeedRow.hidden = NO;
         self.patternSeedOffsetField.stringValue = [NSString
             stringWithFormat:@"%llu", accumulation->seedOffset];
+    } else if (regionalDetail != nullptr) {
+        self.surfaceKindRow.hidden = NO;
+        static_cast<NSTextField*>(self.surfaceKindRow.views[0]).stringValue = @"Output field";
+        [self.surfaceKindPopup removeAllItems];
+        [self.surfaceKindPopup addItemsWithTitles:@[
+            @"Coordinated material", @"Macro", @"Meso", @"Micro",
+            @"Centre gradient", @"Directional gradient", @"Seeded planar gradient",
+            @"Mottling", @"Grain", @"Directional strokes", @"Outer shadow",
+            @"Bevel", @"Body", @"Inner highlight", @"Wear", @"Combined", @"Palette",
+        ]];
+        [self.surfaceKindPopup selectItemAtIndex:static_cast<NSInteger>(regionalDetail->field)];
+        self.courseFieldRow.hidden = NO;
+        static_cast<NSTextField*>(self.courseFieldRow.views[0]).stringValue = @"Direction space";
+        [self.courseFieldPopup removeAllItems];
+        [self.courseFieldPopup addItemsWithTitles:@[@"Texture", @"Follow each region"]];
+        [self.courseFieldPopup selectItemAtIndex:static_cast<NSInteger>(regionalDetail->orientation)];
+        self.organicPopulationRow.hidden = NO;
+        static_cast<NSTextField*>(self.organicPopulationRow.views[0]).stringValue = @"Variation per";
+        [self.organicPopulationPopup removeAllItems];
+        [self.organicPopulationPopup addItemsWithTitles:@[
+            @"Material", @"Group", @"Parent region", @"Region",
+        ]];
+        [self.organicPopulationPopup selectItemAtIndex:
+            static_cast<NSInteger>(regionalDetail->variationScope)];
+        self.processingTargetRow.hidden = NO;
+        static_cast<NSTextField*>(self.processingTargetRow.views[0]).stringValue = @"Affect";
+        [self.processingTargetPopup removeAllItems];
+        [self.processingTargetPopup addItemsWithTitles:@[
+            @"Colour only", @"Surface only", @"Colour + surface",
+        ]];
+        [self.processingTargetPopup selectItemAtIndex:processingTargetIndex(regionalDetail->target)];
+        self.rampModeRow.hidden = NO;
+        static_cast<NSTextField*>(self.rampModeRow.views[0]).stringValue = @"Wear follows";
+        [self.rampModePopup removeAllItems];
+        [self.rampModePopup addItemsWithTitles:@[
+            @"Exposed edges", @"Cavities", @"Upward faces", @"Local patches", @"Mixed",
+        ]];
+        [self.rampModePopup selectItemAtIndex:static_cast<NSInteger>(regionalDetail->wearBias)];
+
+        showValue(self.patternCountXRow, self.patternCountXLabel,
+                  self.patternCountXSlider, self.patternCountXValue,
+                  @"Macro size (mm)", 0.1, 2000.0, regionalDetail->macroScaleMetres * 1000.0);
+        showValue(self.patternCountYRow, self.patternCountYLabel,
+                  self.patternCountYSlider, self.patternCountYValue,
+                  @"Meso size (mm)", 0.1, 500.0, regionalDetail->mesoScaleMetres * 1000.0);
+        showValue(self.patternValueOneRow, self.patternValueOneLabel,
+                  self.patternValueOneSlider, self.patternValueOneValue,
+                  @"Micro size (mm)", 0.01, 100.0, regionalDetail->microScaleMetres * 1000.0);
+        showValue(self.patternValueTwoRow, self.patternValueTwoLabel,
+                  self.patternValueTwoSlider, self.patternValueTwoValue,
+                  @"Macro strength", 0.0, 1.0, regionalDetail->macroStrength);
+        showValue(self.patternValueThreeRow, self.patternValueThreeLabel,
+                  self.patternValueThreeSlider, self.patternValueThreeValue,
+                  @"Meso strength", 0.0, 1.0, regionalDetail->mesoStrength);
+        showValue(self.patternValueFourRow, self.patternValueFourLabel,
+                  self.patternValueFourSlider, self.patternValueFourValue,
+                  @"Micro strength", 0.0, 1.0, regionalDetail->microStrength);
+        showValue(self.courseGapRow, static_cast<NSTextField*>(self.courseGapRow.views[0]),
+                  self.courseGapSlider, self.courseGapValue,
+                  @"Gradient", 0.0, 1.0, regionalDetail->gradientStrength);
+        showValue(self.courseSoftnessRow, static_cast<NSTextField*>(self.courseSoftnessRow.views[0]),
+                  self.courseSoftnessSlider, self.courseSoftnessValue,
+                  @"Mottling", 0.0, 1.0, regionalDetail->mottlingStrength);
+        showValue(self.courseOverlapRow, static_cast<NSTextField*>(self.courseOverlapRow.views[0]),
+                  self.courseOverlapSlider, self.courseOverlapValue,
+                  @"Grain", 0.0, 1.0, regionalDetail->grainStrength);
+        showValue(self.organicPopulationWeightRow,
+                  static_cast<NSTextField*>(self.organicPopulationWeightRow.views[0]),
+                  self.organicPopulationWeightSlider, self.organicPopulationWeightValue,
+                  @"Stroke strength", 0.0, 1.0, regionalDetail->strokeStrength);
+        showValue(self.organicPopulationScaleRow,
+                  static_cast<NSTextField*>(self.organicPopulationScaleRow.views[0]),
+                  self.organicPopulationScaleSlider, self.organicPopulationScaleValue,
+                  @"Outer band (mm)", 0.0, 100.0, regionalDetail->outerBandMetres * 1000.0);
+        showValue(self.organicClusterColourRow,
+                  static_cast<NSTextField*>(self.organicClusterColourRow.views[0]),
+                  self.organicClusterColourSlider, self.organicClusterColourValue,
+                  @"Bevel band (mm)", 0.0, 100.0, regionalDetail->bevelBandMetres * 1000.0);
+        showValue(self.organicInstanceColourRow,
+                  static_cast<NSTextField*>(self.organicInstanceColourRow.views[0]),
+                  self.organicInstanceColourSlider, self.organicInstanceColourValue,
+                  @"Inner band (mm)", 0.0, 100.0, regionalDetail->innerBandMetres * 1000.0);
+        showValue(self.organicOutlineRow,
+                  static_cast<NSTextField*>(self.organicOutlineRow.views[0]),
+                  self.organicOutlineSlider, self.organicOutlineValue,
+                  @"Edge irregularity", 0.0, 1.0, regionalDetail->edgeIrregularity);
+        showValue(self.organicHighlightRow,
+                  static_cast<NSTextField*>(self.organicHighlightRow.views[0]),
+                  self.organicHighlightSlider, self.organicHighlightValue,
+                  @"Broken contours", 0.0, 1.0, regionalDetail->edgeBreakup);
+        showValue(self.organicHighlightInsetRow,
+                  static_cast<NSTextField*>(self.organicHighlightInsetRow.views[0]),
+                  self.organicHighlightInsetSlider, self.organicHighlightInsetValue,
+                  @"Wear amount", 0.0, 1.0, regionalDetail->wearAmount);
+        showValue(self.levelsLowRow,
+                  static_cast<NSTextField*>(self.levelsLowRow.views[0]),
+                  self.levelsLowSlider, self.levelsLowValue,
+                  @"Wear scale (mm)", 0.1, 500.0,
+                  regionalDetail->wearScaleMetres * 1000.0);
+        showValue(self.levelsHighRow,
+                  static_cast<NSTextField*>(self.levelsHighRow.views[0]),
+                  self.levelsHighSlider, self.levelsHighValue,
+                  @"Coating wear", 0.0, 1.0, regionalDetail->coatingWear);
+        showValue(self.levelsGammaRow,
+                  static_cast<NSTextField*>(self.levelsGammaRow.views[0]),
+                  self.levelsGammaSlider, self.levelsGammaValue,
+                  @"AO amount", 0.0, 1.0, regionalDetail->occlusionAmount);
+
+        self.filterSensitivityRow.hidden = NO;
+        static_cast<NSTextField*>(self.filterSensitivityRow.views[0]).stringValue = @"Edge taper";
+        self.filterSensitivitySlider.minValue = 0.0;
+        self.filterSensitivitySlider.maxValue = 1.0;
+        self.filterSensitivitySlider.doubleValue = regionalDetail->edgeTaper;
+        self.filterSensitivityValue.stringValue = [NSString stringWithFormat:@"%.2f", regionalDetail->edgeTaper];
+        self.posteriseBandsRow.hidden = NO;
+        static_cast<NSTextField*>(self.posteriseBandsRow.views[0]).stringValue = @"Palette steps (0 = smooth)";
+        self.posteriseBandsSlider.minValue = 0.0;
+        self.posteriseBandsSlider.maxValue = paperweight::LayerLimits::maximumRegionalPaletteSteps;
+        self.posteriseBandsSlider.numberOfTickMarks = 0;
+        self.posteriseBandsSlider.allowsTickMarkValuesOnly = NO;
+        self.posteriseBandsSlider.doubleValue = regionalDetail->paletteSteps;
+        self.posteriseBandsValue.stringValue = [NSString stringWithFormat:@"%u", regionalDetail->paletteSteps];
+        self.inkRadiusRow.hidden = NO;
+        static_cast<NSTextField*>(self.inkRadiusRow.views[0]).stringValue = @"Gradient angle";
+        self.inkRadiusSlider.minValue = -360.0;
+        self.inkRadiusSlider.maxValue = 360.0;
+        self.inkRadiusSlider.doubleValue = regionalDetail->gradientAngleDegrees;
+        self.inkRadiusValue.stringValue = [NSString stringWithFormat:@"%.0f°", regionalDetail->gradientAngleDegrees];
+        self.inkThresholdRow.hidden = NO;
+        static_cast<NSTextField*>(self.inkThresholdRow.views[0]).stringValue = @"Colour amount";
+        self.inkThresholdSlider.minValue = 0.0;
+        self.inkThresholdSlider.maxValue = 1.0;
+        self.inkThresholdSlider.doubleValue = regionalDetail->colourAmount;
+        self.inkThresholdValue.stringValue = [NSString stringWithFormat:@"%.2f", regionalDetail->colourAmount];
+        self.inkSoftnessRow.hidden = NO;
+        static_cast<NSTextField*>(self.inkSoftnessRow.views[0]).stringValue = @"Height amount";
+        self.inkSoftnessSlider.minValue = 0.0;
+        self.inkSoftnessSlider.maxValue = 1.0;
+        self.inkSoftnessSlider.doubleValue = regionalDetail->heightAmount;
+        self.inkSoftnessValue.stringValue = [NSString stringWithFormat:@"%.2f", regionalDetail->heightAmount];
+        self.inkStrengthRow.hidden = NO;
+        static_cast<NSTextField*>(self.inkStrengthRow.views[0]).stringValue = @"Roughness amount";
+        self.inkStrengthSlider.minValue = 0.0;
+        self.inkStrengthSlider.maxValue = 1.0;
+        self.inkStrengthSlider.doubleValue = regionalDetail->roughnessAmount;
+        self.inkStrengthValue.stringValue = [NSString stringWithFormat:@"%.2f", regionalDetail->roughnessAmount];
+        self.colourEntriesGroup.hidden = NO;
+        for (NSUInteger colourIndex = 0; colourIndex < self.colourEntryRows.count; ++colourIndex) {
+            self.colourEntryRows[colourIndex].hidden = colourIndex >= 2;
+            if (colourIndex < 2) {
+                self.colourEntryLabels[colourIndex].stringValue =
+                    colourIndex == 0 ? @"Palette low" : @"Palette high";
+                self.colourPositionSliders[colourIndex].hidden = YES;
+                self.colourPositionValues[colourIndex].hidden = YES;
+                self.colourEntryWells[colourIndex].color = colourFromRgba8(
+                    colourIndex == 0 ? regionalDetail->paletteLow : regionalDetail->paletteHigh);
+            }
+        }
+        self.addColourEntryButton.enabled = NO;
+        self.removeColourEntryButton.enabled = NO;
+        self.patternSeedRow.hidden = NO;
+        self.patternSeedOffsetField.stringValue = [NSString
+            stringWithFormat:@"%llu", regionalDetail->seedOffset];
     } else if (attachment != nullptr) {
         self.surfaceKindRow.hidden = NO;
         static_cast<NSTextField*>(self.surfaceKindRow.views[0]).stringValue = @"Detail";
@@ -6902,6 +7075,9 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     case 34:
         material_.layers.push_back(paperweight::makeRegionAttachmentLayer());
         break;
+    case 35:
+        material_.layers.push_back(paperweight::makeRegionalDetailLayer());
+        break;
     default:
         [self.layerUndoManager removeAllActions];
         return;
@@ -6946,7 +7122,13 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     if (layer == nullptr) {
         return;
     }
-    if (auto* attachment =
+    if (auto* detail =
+            std::get_if<paperweight::RegionalDetailOperation>(&layer->operation)) {
+        const auto colour = rgba8FromColour(sender.color);
+        if (sender.tag == 0) detail->paletteLow = colour;
+        else if (sender.tag == 1) detail->paletteHigh = colour;
+        else return;
+    } else if (auto* attachment =
             std::get_if<paperweight::RegionAttachmentOperation>(&layer->operation)) {
         if (sender.tag != 0) return;
         attachment->colour = rgba8FromColour(sender.color);
@@ -7021,7 +7203,35 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
     if (layer == nullptr) {
         return;
     }
-    if (auto* attachment =
+    if (auto* detail =
+            std::get_if<paperweight::RegionalDetailOperation>(&layer->operation)) {
+        if (sender == self.processingTargetPopup) {
+            detail->target = processingTargetAtIndex(
+                self.processingTargetPopup.indexOfSelectedItem);
+        }
+        if (sender == self.rampModePopup) {
+            detail->wearBias = static_cast<paperweight::RegionalWearBias>(
+                self.rampModePopup.indexOfSelectedItem);
+        }
+        detail->edgeTaper = self.filterSensitivitySlider.doubleValue;
+        auto paletteSteps = static_cast<std::uint32_t>(std::clamp(
+            std::llround(self.posteriseBandsSlider.doubleValue),
+            0LL,
+            static_cast<long long>(paperweight::LayerLimits::maximumRegionalPaletteSteps)));
+        if (paletteSteps == 1U) paletteSteps = 2U;
+        detail->paletteSteps = paletteSteps;
+        detail->gradientAngleDegrees = self.inkRadiusSlider.doubleValue;
+        detail->colourAmount = self.inkThresholdSlider.doubleValue;
+        detail->heightAmount = self.inkSoftnessSlider.doubleValue;
+        detail->roughnessAmount = self.inkStrengthSlider.doubleValue;
+        self.filterSensitivityValue.stringValue = [NSString stringWithFormat:@"%.2f", detail->edgeTaper];
+        self.posteriseBandsSlider.doubleValue = detail->paletteSteps;
+        self.posteriseBandsValue.stringValue = [NSString stringWithFormat:@"%u", detail->paletteSteps];
+        self.inkRadiusValue.stringValue = [NSString stringWithFormat:@"%.0f°", detail->gradientAngleDegrees];
+        self.inkThresholdValue.stringValue = [NSString stringWithFormat:@"%.2f", detail->colourAmount];
+        self.inkSoftnessValue.stringValue = [NSString stringWithFormat:@"%.2f", detail->heightAmount];
+        self.inkStrengthValue.stringValue = [NSString stringWithFormat:@"%.2f", detail->roughnessAmount];
+    } else if (auto* attachment =
             std::get_if<paperweight::RegionAttachmentOperation>(&layer->operation)) {
         if (sender == self.processingTargetPopup) {
             attachment->startAnchor = static_cast<paperweight::RegionAnchor>(
@@ -7544,6 +7754,18 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         self.levelsGammaValue.stringValue = [NSString stringWithFormat:@"%.2f", attachment->metalness];
         self.thresholdValue.stringValue = [NSString stringWithFormat:@"%.2f", attachment->occlusion];
     }
+    if (auto* detail =
+            std::get_if<paperweight::RegionalDetailOperation>(&layer->operation)) {
+        detail->wearScaleMetres = self.levelsLowSlider.doubleValue / 1000.0;
+        detail->coatingWear = self.levelsHighSlider.doubleValue;
+        detail->occlusionAmount = self.levelsGammaSlider.doubleValue;
+        self.levelsLowValue.stringValue = [NSString
+            stringWithFormat:@"%.2f", self.levelsLowSlider.doubleValue];
+        self.levelsHighValue.stringValue = [NSString
+            stringWithFormat:@"%.2f", detail->coatingWear];
+        self.levelsGammaValue.stringValue = [NSString
+            stringWithFormat:@"%.2f", detail->occlusionAmount];
+    }
     if (auto* textile = std::get_if<paperweight::TextileOperation>(&layer->operation)) {
         textile->colourVariation = self.levelsLowSlider.doubleValue;
         textile->weaveSpan = static_cast<std::uint32_t>(std::clamp(
@@ -8003,6 +8225,53 @@ double textureSpaceMortarMaximum(const paperweight::BrickGridOperation& brick)
         if (parsedSeed) {
             course->seedOffset = *parsedSeed;
         }
+    } else if (auto* detail =
+                   std::get_if<paperweight::RegionalDetailOperation>(&layer->operation)) {
+        if (sender == self.surfaceKindPopup) {
+            detail->field = static_cast<paperweight::RegionalDetailField>(
+                self.surfaceKindPopup.indexOfSelectedItem);
+        }
+        if (sender == self.courseFieldPopup) {
+            detail->orientation = static_cast<paperweight::RegionalDetailOrientation>(
+                self.courseFieldPopup.indexOfSelectedItem);
+        }
+        if (sender == self.organicPopulationPopup) {
+            detail->variationScope = static_cast<paperweight::RegionalVariationScope>(
+                self.organicPopulationPopup.indexOfSelectedItem);
+        }
+        detail->macroScaleMetres = self.patternCountXSlider.doubleValue / 1000.0;
+        detail->mesoScaleMetres = self.patternCountYSlider.doubleValue / 1000.0;
+        detail->microScaleMetres = self.patternValueOneSlider.doubleValue / 1000.0;
+        detail->macroStrength = self.patternValueTwoSlider.doubleValue;
+        detail->mesoStrength = self.patternValueThreeSlider.doubleValue;
+        detail->microStrength = self.patternValueFourSlider.doubleValue;
+        detail->gradientStrength = self.courseGapSlider.doubleValue;
+        detail->mottlingStrength = self.courseSoftnessSlider.doubleValue;
+        detail->grainStrength = self.courseOverlapSlider.doubleValue;
+        detail->strokeStrength = self.organicPopulationWeightSlider.doubleValue;
+        detail->outerBandMetres = self.organicPopulationScaleSlider.doubleValue / 1000.0;
+        detail->bevelBandMetres = self.organicClusterColourSlider.doubleValue / 1000.0;
+        detail->innerBandMetres = self.organicInstanceColourSlider.doubleValue / 1000.0;
+        detail->edgeIrregularity = self.organicOutlineSlider.doubleValue;
+        detail->edgeBreakup = self.organicHighlightSlider.doubleValue;
+        detail->wearAmount = self.organicHighlightInsetSlider.doubleValue;
+        if (parsedSeed) detail->seedOffset = *parsedSeed;
+        self.patternCountXValue.stringValue = [NSString stringWithFormat:@"%.2f", self.patternCountXSlider.doubleValue];
+        self.patternCountYValue.stringValue = [NSString stringWithFormat:@"%.2f", self.patternCountYSlider.doubleValue];
+        self.patternValueOneValue.stringValue = [NSString stringWithFormat:@"%.2f", self.patternValueOneSlider.doubleValue];
+        self.patternValueTwoValue.stringValue = [NSString stringWithFormat:@"%.2f", detail->macroStrength];
+        self.patternValueThreeValue.stringValue = [NSString stringWithFormat:@"%.2f", detail->mesoStrength];
+        self.patternValueFourValue.stringValue = [NSString stringWithFormat:@"%.2f", detail->microStrength];
+        self.courseGapValue.stringValue = [NSString stringWithFormat:@"%.2f", detail->gradientStrength];
+        self.courseSoftnessValue.stringValue = [NSString stringWithFormat:@"%.2f", detail->mottlingStrength];
+        self.courseOverlapValue.stringValue = [NSString stringWithFormat:@"%.2f", detail->grainStrength];
+        self.organicPopulationWeightValue.stringValue = [NSString stringWithFormat:@"%.2f", detail->strokeStrength];
+        self.organicPopulationScaleValue.stringValue = [NSString stringWithFormat:@"%.2f", self.organicPopulationScaleSlider.doubleValue];
+        self.organicClusterColourValue.stringValue = [NSString stringWithFormat:@"%.2f", self.organicClusterColourSlider.doubleValue];
+        self.organicInstanceColourValue.stringValue = [NSString stringWithFormat:@"%.2f", self.organicInstanceColourSlider.doubleValue];
+        self.organicOutlineValue.stringValue = [NSString stringWithFormat:@"%.2f", detail->edgeIrregularity];
+        self.organicHighlightValue.stringValue = [NSString stringWithFormat:@"%.2f", detail->edgeBreakup];
+        self.organicHighlightInsetValue.stringValue = [NSString stringWithFormat:@"%.2f", detail->wearAmount];
     } else if (auto* sculpt =
                    std::get_if<paperweight::RegionSurfaceOperation>(&layer->operation)) {
         if (sender == self.surfaceKindPopup) {

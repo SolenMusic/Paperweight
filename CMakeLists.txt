@@ -6,7 +6,7 @@ if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" AND
         "Minimum macOS version supported by Paperweight")
 endif()
 
-project(Paperweight VERSION 0.0.32 LANGUAGES CXX)
+project(Paperweight VERSION 0.0.33 LANGUAGES CXX)
 
 option(PAPERWEIGHT_BUILD_TESTS "Build the Paperweight test suite" ON)
 option(PAPERWEIGHT_BUILD_MACOS_APP "Build the native macOS application" ${APPLE})
@@ -53,6 +53,7 @@ add_library(paperweight_core STATIC
     src/core/course.cpp
     src/core/region.cpp
     src/core/region_detail.cpp
+    src/core/regional_detail.cpp
     src/core/sculpt.cpp
     src/core/scatter.cpp
     src/core/shape.cpp
