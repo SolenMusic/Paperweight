@@ -296,6 +296,8 @@ TextileSample evaluateWeave(
             makeRegionKey(seed, coordinate.tileX, coordinate.tileY),
             true,
             coordinate.rotated ? 0.25 : 0.0,
+            1.0 / static_cast<double>(operation.columns),
+            1.0 / static_cast<double>(operation.rows),
         },
     };
 }
@@ -438,6 +440,9 @@ TextileSample evaluatePile(
             bestCoverage > 0.0,
             makeRegionKey(seed, coordinate.tileX, coordinate.tileY),
             true,
+            0.0,
+            operation.pileRadius * 2.0,
+            operation.pileRadius * 2.0,
         },
     };
 }

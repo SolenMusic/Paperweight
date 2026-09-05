@@ -11,7 +11,7 @@
 namespace paperweight {
 
 inline constexpr std::uint32_t minimumSupportedPmatVersion = 1;
-inline constexpr std::uint32_t currentPmatVersion = 23;
+inline constexpr std::uint32_t currentPmatVersion = 24;
 
 struct ParseDiagnostic {
     std::size_t line;

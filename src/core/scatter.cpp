@@ -404,6 +404,8 @@ ScatterSample evaluateScatter(
         parentKey,
         true,
         (operation.stamp.rotationDegrees + selected->rotationDegrees) / 360.0,
+        width,
+        height,
     };
     return {
         selectedCoverage,

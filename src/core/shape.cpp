@@ -429,6 +429,8 @@ ShapeSample evaluateShapePrimitive(
             0,
             false,
             nearestOrientationDegrees / 360.0,
+            operation.width,
+            operation.height,
         },
     };
 }
@@ -466,6 +468,11 @@ ShapeSample evaluateLattice(
             std::clamp(1.0 - value, 0.0, 1.0),
             value,
             true,
+            0,
+            false,
+            0.0,
+            1.0 / static_cast<double>(std::max(1, std::abs(operation.windingX))),
+            1.0 / static_cast<double>(std::max(1, std::abs(operation.windingY))),
         },
     };
 }

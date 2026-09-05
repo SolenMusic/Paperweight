@@ -301,6 +301,15 @@ OrganicCellSample evaluateOrganicCells(
             std::clamp(nearest / std::sqrt(2.0), 0.0, 1.0),
             std::clamp(boundaryDistance, 0.0, 1.0),
             true,
+            0,
+            false,
+            0.0,
+            operation.direction == OrganicDirection::vertical
+                ? operation.anisotropy / static_cast<double>(operation.columns)
+                : 1.0 / static_cast<double>(operation.columns),
+            operation.direction == OrganicDirection::vertical
+                ? 1.0 / static_cast<double>(operation.rows)
+                : operation.anisotropy / static_cast<double>(operation.rows),
         },
     };
 }
@@ -737,6 +746,8 @@ LeafSample evaluateLeafCluster(
             selected->clusterKey,
             true,
             selected->rotationDegrees / 360.0,
+            selected->width,
+            selected->length,
         },
         edge,
         innerHighlight,

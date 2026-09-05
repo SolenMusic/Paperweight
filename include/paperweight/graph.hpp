@@ -150,6 +150,20 @@ struct RegionAttachmentProcessing {
         const RegionAttachmentProcessing&) = default;
 };
 
+struct RegionalDetailProcessing {
+    GraphNodeId input{invalidGraphNodeId};
+    RegionalDetailOperation parameters;
+    // Runtime-only key derived from the stable identity of the containing
+    // layer group. It deliberately remains outside the .pmat operation so
+    // moving a layer between groups changes group-scoped variation without
+    // rewriting its authored seed.
+    std::uint64_t groupScopeKey{};
+
+    friend constexpr bool operator==(
+        const RegionalDetailProcessing&,
+        const RegionalDetailProcessing&) = default;
+};
+
 struct ShapeBooleanProcessing {
     GraphNodeId input{invalidGraphNodeId};
     ShapeBooleanOperation parameters;
@@ -180,6 +194,7 @@ using ProcessingOperation = std::variant<
     RegionFieldProcessing,
     RegionSurfaceProcessing,
     RegionAttachmentProcessing,
+    RegionalDetailProcessing,
     ShapeBooleanProcessing,
     OrganicAccumulationProcessing>;
 
